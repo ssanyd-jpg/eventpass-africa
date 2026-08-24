@@ -8,8 +8,8 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node --env-file=.env node_modules/vitest/vitest.mjs run",
+    "test:watch": "node --env-file=.env node_modules/vitest/vitest.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

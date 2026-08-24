@@ -289,7 +289,12 @@ export async function handleSellTickets(userId: string, payload: any) {
     });
 
     return created;
-  });
+    // Neon's pooled connection needs `pgbouncer=true` for interactive
+    // transactions to commit correctly at all (see DEPLOYMENT.md) — that
+    // makes Prisma hold one connection for the whole transaction, which
+    // needs more than the 5s default when each statement is a real network
+    // round-trip rather than a local one.
+  }, { timeout: 15000, maxWait: 10000 });
 
   const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
   if (buyer) {
@@ -508,7 +513,7 @@ export async function handleRefundOrder(userId: string, payload: any) {
         event: { select: { id: true, clientId: true, title: true } },
       },
     });
-  });
+  }, { timeout: 15000, maxWait: 10000 });
 
   await sendNotification({
     type: "REFUND_ISSUED",
