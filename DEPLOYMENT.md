@@ -1,52 +1,38 @@
 # Deploying EventPass Africa
 
-Local development runs on SQLite (no setup needed — see README). This
-document covers moving to the real pilot deployment target: **Vercel +
-Neon Postgres**, plus the optional providers (Vercel Blob for photos,
+The schema is Postgres-only (`prisma/schema.prisma` — SQLite was only ever
+a local-dev placeholder, retired once a real database existed). Local dev
+and production both point at Neon Postgres now; this document covers the
+Vercel + Neon setup and the optional providers (Vercel Blob for photos,
 email/SMS, mobile money) that unlock features currently running in
 simulated/fallback mode.
 
-## 1. Provision Neon Postgres
+## 1. Neon Postgres (already provisioned for this project)
 
-1. Create a free project at neon.tech.
-2. From the Neon dashboard, copy two connection strings:
-   - The **pooled** connection string → `DATABASE_URL` (what the app uses at runtime).
-   - The **direct/unpooled** connection string → `DIRECT_URL` (what Prisma migrations use — pooled connections don't support the session-level locking migrations need).
+1. Neon dashboard → **Connection Details** has two connection strings:
+   - **Pooled** → `DATABASE_URL` (what the app uses at runtime).
+   - **Direct/unpooled** → `DIRECT_URL` (what Prisma migrations use — pooled connections don't support the session-level locking migrations need).
+2. `binaryTargets = ["native", "rhel-openssl-3.0.x"]` is already set on the
+   Prisma client generator — this matters specifically for Vercel's
+   serverless runtime; without it, deploys can fail at request time with a
+   "query engine not found" error even though the build succeeds.
+3. Tests need their **own** Postgres database, never this one — see
+   `TEST_DATABASE_URL` in `.env.example`. `npm test` runs `prisma db push
+   --accept-data-loss` against it on every run, which would wipe real data
+   if pointed at the dev/pilot database. A second free Neon **branch**
+   (Neon dashboard → Branches → create from main) is the easiest way to get
+   an isolated, disposable one.
 
-## 2. Switch the schema to Postgres
-
-This is a one-time, mechanical change (SQLite was only ever the local-dev
-choice — nothing in the schema is SQLite-specific by design):
-
-In `prisma/schema.prisma`:
-
-```prisma
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
-}
-
-generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
-}
-```
-
-Then, with `DATABASE_URL`/`DIRECT_URL` set to your Neon connection strings
-in `.env`:
+If starting a new environment from scratch instead of using the one
+already set up: create a free project at neon.tech, copy the two
+connection strings above into `.env`, then run:
 
 ```bash
-rm -rf prisma/migrations   # the existing history is SQLite-locked
 npx prisma migrate dev --name init
 npx prisma db seed         # optional — loads demo events/accounts
 ```
 
-`binaryTargets` matters specifically for Vercel's serverless runtime
-(`rhel-openssl-3.0.x`) — without it, deploys can fail at request time with
-a "query engine not found" error even though the build itself succeeds.
-
-## 3. Deploy to Vercel
+## 2. Deploy to Vercel
 
 1. Push this repo to GitHub and import it in Vercel.
 2. Add environment variables (Project Settings → Environment Variables):
@@ -57,14 +43,14 @@ a "query engine not found" error even though the build itself succeeds.
    | `DIRECT_URL` | Yes | Neon direct connection string |
    | `NEXTAUTH_SECRET` | Yes | Generate with `openssl rand -base64 32` |
    | `NEXTAUTH_URL` | Yes | Your production URL, e.g. `https://your-app.vercel.app` |
-   | `BLOB_READ_WRITE_TOKEN` | No | Enables real event photo uploads — see §4 |
-   | `RESEND_API_KEY` | No | Enables real email delivery — see §5 |
-   | `AFRICASTALKING_API_KEY` | No | Enables real SMS delivery — see §5 |
-   | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §6 |
+   | `BLOB_READ_WRITE_TOKEN` | No | Enables real event photo uploads — see §3 |
+   | `RESEND_API_KEY` | No | Enables real email delivery — see §4 |
+   | `AFRICASTALKING_API_KEY` | No | Enables real SMS delivery — see §4 |
+   | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §5 |
 
 3. Deploy. `npm run build` runs the same way it does locally.
 
-## 4. Photo uploads (optional)
+## 3. Photo uploads (optional)
 
 Without configuration, event photos stay as the `picsum.photos` placeholder
 used today. To enable real uploads: in the Vercel dashboard, add a Blob
@@ -72,7 +58,7 @@ store to the project (Storage tab) — this automatically injects
 `BLOB_READ_WRITE_TOKEN`. Nothing else to configure; `/api/upload` and the
 event edit page's photo uploader already check for this token.
 
-## 5. Email / SMS (optional)
+## 4. Email / SMS (optional)
 
 Every notification the app would send (order confirmations, password
 resets, cancellations, refunds) currently lands in the `NotificationLog`
@@ -83,7 +69,7 @@ is the single choke point every caller already goes through, so nothing
 else in the app needs to change. Resend (email) and Africa's Talking (SMS,
 covers Tanzania) are reasonable low-effort choices, but any provider works.
 
-## 6. Mobile money charging (optional)
+## 5. Mobile money charging (optional)
 
 Checkout currently uses `src/lib/payments/simulated.ts` — no real charge
 happens, matching how a single-venue pilot actually starts (cash/manual
