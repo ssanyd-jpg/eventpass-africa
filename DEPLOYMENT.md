@@ -1,0 +1,124 @@
+# Deploying EventPass Africa
+
+Local development runs on SQLite (no setup needed — see README). This
+document covers moving to the real pilot deployment target: **Vercel +
+Neon Postgres**, plus the optional providers (Vercel Blob for photos,
+email/SMS, mobile money) that unlock features currently running in
+simulated/fallback mode.
+
+## 1. Provision Neon Postgres
+
+1. Create a free project at neon.tech.
+2. From the Neon dashboard, copy two connection strings:
+   - The **pooled** connection string → `DATABASE_URL` (what the app uses at runtime).
+   - The **direct/unpooled** connection string → `DIRECT_URL` (what Prisma migrations use — pooled connections don't support the session-level locking migrations need).
+
+## 2. Switch the schema to Postgres
+
+This is a one-time, mechanical change (SQLite was only ever the local-dev
+choice — nothing in the schema is SQLite-specific by design):
+
+In `prisma/schema.prisma`:
+
+```prisma
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+```
+
+Then, with `DATABASE_URL`/`DIRECT_URL` set to your Neon connection strings
+in `.env`:
+
+```bash
+rm -rf prisma/migrations   # the existing history is SQLite-locked
+npx prisma migrate dev --name init
+npx prisma db seed         # optional — loads demo events/accounts
+```
+
+`binaryTargets` matters specifically for Vercel's serverless runtime
+(`rhel-openssl-3.0.x`) — without it, deploys can fail at request time with
+a "query engine not found" error even though the build itself succeeds.
+
+## 3. Deploy to Vercel
+
+1. Push this repo to GitHub and import it in Vercel.
+2. Add environment variables (Project Settings → Environment Variables):
+
+   | Variable | Required | Notes |
+   |---|---|---|
+   | `DATABASE_URL` | Yes | Neon pooled connection string |
+   | `DIRECT_URL` | Yes | Neon direct connection string |
+   | `NEXTAUTH_SECRET` | Yes | Generate with `openssl rand -base64 32` |
+   | `NEXTAUTH_URL` | Yes | Your production URL, e.g. `https://your-app.vercel.app` |
+   | `BLOB_READ_WRITE_TOKEN` | No | Enables real event photo uploads — see §4 |
+   | `RESEND_API_KEY` | No | Enables real email delivery — see §5 |
+   | `AFRICASTALKING_API_KEY` | No | Enables real SMS delivery — see §5 |
+   | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §6 |
+
+3. Deploy. `npm run build` runs the same way it does locally.
+
+## 4. Photo uploads (optional)
+
+Without configuration, event photos stay as the `picsum.photos` placeholder
+used today. To enable real uploads: in the Vercel dashboard, add a Blob
+store to the project (Storage tab) — this automatically injects
+`BLOB_READ_WRITE_TOKEN`. Nothing else to configure; `/api/upload` and the
+event edit page's photo uploader already check for this token.
+
+## 5. Email / SMS (optional)
+
+Every notification the app would send (order confirmations, password
+resets, cancellations, refunds) currently lands in the `NotificationLog`
+table, visible to admins at `/admin/notifications` — see the README's
+"Simulated pieces" section for why. To go live, implement the provider
+call in `src/lib/notifications.ts`'s `sendNotification()` — that function
+is the single choke point every caller already goes through, so nothing
+else in the app needs to change. Resend (email) and Africa's Talking (SMS,
+covers Tanzania) are reasonable low-effort choices, but any provider works.
+
+## 6. Mobile money charging (optional)
+
+Checkout currently uses `src/lib/payments/simulated.ts` — no real charge
+happens, matching how a single-venue pilot actually starts (cash/manual
+mobile money collected in person, marked paid instantly). The chosen
+aggregator is **Airpay Tanzania**, which fronts M-Pesa, Tigo Pesa, and
+Airtel Money behind one merchant integration ("Seamless mobile money").
+
+`src/lib/payments/airpay.ts` and `airpay-crypto.ts` implement Airpay's
+Collection API — OAuth token exchange, the AES-256-CBC/checksum envelope
+their form-encoded calls require, the Seamless charge call, and
+`verifyAirpayOrder()` for polling a charge's final status (their API has
+no webhook — status has to be polled, there's no callback route to build).
+This was built from a merchant-provided API reference, not Airpay's public
+site (they don't publish this), so a few details are documented as
+assumptions in `airpay-crypto.ts`'s comments (exact IV encoding in
+`encdata`, the checksum's date format) — **test against Airpay's sandbox
+and confirm these before any real charge runs through it.**
+
+Set all seven `AIRPAY_*` env vars (see `.env.example`) to activate it —
+`getActivePaymentProvider()` in `src/lib/payments/index.ts` only switches
+over once every one of them is present. It is **not** wired into checkout
+yet — see `airpay.ts`'s comments and the README for why (a real charge is
+asynchronous; checkout needs a "waiting for you to confirm on your phone"
+state and a network selector that don't exist yet), and treat that as a
+follow-up task once credentials are verified against the sandbox.
+
+## Post-deploy checklist
+
+- [ ] Log in as the seeded admin (`admin@eventpassafrica.dev` if you ran
+      the seed script) and change that password immediately, or delete
+      the seed accounts and create a real admin via the database directly.
+- [ ] Confirm `/admin/notifications` is reachable — it's how you'll relay
+      password resets and other notifications until a real email/SMS
+      provider is wired up.
+- [ ] Do one real offline test: load the app once online, then disable
+      networking on the device and confirm browsing/buying/scanning still
+      work (this is the entire point of the architecture — worth
+      confirming on the actual deployed build, not just locally).

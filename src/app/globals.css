@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* EventPass Africa brand palette */
+  --helix-blue: #0066ff;
+  --deep-blue: #001a3d;
+  --crimson-red: #e6001a;
+  --silver: #d9d9d9;
+  --gunmetal: #0d0d0d;
+
+  --background: var(--gunmetal);
+  --foreground: #f2f2f2;
+  --surface: #131722;
+  --surface-2: #1b2130;
+  --border: #262d40;
+  --muted: #98a0b3;
+  --accent: var(--helix-blue);
+  --accent-hover: #2b80ff;
+  --accent-soft: rgba(0, 102, 255, 0.15);
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --danger: var(--crimson-red);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-border bg-surface2 px-5 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface2 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted;
+  }
+  .pill {
+    @apply inline-flex items-center rounded-full border border-border bg-surface2 px-3 py-1 text-xs font-medium text-muted;
+  }
+}

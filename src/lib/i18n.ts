@@ -1,0 +1,110 @@
+export type Locale = "en" | "sw";
+
+// Swahili strings are a first-pass machine translation for the pilot demo —
+// flagged for native-speaker review before real use. Covers the highest-
+// traffic surfaces (nav, home, login, gate scanner) rather than every
+// string in the app; see README for what's not yet covered.
+export const dictionaries = {
+  en: {
+    "nav.browse": "Browse",
+    "nav.myTickets": "My Tickets",
+    "nav.dashboard": "Dashboard",
+    "nav.admin": "Admin",
+    "nav.logIn": "Log in",
+    "nav.signUp": "Sign up",
+    "nav.signOut": "Sign out",
+
+    "home.tagline": "CONNECT. MANAGE. EXPERIENCE.",
+    "home.badge": "Works with zero connectivity",
+    "home.heroTitle": "Find your next event. Buy tickets in seconds — online or off.",
+    "home.heroSubtitle":
+      "EventPass Africa keeps working when the network doesn't: browse, buy, and check in from local data, then sync automatically the moment you're back online.",
+    "home.offlineNotice": "You're offline right now — showing events cached on this device.",
+    "home.searchPlaceholder": "Search events, venues, cities…",
+    "home.categoryAll": "All",
+    "home.noEventsCached":
+      "No events cached on this device yet. Connect once to load the catalog — after that, browsing works fully offline.",
+    "home.noEventsMatch": "No events match your search.",
+    "home.fromPrice": "From",
+
+    "login.welcomeBack": "Welcome back",
+    "login.subtitle": "Log in to buy tickets or manage your events.",
+    "login.email": "Email",
+    "login.password": "Password",
+    "login.logIn": "Log in",
+    "login.signingIn": "Signing in…",
+    "login.forgotPassword": "Forgot password?",
+    "login.demoAccounts": "Demo accounts",
+    "login.noAccount": "Don't have an account?",
+    "login.signUp": "Sign up",
+    "login.offlineNotice":
+      "You're offline. Logging in for the first time needs a connection — once you've logged in on this device before, you'll stay signed in offline automatically.",
+
+    "scan.title": "Gate check-in",
+    "scan.offlinePrefix": "Offline — ",
+    "scan.validatingAgainst": "Validating against",
+    "scan.ticket": "ticket stored on this device.",
+    "scan.tickets": "tickets stored on this device.",
+    "scan.checkedIn": "Checked in",
+    "scan.enterOrScan": "Enter or scan ticket code",
+    "scan.checkIn": "Check in",
+    "scan.scanWithCamera": "Scan with camera",
+    "scan.stopCameraScan": "Stop camera scan",
+    "scan.entryGranted": "Entry granted.",
+    "scan.alreadyCheckedIn": "Already checked in.",
+    "scan.notFound": "No ticket found with this code on this device.",
+    "scan.refunded": "This ticket was refunded — entry denied.",
+  },
+  sw: {
+    "nav.browse": "Vinjari",
+    "nav.myTickets": "Tiketi Zangu",
+    "nav.dashboard": "Dashibodi",
+    "nav.admin": "Msimamizi",
+    "nav.logIn": "Ingia",
+    "nav.signUp": "Jisajili",
+    "nav.signOut": "Toka",
+
+    "home.tagline": "UNGANISHA. SIMAMIA. FURAHIA.",
+    "home.badge": "Inafanya kazi bila mtandao",
+    "home.heroTitle": "Pata tukio lako lijalo. Nunua tiketi kwa sekunde — mtandaoni au la.",
+    "home.heroSubtitle":
+      "EventPass Africa inaendelea kufanya kazi hata bila mtandao: vinjari, nunua, na ingia kwa kutumia data iliyohifadhiwa, kisha isawazishe kiotomatiki mara mtandao unaporudi.",
+    "home.offlineNotice": "Huna mtandao kwa sasa — tunaonyesha matukio yaliyohifadhiwa kwenye kifaa hiki.",
+    "home.searchPlaceholder": "Tafuta matukio, kumbi, miji…",
+    "home.categoryAll": "Yote",
+    "home.noEventsCached":
+      "Hakuna matukio yaliyohifadhiwa kwenye kifaa hiki bado. Unganisha mara moja ili kupakia orodha — baada ya hapo, unaweza kuvinjari bila mtandao kabisa.",
+    "home.noEventsMatch": "Hakuna matukio yanayolingana na utafutaji wako.",
+    "home.fromPrice": "Kuanzia",
+
+    "login.welcomeBack": "Karibu tena",
+    "login.subtitle": "Ingia ili kununua tiketi au kusimamia matukio yako.",
+    "login.email": "Barua pepe",
+    "login.password": "Nenosiri",
+    "login.logIn": "Ingia",
+    "login.signingIn": "Inaingia…",
+    "login.forgotPassword": "Umesahau nenosiri?",
+    "login.demoAccounts": "Akaunti za majaribio",
+    "login.noAccount": "Huna akaunti?",
+    "login.signUp": "Jisajili",
+    "login.offlineNotice":
+      "Huna mtandao. Kuingia kwa mara ya kwanza kunahitaji mtandao — ukishaingia kwenye kifaa hiki mara moja, utabaki umeingia hata bila mtandao.",
+
+    "scan.title": "Uthibitisho wa Mlangoni",
+    "scan.offlinePrefix": "Hakuna mtandao — ",
+    "scan.validatingAgainst": "Inathibitisha dhidi ya",
+    "scan.ticket": "tiketi iliyohifadhiwa kwenye kifaa hiki.",
+    "scan.tickets": "tiketi zilizohifadhiwa kwenye kifaa hiki.",
+    "scan.checkedIn": "Wamethibitishwa",
+    "scan.enterOrScan": "Weka au changanua msimbo wa tiketi",
+    "scan.checkIn": "Thibitisha",
+    "scan.scanWithCamera": "Changanua kwa kamera",
+    "scan.stopCameraScan": "Simamisha kamera",
+    "scan.entryGranted": "Ruhusa ya kuingia imetolewa.",
+    "scan.alreadyCheckedIn": "Tayari amethibitishwa.",
+    "scan.notFound": "Hakuna tiketi yenye msimbo huu kwenye kifaa hiki.",
+    "scan.refunded": "Tiketi hii ilirejeshewa fedha — kuingia kumekataliwa.",
+  },
+} as const;
+
+export type TranslationKey = keyof (typeof dictionaries)["en"];

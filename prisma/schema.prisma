@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// role is USER | ADMIN. Anyone can organize events regardless of role —
+// ADMIN only gates access to the /admin moderation panel.
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("USER")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  events               Event[]              @relation("Organizer")
+  orders               Order[]
+  mobileMoneyAccounts  MobileMoneyAccount[]
+  settlements          Settlement[]
+  passwordResetTokens  PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// provider is one of: MPESA_TZ | TIGO_PESA | AIRTEL_MONEY | HALOPESA
+// (plain string — SQLite has no native enum type)
+model MobileMoneyAccount {
+  id          String   @id @default(cuid())
+  provider    String
+  phoneNumber String
+  accountName String
+  isDefault   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  organizerId String
+  organizer   User   @relation(fields: [organizerId], references: [id])
+
+  settlements Settlement[]
+}
+
+model Settlement {
+  id                String   @id @default(cuid())
+  periodStart       DateTime
+  periodEnd         DateTime
+  // A settlement only ever covers orders in one currency — runSettlement
+  // groups an organizer's unsettled orders by currency and creates one
+  // settlement per group, so this never mixes amounts across currencies.
+  currency          String   @default("TZS")
+  grossCents        Int
+  platformFeeCents  Int
+  netCents          Int
+  status            String   @default("PENDING")
+  payoutReference   String?
+  createdAt         DateTime @default(now())
+  paidAt            DateTime?
+
+  organizerId String
+  organizer   User   @relation(fields: [organizerId], references: [id])
+
+  mobileMoneyAccountId String
+  mobileMoneyAccount   MobileMoneyAccount @relation(fields: [mobileMoneyAccountId], references: [id])
+
+  items SettlementItem[]
+}
+
+model SettlementItem {
+  id          String @id @default(cuid())
+  amountCents Int
+
+  settlementId String
+  settlement   Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+}
+
+// status is LIVE | CANCELLED. Cancelled events are hidden from public
+// browse but stay visible (badged) to the organizer and existing ticket
+// holders.
+model Event {
+  id          String   @id @default(cuid())
+  clientId    String?  @unique
+  slug        String   @unique
+  title       String
+  description String
+  category    String
+  venue       String
+  city        String
+  startsAt    DateTime
+  imageUrl    String
+  status      String   @default("LIVE")
+  // ISO 4217 code. All ticket types on an event share its currency — see
+  // CURRENCIES in src/lib/currency.ts for the supported set.
+  currency    String   @default("TZS")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organizerId String
+  organizer   User   @relation("Organizer", fields: [organizerId], references: [id])
+
+  ticketTypes TicketType[]
+  orders      Order[]
+  tickets     Ticket[]
+}
+
+model TicketType {
+  id            String   @id @default(cuid())
+  clientId      String?  @unique
+  name          String
+  description   String   @default("")
+  priceCents    Int
+  quantityTotal Int
+  quantitySold  Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  orderItems OrderItem[]
+  tickets    Ticket[]
+}
+
+model Order {
+  id         String   @id @default(cuid())
+  clientId   String?  @unique
+  status     String   @default("PAID")
+  totalCents Int
+  // Snapshot of the event's currency at purchase time (events can't change
+  // currency once they have sales — see handleEditEvent).
+  currency   String   @default("TZS")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  items           OrderItem[]
+  tickets         Ticket[]
+  settlementItems SettlementItem[]
+}
+
+model OrderItem {
+  id            String @id @default(cuid())
+  quantity      Int
+  unitPriceCents Int
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+}
+
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  bucketKey String
+  createdAt DateTime @default(now())
+
+  @@index([bucketKey, createdAt])
+}
+
+// channel is EMAIL | SMS. status is LOGGED (no provider configured — visible
+// in /admin for manual relay during the pilot) | SENT | FAILED.
+model NotificationLog {
+  id        String   @id @default(cuid())
+  type      String
+  channel   String
+  recipient String
+  subject   String
+  body      String
+  status    String   @default("LOGGED")
+  createdAt DateTime @default(now())
+}
+
+model Ticket {
+  id          String    @id @default(cuid())
+  clientId    String?   @unique
+  code        String    @unique
+  checkedIn   Boolean   @default(false)
+  checkedInAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+}
