@@ -52,6 +52,7 @@ export default function DashboardPage() {
           <p className="text-sm text-muted">{user.name}</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/dashboard/analytics" className="btn-secondary">Analytics</Link>
           <Link href="/dashboard/settlements" className="btn-secondary">Settlements</Link>
           <Link href="/dashboard/events/new" className="btn-primary">+ Create Event</Link>
         </div>

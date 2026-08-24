@@ -14,6 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <p className="mb-6 text-sm text-muted">Platform moderation & pilot support tools.</p>
       <nav className="mb-6 flex flex-wrap gap-2">
         {[
+          ["/admin/analytics", "Analytics"],
           ["/admin/users", "Users"],
           ["/admin/events", "Events"],
           ["/admin/orders", "Orders"],
