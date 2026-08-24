@@ -64,6 +64,7 @@ export default function Navbar() {
         <nav className="hidden items-center gap-6 md:flex">
           <NavLink href="/">{t("nav.browse")}</NavLink>
           {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
+          {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
           {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
           {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
         </nav>

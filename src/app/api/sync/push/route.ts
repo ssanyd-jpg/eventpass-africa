@@ -9,6 +9,11 @@ import {
   handleEditEvent,
   handleCancelEvent,
   handleRefundOrder,
+  handleApplyVendor,
+  handleAddVendor,
+  handleApproveVendor,
+  handleRejectVendor,
+  handleCheckInVendor,
 } from "@/lib/sync-handlers";
 
 export async function POST(request: Request) {
@@ -58,6 +63,21 @@ export async function POST(request: Request) {
         break;
       case "REFUND_ORDER":
         result = await handleRefundOrder(session.user.id, body.payload);
+        break;
+      case "APPLY_VENDOR":
+        result = await handleApplyVendor(session.user.id, body.payload);
+        break;
+      case "ADD_VENDOR":
+        result = await handleAddVendor(session.user.id, body.payload);
+        break;
+      case "APPROVE_VENDOR":
+        result = await handleApproveVendor(session.user.id, body.payload);
+        break;
+      case "REJECT_VENDOR":
+        result = await handleRejectVendor(session.user.id, body.payload);
+        break;
+      case "CHECK_IN_VENDOR":
+        result = await handleCheckInVendor(body.payload);
         break;
       default:
         return NextResponse.json({ ok: false, reason: "UNKNOWN_OP" }, { status: 400 });

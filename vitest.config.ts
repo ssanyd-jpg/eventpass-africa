@@ -17,6 +17,6 @@ export default defineConfig({
     // local file) — the 5s default is too tight for tests that chain a
     // handful of Prisma calls, and the heavier settlement/refund tests
     // chain several sequential setup calls plus a transaction each.
-    testTimeout: 45000,
+    testTimeout: 60000,
   },
 });

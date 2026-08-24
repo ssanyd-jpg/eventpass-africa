@@ -8,6 +8,7 @@ export const dictionaries = {
   en: {
     "nav.browse": "Browse",
     "nav.myTickets": "My Tickets",
+    "nav.myVendorApps": "My Vendor Apps",
     "nav.dashboard": "Dashboard",
     "nav.admin": "Admin",
     "nav.logIn": "Log in",
@@ -54,10 +55,22 @@ export const dictionaries = {
     "scan.alreadyCheckedIn": "Already checked in.",
     "scan.notFound": "No ticket found with this code on this device.",
     "scan.refunded": "This ticket was refunded — entry denied.",
+
+    "scan.modeAttendees": "Attendees",
+    "scan.modeVendors": "Vendors",
+    "scan.vendor": "vendor badge stored on this device.",
+    "scan.vendors": "vendor badges stored on this device.",
+    "scan.enterOrScanVendor": "Enter or scan vendor badge code",
+    "scan.checkInVendor": "Check in vendor",
+    "scan.vendorEntryGranted": "Vendor entry granted.",
+    "scan.vendorAlreadyCheckedIn": "Vendor already checked in.",
+    "scan.vendorNotFound": "No vendor badge found with this code on this device.",
+    "scan.vendorNotApproved": "This vendor hasn't been approved yet — entry denied.",
   },
   sw: {
     "nav.browse": "Vinjari",
     "nav.myTickets": "Tiketi Zangu",
+    "nav.myVendorApps": "Maombi Yangu ya Wachuuzi",
     "nav.dashboard": "Dashibodi",
     "nav.admin": "Msimamizi",
     "nav.logIn": "Ingia",
@@ -104,6 +117,17 @@ export const dictionaries = {
     "scan.alreadyCheckedIn": "Tayari amethibitishwa.",
     "scan.notFound": "Hakuna tiketi yenye msimbo huu kwenye kifaa hiki.",
     "scan.refunded": "Tiketi hii ilirejeshewa fedha — kuingia kumekataliwa.",
+
+    "scan.modeAttendees": "Wageni",
+    "scan.modeVendors": "Wachuuzi",
+    "scan.vendor": "beji ya muuzaji iliyohifadhiwa kwenye kifaa hiki.",
+    "scan.vendors": "beji za wachuuzi zilizohifadhiwa kwenye kifaa hiki.",
+    "scan.enterOrScanVendor": "Weka au changanua msimbo wa beji ya muuzaji",
+    "scan.checkInVendor": "Thibitisha muuzaji",
+    "scan.vendorEntryGranted": "Ruhusa ya kuingia ya muuzaji imetolewa.",
+    "scan.vendorAlreadyCheckedIn": "Muuzaji tayari amethibitishwa.",
+    "scan.vendorNotFound": "Hakuna beji ya muuzaji yenye msimbo huu kwenye kifaa hiki.",
+    "scan.vendorNotApproved": "Muuzaji huyu bado hajaidhinishwa — kuingia kumekataliwa.",
   },
 } as const;
 

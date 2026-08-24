@@ -6,7 +6,14 @@ export async function GET() {
   const session = await auth();
 
   const events = await prisma.event.findMany({
-    include: { ticketTypes: true, organizer: { select: { name: true } } },
+    include: {
+      ticketTypes: true,
+      organizer: { select: { name: true } },
+      // Public summary only — no contact info/badgeCode. Full vendor
+      // detail (all statuses) goes out separately in myVendors below,
+      // gated to the vendor's own owner or the event's organizer.
+      vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+    },
     orderBy: { startsAt: "asc" },
   });
 
@@ -23,6 +30,8 @@ export async function GET() {
     imageUrl: e.imageUrl,
     status: e.status,
     currency: e.currency,
+    vendorApplicationsOpen: e.vendorApplicationsOpen,
+    vendorStallFeeCents: e.vendorStallFeeCents,
     organizerId: e.organizerId,
     organizerName: e.organizer.name,
     createdAt: e.createdAt.toISOString(),
@@ -36,6 +45,7 @@ export async function GET() {
       quantityTotal: tt.quantityTotal,
       quantitySold: tt.quantitySold,
     })),
+    vendors: e.vendors,
   }));
 
   const payload: Record<string, unknown> = {
@@ -84,6 +94,34 @@ export async function GET() {
         checkedIn: t.checkedIn,
         checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
       })),
+    }));
+
+    const myVendors = await prisma.vendor.findMany({
+      where: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] },
+      include: { event: { select: { id: true, clientId: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myVendors = myVendors.map((v) => ({
+      id: v.id,
+      clientId: v.clientId,
+      eventId: v.eventId,
+      eventClientId: v.event.clientId,
+      name: v.name,
+      category: v.category,
+      description: v.description,
+      contactEmail: v.contactEmail,
+      contactPhone: v.contactPhone,
+      status: v.status,
+      boothNumber: v.boothNumber,
+      stallFeeCents: v.stallFeeCents,
+      currency: v.currency,
+      feeStatus: v.feeStatus,
+      ownerUserId: v.ownerUserId,
+      badgeCode: v.badgeCode,
+      checkedIn: v.checkedIn,
+      checkedInAt: v.checkedInAt ? v.checkedInAt.toISOString() : null,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
     }));
 
     const accounts = await prisma.mobileMoneyAccount.findMany({

@@ -46,6 +46,8 @@ export default function EditEventPage() {
   const [city, setCity] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
+  const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
+  const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,8 @@ export default function EditEventPage() {
       setVenue(event.venue);
       setCity(event.city);
       setStartsAt(isoToLocalInput(event.startsAt));
+      setVendorApplicationsOpen(event.vendorApplicationsOpen);
+      setVendorStallFeeMajor(String(event.vendorStallFeeCents / 100));
       setTicketTypes(
         event.ticketTypes.map((tt) => ({
           key: tt.id,
@@ -180,6 +184,8 @@ export default function EditEventPage() {
       quantityTotal: parseInt(t.quantity, 10),
     }));
 
+    const vendorStallFeeCents = Math.round(parseFloat(vendorStallFeeMajor || "0") * 100);
+
     await db.events.put({
       ...event,
       title: title.trim(),
@@ -189,6 +195,8 @@ export default function EditEventPage() {
       venue: venue.trim(),
       city: city.trim(),
       startsAt: new Date(startsAt).toISOString(),
+      vendorApplicationsOpen,
+      vendorStallFeeCents,
       ticketTypes: [
         ...event.ticketTypes.filter((tt) => !localTicketTypes.some((u) => u.id === tt.id)),
         ...localTicketTypes,
@@ -206,6 +214,8 @@ export default function EditEventPage() {
       venue: venue.trim(),
       city: city.trim(),
       startsAt: new Date(startsAt).toISOString(),
+      vendorApplicationsOpen,
+      vendorStallFeeCents,
       ticketTypes: payloadTicketTypes.map((t) => ({
         id: t.id,
         clientId: t.clientId,
@@ -377,6 +387,35 @@ export default function EditEventPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={vendorApplicationsOpen}
+              onChange={(e) => setVendorApplicationsOpen(e.target.checked)}
+            />
+            <span className="label !mb-0">Accept vendor applications</span>
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Lets food stalls, merch tables, and other exhibitors apply to this event.
+          </p>
+          {vendorApplicationsOpen && (
+            <div className="mt-3">
+              <label className="label" htmlFor="vendorStallFee">Stall fee ({currency})</label>
+              <input
+                id="vendorStallFee"
+                type="number"
+                min="0"
+                step="500"
+                className="input"
+                value={vendorStallFeeMajor}
+                onChange={(e) => setVendorStallFeeMajor(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted">0 means vendors apply for free.</p>
+            </div>
+          )}
         </div>
 
         {error && <p className="text-sm text-danger">{error}</p>}

@@ -22,7 +22,8 @@ export async function createTestEvent(
   ticketTypes: Array<{ priceCents: number; quantityTotal: number; quantitySold?: number }> = [
     { priceCents: 200000, quantityTotal: 10 },
   ],
-  currency = "TZS"
+  currency = "TZS",
+  vendorOptions: { vendorApplicationsOpen?: boolean; vendorStallFeeCents?: number } = {}
 ) {
   return prisma.event.create({
     data: {
@@ -36,6 +37,8 @@ export async function createTestEvent(
       imageUrl: "https://example.com/x.jpg",
       currency,
       organizerId,
+      vendorApplicationsOpen: vendorOptions.vendorApplicationsOpen ?? false,
+      vendorStallFeeCents: vendorOptions.vendorStallFeeCents ?? 0,
       ticketTypes: {
         create: ticketTypes.map((tt) => ({
           name: "General",

@@ -25,6 +25,7 @@ model User {
   mobileMoneyAccounts  MobileMoneyAccount[]
   settlements          Settlement[]
   passwordResetTokens  PasswordResetToken[]
+  vendorApplications   Vendor[]
 }
 
 model PasswordResetToken {
@@ -109,6 +110,9 @@ model Event {
   // ISO 4217 code. All ticket types on an event share its currency — see
   // CURRENCIES in src/lib/currency.ts for the supported set.
   currency    String   @default("TZS")
+  // 0 means no fee — vendors can still apply/be added, just with feeStatus NONE.
+  vendorApplicationsOpen Boolean @default(false)
+  vendorStallFeeCents    Int     @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -118,6 +122,7 @@ model Event {
   ticketTypes TicketType[]
   orders      Order[]
   tickets     Ticket[]
+  vendors     Vendor[]
 }
 
 model TicketType {
@@ -209,4 +214,34 @@ model Ticket {
 
   ticketTypeId String
   ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+}
+
+// status is PENDING | APPROVED | REJECTED. feeStatus is NONE | PAID | REFUNDED
+// (plain-string "enum" convention — see MobileMoneyAccount.provider).
+// stallFeeCents/currency snapshot Event.vendorStallFeeCents/currency at
+// application time, same reasoning as Order.currency snapshotting Event.currency.
+model Vendor {
+  id            String    @id @default(cuid())
+  clientId      String?   @unique
+  name          String
+  category      String // Food | Merchandise | Services | Other
+  description   String    @default("")
+  contactEmail  String    @default("")
+  contactPhone  String    @default("")
+  status        String    @default("PENDING")
+  boothNumber   String?
+  stallFeeCents Int       @default(0)
+  currency      String    @default("TZS")
+  feeStatus     String    @default("NONE")
+  badgeCode     String?   @unique
+  checkedIn     Boolean   @default(false)
+  checkedInAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  ownerUserId String?
+  owner       User?   @relation(fields: [ownerUserId], references: [id])
 }

@@ -25,6 +25,11 @@ export default function ManageEventPage() {
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [event?.id]);
 
+  const vendors = useLiveQuery(async () => {
+    if (!event) return [];
+    return db.vendors.where("eventId").equals(event.id).toArray();
+  }, [event?.id]);
+
   if (event === undefined) {
     return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
   }
@@ -90,6 +95,7 @@ export default function ManageEventPage() {
         </div>
         <div className="flex gap-2">
           <Link href={`/dashboard/events/${event.id}/edit`} className="btn-secondary">Edit</Link>
+          <Link href={`/dashboard/events/${event.id}/vendors`} className="btn-secondary">Vendors</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>
       </div>
@@ -100,7 +106,7 @@ export default function ManageEventPage() {
         </button>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card p-5">
           <p className="text-xs uppercase tracking-wide text-muted">Tickets sold</p>
           <p className="mt-1 text-2xl font-bold">{tickets.length}</p>
@@ -113,6 +119,13 @@ export default function ManageEventPage() {
           <p className="text-xs uppercase tracking-wide text-muted">Gross revenue</p>
           <p className="mt-1 text-2xl font-bold">
             {formatCents(activeOrders.reduce((s, o) => s + o.totalCents, 0), event.currency)}
+          </p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Vendors</p>
+          <p className="mt-1 text-2xl font-bold">
+            {(vendors ?? []).filter((v) => v.status === "APPROVED").length}
+            <span className="text-base font-normal text-muted"> approved</span>
           </p>
         </div>
       </div>

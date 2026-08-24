@@ -17,6 +17,8 @@ const ticketTypeInputSchema = z.object({
   quantityTotal: z.number().int().min(1),
 });
 
+export const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"] as const;
+
 export const payloadSchemas = {
   CREATE_EVENT: z.object({
     eventId: z.string().min(1),
@@ -79,6 +81,8 @@ export const payloadSchemas = {
         })
       )
       .optional(),
+    vendorApplicationsOpen: z.boolean().optional(),
+    vendorStallFeeCents: z.number().int().min(0).optional(),
   }),
   CANCEL_EVENT: z.object({
     eventId: z.string().min(1),
@@ -88,6 +92,48 @@ export const payloadSchemas = {
     clientId: z.string().min(1),
     orderId: z.string().min(1),
     orderClientId: z.string().nullable().optional(),
+  }),
+  // Deliberately excludes feeStatus/stallFeeCents/currency — the server
+  // derives these from the event itself rather than trusting client input,
+  // same discipline SELL_TICKETS uses for totalCents.
+  APPLY_VENDOR: z.object({
+    clientId: z.string().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    name: z.string().min(1).max(120),
+    category: z.enum(VENDOR_CATEGORIES),
+    description: z.string().max(1000).optional(),
+    contactEmail: z.string().email().max(160),
+    contactPhone: z.string().min(6).max(20),
+  }),
+  ADD_VENDOR: z.object({
+    clientId: z.string().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    name: z.string().min(1).max(120),
+    category: z.enum(VENDOR_CATEGORIES),
+    description: z.string().max(1000).optional(),
+    contactEmail: z.string().email().max(160).optional(),
+    contactPhone: z.string().min(6).max(20).optional(),
+    boothNumber: z.string().max(20).optional(),
+    badgeCode: z.string().min(1).max(40),
+    feeStatus: z.enum(["NONE", "PAID"]).optional(),
+  }),
+  APPROVE_VENDOR: z.object({
+    vendorId: z.string().min(1),
+    vendorClientId: z.string().nullable().optional(),
+    boothNumber: z.string().max(20).optional(),
+    badgeCode: z.string().min(1).max(40),
+  }),
+  REJECT_VENDOR: z.object({
+    vendorId: z.string().min(1),
+    vendorClientId: z.string().nullable().optional(),
+  }),
+  CHECK_IN_VENDOR: z.object({
+    clientId: z.string().min(1),
+    badgeCode: z.string().min(1).max(40),
+    eventId: z.string().min(1),
+    scannedAt: z.string().optional(),
   }),
 } as const;
 
@@ -106,7 +152,11 @@ export async function handleCreateEvent(userId: string, payload: any) {
 
   const existing = await prisma.event.findUnique({
     where: { clientId },
-    include: { ticketTypes: true, organizer: { select: { name: true } } },
+    include: {
+      ticketTypes: true,
+      organizer: { select: { name: true } },
+      vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+    },
   });
   if (existing) {
     return { ok: true, event: shapeEvent(existing, existing.organizer.name) };
@@ -142,7 +192,11 @@ export async function handleCreateEvent(userId: string, payload: any) {
         })),
       },
     },
-    include: { ticketTypes: true, organizer: { select: { name: true } } },
+    include: {
+      ticketTypes: true,
+      organizer: { select: { name: true } },
+      vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+    },
   });
 
   return { ok: true, event: shapeEvent(created, created.organizer.name) };
@@ -162,6 +216,8 @@ export function shapeEvent(e: any, organizerName: string) {
     imageUrl: e.imageUrl,
     status: e.status,
     currency: e.currency,
+    vendorApplicationsOpen: e.vendorApplicationsOpen,
+    vendorStallFeeCents: e.vendorStallFeeCents,
     organizerId: e.organizerId,
     organizerName,
     createdAt: e.createdAt.toISOString(),
@@ -174,6 +230,16 @@ export function shapeEvent(e: any, organizerName: string) {
       priceCents: tt.priceCents,
       quantityTotal: tt.quantityTotal,
       quantitySold: tt.quantitySold,
+    })),
+    // Public summary shape only (approved vendors, no contact info) — this
+    // is the same `events` Dexie table the public pull writes to, so the
+    // shape must match regardless of who's asking. Full vendor detail
+    // lives in the separate `vendors` table/pull field.
+    vendors: (e.vendors ?? []).map((v: any) => ({
+      id: v.id,
+      name: v.name,
+      category: v.category,
+      boothNumber: v.boothNumber,
     })),
   };
 }
@@ -371,6 +437,8 @@ export async function handleEditEvent(userId: string, payload: any) {
     if (payload[key] !== undefined) data[key] = String(payload[key]);
   }
   if (payload.startsAt !== undefined) data.startsAt = new Date(payload.startsAt);
+  if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
+  if (payload.vendorStallFeeCents !== undefined) data.vendorStallFeeCents = Number(payload.vendorStallFeeCents);
 
   if (payload.currency !== undefined && payload.currency !== event.currency) {
     // Changing currency after any ticket has sold would make historical
@@ -423,7 +491,11 @@ export async function handleEditEvent(userId: string, payload: any) {
   const updated = await prisma.event.update({
     where: { id: event.id },
     data,
-    include: { ticketTypes: true, organizer: { select: { name: true } } },
+    include: {
+      ticketTypes: true,
+      organizer: { select: { name: true } },
+      vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+    },
   });
 
   return { ok: true, event: shapeEvent(updated, updated.organizer.name) };
@@ -441,7 +513,11 @@ export async function handleCancelEvent(userId: string, payload: any) {
   const updated = await prisma.event.update({
     where: { id: event.id },
     data: { status: "CANCELLED" },
-    include: { ticketTypes: true, organizer: { select: { name: true } } },
+    include: {
+      ticketTypes: true,
+      organizer: { select: { name: true } },
+      vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+    },
   });
 
   const affectedOrders = await prisma.order.findMany({
@@ -524,4 +600,187 @@ export async function handleRefundOrder(userId: string, payload: any) {
   });
 
   return { ok: true, order: shapeOrder(updated), ticketTypeUpdates };
+}
+
+export function shapeVendor(v: any) {
+  return {
+    id: v.id,
+    clientId: v.clientId,
+    eventId: v.eventId,
+    eventClientId: v.event?.clientId ?? null,
+    name: v.name,
+    category: v.category,
+    description: v.description,
+    contactEmail: v.contactEmail,
+    contactPhone: v.contactPhone,
+    status: v.status,
+    boothNumber: v.boothNumber,
+    stallFeeCents: v.stallFeeCents,
+    currency: v.currency,
+    feeStatus: v.feeStatus,
+    ownerUserId: v.ownerUserId,
+    badgeCode: v.badgeCode,
+    checkedIn: v.checkedIn,
+    checkedInAt: v.checkedInAt ? v.checkedInAt.toISOString() : null,
+    createdAt: v.createdAt.toISOString(),
+    updatedAt: v.updatedAt.toISOString(),
+  };
+}
+
+const vendorInclude = { event: { select: { id: true, clientId: true, organizerId: true } } } as const;
+
+export async function handleApplyVendor(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.vendor.findUnique({ where: { clientId }, include: vendorInclude });
+  if (existing) {
+    return { ok: true, vendor: shapeVendor(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (!event.vendorApplicationsOpen) {
+    return { ok: false, reason: "APPLICATIONS_CLOSED" };
+  }
+
+  const created = await prisma.vendor.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      name: String(payload.name),
+      category: String(payload.category),
+      description: String(payload.description ?? ""),
+      contactEmail: String(payload.contactEmail),
+      contactPhone: String(payload.contactPhone),
+      status: "PENDING",
+      // Derived server-side from the event, never trusted from the client —
+      // same discipline SELL_TICKETS uses for totalCents.
+      stallFeeCents: event.vendorStallFeeCents,
+      currency: event.currency,
+      feeStatus: event.vendorStallFeeCents > 0 ? "PAID" : "NONE",
+      ownerUserId: userId,
+    },
+    include: vendorInclude,
+  });
+
+  return { ok: true, vendor: shapeVendor(created) };
+}
+
+export async function handleAddVendor(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.vendor.findUnique({ where: { clientId }, include: vendorInclude });
+  if (existing) {
+    return { ok: true, vendor: shapeVendor(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizerId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const created = await prisma.vendor.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      name: String(payload.name),
+      category: String(payload.category),
+      description: String(payload.description ?? ""),
+      contactEmail: String(payload.contactEmail ?? ""),
+      contactPhone: String(payload.contactPhone ?? ""),
+      status: "APPROVED",
+      boothNumber: payload.boothNumber ? String(payload.boothNumber) : null,
+      badgeCode: String(payload.badgeCode),
+      feeStatus: payload.feeStatus === "PAID" ? "PAID" : "NONE",
+      currency: event.currency,
+    },
+    include: vendorInclude,
+  });
+
+  return { ok: true, vendor: shapeVendor(created) };
+}
+
+async function resolveVendor(vendorId: string, vendorClientId?: string | null) {
+  return (
+    (await prisma.vendor.findUnique({ where: { id: vendorId }, include: vendorInclude })) ??
+    (vendorClientId
+      ? await prisma.vendor.findUnique({ where: { clientId: vendorClientId }, include: vendorInclude })
+      : null)
+  );
+}
+
+export async function handleApproveVendor(userId: string, payload: any) {
+  const vendor = await resolveVendor(String(payload.vendorId), payload.vendorClientId);
+  if (!vendor) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
+  }
+  if (vendor.event.organizerId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (vendor.status === "APPROVED") {
+    return { ok: true, vendor: shapeVendor(vendor) };
+  }
+
+  const updated = await prisma.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      status: "APPROVED",
+      boothNumber: payload.boothNumber ? String(payload.boothNumber) : vendor.boothNumber,
+      badgeCode: String(payload.badgeCode),
+    },
+    include: vendorInclude,
+  });
+
+  return { ok: true, vendor: shapeVendor(updated) };
+}
+
+export async function handleRejectVendor(userId: string, payload: any) {
+  const vendor = await resolveVendor(String(payload.vendorId), payload.vendorClientId);
+  if (!vendor) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
+  }
+  if (vendor.event.organizerId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (vendor.status === "REJECTED") {
+    return { ok: true, vendor: shapeVendor(vendor) };
+  }
+
+  const updated = await prisma.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      status: "REJECTED",
+      // Symbolic — no real money moves anywhere in this app yet (see
+      // README's "Simulated pieces"), matching how ticket refunds work.
+      feeStatus: vendor.feeStatus === "PAID" ? "REFUNDED" : vendor.feeStatus,
+    },
+    include: vendorInclude,
+  });
+
+  return { ok: true, vendor: shapeVendor(updated) };
+}
+
+export async function handleCheckInVendor(payload: any) {
+  const badgeCode = String(payload.badgeCode);
+  const vendor = await prisma.vendor.findUnique({ where: { badgeCode }, include: vendorInclude });
+  if (!vendor) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_FOUND" };
+  }
+  if (vendor.status !== "APPROVED") {
+    return { ok: false, reason: "NOT_APPROVED" };
+  }
+  if (vendor.checkedIn) {
+    return { ok: true, vendor: shapeVendor(vendor), alreadyCheckedIn: true };
+  }
+  const updated = await prisma.vendor.update({
+    where: { id: vendor.id },
+    data: { checkedIn: true, checkedInAt: new Date(payload.scannedAt ?? Date.now()) },
+    include: vendorInclude,
+  });
+  return { ok: true, vendor: shapeVendor(updated) };
 }

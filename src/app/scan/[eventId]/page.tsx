@@ -11,9 +11,10 @@ import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 
 type ScanResult = {
-  kind: "valid" | "already" | "invalid" | "refunded";
+  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved";
   message: string;
   ticketTypeName?: string;
+  boothNumber?: string | null;
   code: string;
 };
 
@@ -22,6 +23,7 @@ export default function GateScannerPage() {
   const eventId = decodeURIComponent(rawEventId);
   const online = useOnlineStatus();
   const { t } = useTranslation();
+  const [mode, setMode] = useState<"attendee" | "vendor">("attendee");
   const [code, setCode] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +55,13 @@ export default function GateScannerPage() {
   );
   const checkedInCount = tickets.filter((t) => t.checkedIn).length;
 
+  const vendors = useLiveQuery(async () => {
+    if (!event) return [];
+    return db.vendors.where("eventId").equals(event.id).toArray();
+  }, [event?.id]);
+  const approvedVendors = useMemo(() => (vendors ?? []).filter((v) => v.status === "APPROVED"), [vendors]);
+  const vendorCheckedInCount = approvedVendors.filter((v) => v.checkedIn).length;
+
   // Refs so checkIn's identity stays stable across renders — CameraScanner
   // restarts its camera stream whenever its onDetect callback changes, which
   // would otherwise happen after every single scan (tickets/orders update).
@@ -62,6 +71,8 @@ export default function GateScannerPage() {
   ticketsRef.current = tickets;
   const refundedCodesRef = useRef(refundedCodes);
   refundedCodesRef.current = refundedCodes;
+  const vendorsRef = useRef(vendors);
+  vendorsRef.current = vendors;
 
   const checkIn = useCallback(async (rawCode: string) => {
     const normalized = rawCode.trim().toUpperCase();
@@ -102,9 +113,55 @@ export default function GateScannerPage() {
     setResult({ kind: "valid", message: t("scan.entryGranted"), ticketTypeName: match.ticketTypeName, code: normalized });
   }, [t]);
 
+  const checkInVendor = useCallback(async (rawCode: string) => {
+    const normalized = rawCode.trim().toUpperCase();
+    const event = eventRef.current;
+    if (!normalized || !event) return;
+
+    const match = (vendorsRef.current ?? []).find((v) => v.badgeCode === normalized);
+    if (!match) {
+      setResult({ kind: "invalid", message: t("scan.vendorNotFound"), code: normalized });
+      return;
+    }
+    if (match.status !== "APPROVED") {
+      setResult({ kind: "notApproved", message: t("scan.vendorNotApproved"), code: normalized });
+      return;
+    }
+    if (match.checkedIn) {
+      setResult({
+        kind: "already",
+        message: t("scan.vendorAlreadyCheckedIn"),
+        ticketTypeName: match.name,
+        boothNumber: match.boothNumber,
+        code: normalized,
+      });
+      return;
+    }
+
+    const scannedAt = new Date().toISOString();
+    await db.vendors.put({ ...match, checkedIn: true, checkedInAt: scannedAt, syncStatus: "pending" });
+
+    await queueOp("CHECK_IN_VENDOR", {
+      clientId: newLocalId(),
+      badgeCode: normalized,
+      eventId: event.id,
+      scannedAt,
+    });
+
+    setResult({
+      kind: "valid",
+      message: t("scan.vendorEntryGranted"),
+      ticketTypeName: match.name,
+      boothNumber: match.boothNumber,
+      code: normalized,
+    });
+  }, [t]);
+
+  const activeCheckIn = mode === "attendee" ? checkIn : checkInVendor;
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    checkIn(code);
+    activeCheckIn(code);
     setCode("");
     inputRef.current?.focus();
   }
@@ -133,26 +190,53 @@ export default function GateScannerPage() {
       </Link>
 
       <h1 className="mt-3 text-2xl font-bold">{t("scan.title")}</h1>
-      <p className="text-sm text-muted">
+
+      <div className="mt-4 flex gap-2">
+        <button
+          className={mode === "attendee" ? "btn-primary" : "btn-secondary"}
+          onClick={() => { setMode("attendee"); setResult(null); }}
+        >
+          {t("scan.modeAttendees")}
+        </button>
+        <button
+          className={mode === "vendor" ? "btn-primary" : "btn-secondary"}
+          onClick={() => { setMode("vendor"); setResult(null); }}
+        >
+          {t("scan.modeVendors")}
+        </button>
+      </div>
+
+      <p className="mt-3 text-sm text-muted">
         {!online && t("scan.offlinePrefix")}
-        {t("scan.validatingAgainst")} {tickets.length} {tickets.length === 1 ? t("scan.ticket") : t("scan.tickets")}
+        {mode === "attendee" ? (
+          <>{t("scan.validatingAgainst")} {tickets.length} {tickets.length === 1 ? t("scan.ticket") : t("scan.tickets")}</>
+        ) : (
+          <>{t("scan.validatingAgainst")} {approvedVendors.length} {approvedVendors.length === 1 ? t("scan.vendor") : t("scan.vendors")}</>
+        )}
       </p>
 
       <div className="card mt-5 flex items-center justify-between p-5">
         <div>
           <p className="text-xs uppercase tracking-wide text-muted">{t("scan.checkedIn")}</p>
-          <p className="text-2xl font-bold">{checkedInCount} / {tickets.length}</p>
+          <p className="text-2xl font-bold">
+            {mode === "attendee" ? `${checkedInCount} / ${tickets.length}` : `${vendorCheckedInCount} / ${approvedVendors.length}`}
+          </p>
         </div>
         <div className="h-2 w-32 overflow-hidden rounded-full bg-surface2">
           <div
             className="h-full bg-ok transition-all"
-            style={{ width: `${tickets.length ? (checkedInCount / tickets.length) * 100 : 0}%` }}
+            style={{
+              width:
+                mode === "attendee"
+                  ? `${tickets.length ? (checkedInCount / tickets.length) * 100 : 0}%`
+                  : `${approvedVendors.length ? (vendorCheckedInCount / approvedVendors.length) * 100 : 0}%`,
+            }}
           />
         </div>
       </div>
 
       <div className="mt-5">
-        <CameraScanner onDetect={checkIn} />
+        <CameraScanner onDetect={activeCheckIn} />
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2">
@@ -161,10 +245,12 @@ export default function GateScannerPage() {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder={t("scan.enterOrScan")}
+          placeholder={mode === "attendee" ? t("scan.enterOrScan") : t("scan.enterOrScanVendor")}
           className="input font-mono uppercase tracking-widest"
         />
-        <button type="submit" className="btn-primary shrink-0">{t("scan.checkIn")}</button>
+        <button type="submit" className="btn-primary shrink-0">
+          {mode === "attendee" ? t("scan.checkIn") : t("scan.checkInVendor")}
+        </button>
       </form>
 
       {result && (
@@ -178,7 +264,12 @@ export default function GateScannerPage() {
           }`}
         >
           <p className="font-mono text-lg font-bold tracking-widest">{result.code}</p>
-          {result.ticketTypeName && <p className="text-sm text-muted">{result.ticketTypeName}</p>}
+          {result.ticketTypeName && (
+            <p className="text-sm text-muted">
+              {result.ticketTypeName}
+              {result.boothNumber ? ` · Booth ${result.boothNumber}` : ""}
+            </p>
+          )}
           <p
             className={`mt-1 text-lg font-semibold ${
               result.kind === "valid" ? "text-ok" : result.kind === "already" ? "text-warn" : "text-danger"

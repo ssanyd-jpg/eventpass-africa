@@ -85,11 +85,16 @@ export default function NewEventPage() {
       imageUrl,
       status: "LIVE",
       currency,
+      // Vendor applications are off by default — configurable via Edit
+      // once the event exists.
+      vendorApplicationsOpen: false,
+      vendorStallFeeCents: 0,
       organizerId: user.id,
       organizerName: user.name ?? "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ticketTypes: localTicketTypes,
+      vendors: [],
       syncStatus: "pending",
     };
 

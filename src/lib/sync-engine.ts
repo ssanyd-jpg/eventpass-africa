@@ -6,6 +6,7 @@ import {
   newLocalId,
   type LocalEvent,
   type LocalOrder,
+  type LocalVendor,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -103,6 +104,19 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
 
     if (Array.isArray(data.settlements)) {
       await db.settlements.bulkPut(data.settlements);
+    }
+
+    if (Array.isArray(data.myVendors)) {
+      for (const vendor of data.myVendors as LocalVendor[]) {
+        const existing = await db.vendors
+          .where("clientId")
+          .equals(vendor.clientId ?? "")
+          .first();
+        if (existing && existing.id !== vendor.id) {
+          await db.vendors.delete(existing.id);
+        }
+        await db.vendors.put({ ...vendor, syncStatus: "synced" });
+      }
     }
 
     await db.meta.put({ key: "lastSyncedAt", value: new Date().toISOString() });
@@ -214,6 +228,25 @@ async function applyMobileMoneyResult(payload: any, result: any) {
   await db.mobileMoneyAccounts.put({ ...result.account, syncStatus: "synced" });
 }
 
+// Shared by APPLY_VENDOR and ADD_VENDOR — both create a vendor from a
+// client-generated id, same delete-local-then-put-server shape.
+async function applyCreateVendorResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.vendors.delete(localId);
+  await db.vendors.put({ ...result.vendor, syncStatus: "synced" });
+}
+
+// Shared by APPROVE_VENDOR and REJECT_VENDOR — both act on an
+// already-synced vendor id (never a local temp id), so no remap needed.
+async function applyVendorStatusResult(_payload: any, result: any) {
+  await db.vendors.put({ ...result.vendor, syncStatus: "synced" });
+}
+
+async function applyCheckInVendorResult(_payload: any, result: any) {
+  if (!result.vendor) return;
+  await db.vendors.put({ ...result.vendor, syncStatus: "synced" });
+}
+
 export async function flushOutbox(): Promise<{ flushed: number; failed: number }> {
   if (!db || !navigator.onLine) return { flushed: 0, failed: 0 };
 
@@ -267,6 +300,17 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "REFUND_ORDER":
           await applyRefundOrderResult(entry.payload, result);
+          break;
+        case "APPLY_VENDOR":
+        case "ADD_VENDOR":
+          await applyCreateVendorResult(entry.payload, result);
+          break;
+        case "APPROVE_VENDOR":
+        case "REJECT_VENDOR":
+          await applyVendorStatusResult(entry.payload, result);
+          break;
+        case "CHECK_IN_VENDOR":
+          await applyCheckInVendorResult(entry.payload, result);
           break;
       }
 

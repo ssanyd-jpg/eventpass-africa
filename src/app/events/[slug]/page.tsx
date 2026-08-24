@@ -157,6 +157,33 @@ export default function EventDetailPage() {
           <p className="mt-6 whitespace-pre-line leading-relaxed text-foreground/90">
             {event.description}
           </p>
+
+          {(event.vendors.length > 0 || (event.vendorApplicationsOpen && new Date(event.startsAt) > new Date())) && (
+            <div className="mt-8 border-t border-border pt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-semibold">Vendors at this event</h2>
+                {event.vendorApplicationsOpen && new Date(event.startsAt) > new Date() && (
+                  <Link href={`/events/${slug}/vendors/apply`} className="text-sm font-medium text-accent-hover">
+                    Apply as a vendor →
+                  </Link>
+                )}
+              </div>
+              {event.vendors.length === 0 ? (
+                <p className="text-sm text-muted">No vendors confirmed yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {event.vendors.map((v) => (
+                    <li key={v.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
+                      <span>{v.name}</span>
+                      <span className="text-muted">
+                        {v.category}{v.boothNumber ? ` · Booth ${v.boothNumber}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         {event.status === "CANCELLED" ? (
