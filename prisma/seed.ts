@@ -113,6 +113,10 @@ async function main() {
       startsAt: daysFromNow(45, 7, 0),
       imageUrl: "https://picsum.photos/seed/kilimanjaro-marathon/1200/675",
       organizerId: secondOrganizer.id,
+      // Post-race festival has room for free water/gear stalls — demonstrates
+      // the no-fee vendor path.
+      vendorApplicationsOpen: true,
+      vendorStallFeeCents: 0,
       ticketTypes: [
         { name: "10K Entry", priceCents: tzs(25000), quantityTotal: 500 },
         { name: "Full Marathon Entry", priceCents: tzs(45000), quantityTotal: 300 },
@@ -163,6 +167,10 @@ async function main() {
       startsAt: daysFromNow(30, 17, 0),
       imageUrl: "https://picsum.photos/seed/arusha-harvest/1200/675",
       organizerId: secondOrganizer.id,
+      // This event is literally built around vendor stalls (the "40+ local
+      // restaurants" in the description) — demonstrates the paid vendor path.
+      vendorApplicationsOpen: true,
+      vendorStallFeeCents: tzs(15000),
       ticketTypes: [
         { name: "Entry + 5 Tastings", priceCents: tzs(25000), quantityTotal: 350 },
         { name: "Unlimited Tastings", priceCents: tzs(45000), quantityTotal: 150 },
@@ -185,6 +193,8 @@ async function main() {
         startsAt: e.startsAt,
         imageUrl: e.imageUrl,
         currency: "currency" in e ? e.currency : "TZS",
+        vendorApplicationsOpen: "vendorApplicationsOpen" in e ? e.vendorApplicationsOpen : false,
+        vendorStallFeeCents: "vendorStallFeeCents" in e ? e.vendorStallFeeCents : 0,
         organizerId: e.organizerId,
         ticketTypes: { create: e.ticketTypes },
       },

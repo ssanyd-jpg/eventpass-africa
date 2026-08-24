@@ -36,6 +36,11 @@ export default function EventCard({ event }: { event: LocalEvent }) {
             Sold out
           </span>
         )}
+        {event.vendorApplicationsOpen && new Date(event.startsAt) > new Date() && (
+          <span className="absolute bottom-3 left-3 rounded-full bg-accent/90 px-2.5 py-1 text-xs font-semibold text-white">
+            Vendors welcome
+          </span>
+        )}
       </div>
       <div className="space-y-1.5 p-4">
         <p className="text-xs font-medium text-muted">{formatDate(event.startsAt)}</p>

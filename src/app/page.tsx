@@ -12,6 +12,7 @@ const CATEGORIES = ["All", "Music", "Sports", "Comedy", "Conference", "Festival"
 export default function HomePage() {
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
+  const [vendorsOnly, setVendorsOnly] = useState(false);
   const online = useOnlineStatus();
   const { t } = useTranslation();
 
@@ -28,9 +29,11 @@ export default function HomePage() {
         e.title.toLowerCase().includes(q) ||
         e.city.toLowerCase().includes(q) ||
         e.venue.toLowerCase().includes(q);
-      return matchesCategory && matchesQuery;
+      const matchesVendors =
+        !vendorsOnly || (e.vendorApplicationsOpen && new Date(e.startsAt) > new Date());
+      return matchesCategory && matchesQuery && matchesVendors;
     });
-  }, [events, category, query]);
+  }, [events, category, query, vendorsOnly]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6">
@@ -64,12 +67,24 @@ export default function HomePage() {
             </button>
           ))}
         </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("home.searchPlaceholder")}
-          className="input sm:max-w-xs"
-        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setVendorsOnly((v) => !v)}
+            className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+              vendorsOnly
+                ? "border-accent bg-accent text-white"
+                : "border-border bg-surface2 text-muted hover:text-foreground"
+            }`}
+          >
+            Vendors welcome
+          </button>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("home.searchPlaceholder")}
+            className="input sm:max-w-xs"
+          />
+        </div>
       </div>
 
       {filtered === undefined ? (
