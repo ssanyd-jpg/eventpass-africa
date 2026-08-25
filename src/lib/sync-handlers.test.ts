@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { createTestEvent, createTestUser } from "@/lib/test-fixtures";
+import { createTestEvent, createTestUser, createTestOrganization, addMembership } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
   handleCheckIn,
@@ -12,11 +12,21 @@ import {
   handleCheckInVendor,
 } from "@/lib/sync-handlers";
 
+// Every "organizer" in these tests needs a real Organization + OWNER
+// membership behind them now that Event/Vendor ownership checks compare
+// organizationId, not a User id directly.
+async function newOrganizer() {
+  const user = await createTestUser();
+  const organization = await createTestOrganization();
+  await addMembership(organization.id, user.id, "OWNER");
+  return { user, organizationId: organization.id };
+}
+
 describe("handleSellTickets", () => {
   it("creates a PAID order and increments quantitySold", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id, [{ priceCents: 200000, quantityTotal: 10 }]);
+    const event = await createTestEvent(organizationId, [{ priceCents: 200000, quantityTotal: 10 }]);
     const tt = event.ticketTypes[0];
 
     const result = await handleSellTickets(buyer.id, {
@@ -36,9 +46,9 @@ describe("handleSellTickets", () => {
   });
 
   it("uses the exact client-provided ticket codes rather than generating new ones", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organizationId);
     const tt = event.ticketTypes[0];
 
     const result = await handleSellTickets(buyer.id, {
@@ -53,9 +63,9 @@ describe("handleSellTickets", () => {
   });
 
   it("flags the order NEEDS_REVIEW when it oversells a ticket type", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id, [{ priceCents: 100000, quantityTotal: 1, quantitySold: 1 }]);
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1, quantitySold: 1 }]);
     const tt = event.ticketTypes[0];
 
     const result = await handleSellTickets(buyer.id, {
@@ -70,9 +80,9 @@ describe("handleSellTickets", () => {
   });
 
   it("is idempotent — replaying the same clientId doesn't double-sell inventory", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
     const tt = event.ticketTypes[0];
 
     const payload = {
@@ -103,9 +113,9 @@ describe("handleSellTickets", () => {
 
 describe("handleCheckIn", () => {
   async function soldTicket() {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organizationId);
     const tt = event.ticketTypes[0];
     const sale = await handleSellTickets(buyer.id, {
       clientId: `checkin-${Date.now()}-${Math.random()}`,
@@ -140,22 +150,22 @@ describe("handleCheckIn", () => {
 
 describe("handleRefundOrder", () => {
   async function paidOrder() {
-    const organizer = await createTestUser();
+    const { user: organizer, organizationId } = await newOrganizer();
     const buyer = await createTestUser();
-    const event = await createTestEvent(organizer.id, [{ priceCents: 150000, quantityTotal: 10 }]);
+    const event = await createTestEvent(organizationId, [{ priceCents: 150000, quantityTotal: 10 }]);
     const tt = event.ticketTypes[0];
     const sale = await handleSellTickets(buyer.id, {
       clientId: `refund-${Date.now()}-${Math.random()}`,
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`RFD-${Date.now()}-${Math.random()}`] }],
     });
-    return { organizer, buyer, event, tt, orderId: sale.order.id as string };
+    return { organizer, organizationId, buyer, event, tt, orderId: sale.order.id as string };
   }
 
   it("marks the order REFUNDED and gives the ticket type its inventory back", async () => {
-    const { organizer, tt, orderId } = await paidOrder();
+    const { organizer, organizationId, tt, orderId } = await paidOrder();
 
-    const result = await handleRefundOrder(organizer.id, { orderId });
+    const result = await handleRefundOrder(organizer.id, organizationId, { orderId });
 
     expect(result.ok).toBe(true);
     expect(result.order.status).toBe("REFUNDED");
@@ -163,25 +173,38 @@ describe("handleRefundOrder", () => {
     expect(updatedTt.quantitySold).toBe(0);
   });
 
-  it("refuses to refund an order that isn't yours", async () => {
-    const { orderId } = await paidOrder();
-    const someoneElse = await createTestUser();
+  it("same-org staff can refund an order, not just the org's owner", async () => {
+    const { organizationId, orderId, tt } = await paidOrder();
+    const staff = await createTestUser();
+    await addMembership(organizationId, staff.id, "STAFF");
 
-    const result = await handleRefundOrder(someoneElse.id, { orderId });
+    const result = await handleRefundOrder(staff.id, organizationId, { orderId });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("REFUNDED");
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0);
+  });
+
+  it("refuses to refund an order from a different organization", async () => {
+    const { orderId } = await paidOrder();
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+
+    const result = await handleRefundOrder(someoneElse.id, someoneElseOrgId, { orderId });
 
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("FORBIDDEN");
   });
 
   it("blocks refunding an order that's already been settled", async () => {
-    const { organizer, orderId } = await paidOrder();
+    const { organizer, organizationId, orderId } = await paidOrder();
 
     const account = await prisma.mobileMoneyAccount.create({
-      data: { provider: "MPESA_TZ", phoneNumber: "255700000000", accountName: "Test", organizerId: organizer.id },
+      data: { provider: "MPESA_TZ", phoneNumber: "255700000000", accountName: "Test", organizationId },
     });
     const settlement = await prisma.settlement.create({
       data: {
-        organizerId: organizer.id,
+        organizationId,
         mobileMoneyAccountId: account.id,
         periodStart: new Date(),
         periodEnd: new Date(),
@@ -194,7 +217,7 @@ describe("handleRefundOrder", () => {
       data: { settlementId: settlement.id, orderId, amountCents: 150000 },
     });
 
-    const result = await handleRefundOrder(organizer.id, { orderId });
+    const result = await handleRefundOrder(organizer.id, organizationId, { orderId });
 
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("ALREADY_SETTLED");
@@ -203,9 +226,9 @@ describe("handleRefundOrder", () => {
   });
 
   it("is idempotent — refunding an already-refunded order just returns it", async () => {
-    const { organizer, orderId } = await paidOrder();
-    await handleRefundOrder(organizer.id, { orderId });
-    const second = await handleRefundOrder(organizer.id, { orderId });
+    const { organizer, organizationId, orderId } = await paidOrder();
+    await handleRefundOrder(organizer.id, organizationId, { orderId });
+    const second = await handleRefundOrder(organizer.id, organizationId, { orderId });
     expect(second.ok).toBe(true);
     expect(second.order.status).toBe("REFUNDED");
   });
@@ -213,9 +236,9 @@ describe("handleRefundOrder", () => {
 
 describe("handleApplyVendor", () => {
   it("creates a PENDING vendor application", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const applicant = await createTestUser();
-    const event = await createTestEvent(organizer.id, undefined, "TZS", { vendorApplicationsOpen: true });
+    const event = await createTestEvent(organizationId, undefined, "TZS", { vendorApplicationsOpen: true });
 
     const result = await handleApplyVendor(applicant.id, {
       clientId: "vendor-client-1",
@@ -232,9 +255,9 @@ describe("handleApplyVendor", () => {
   });
 
   it("derives feeStatus from the event's stall fee, ignoring any client-sent value", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const applicant = await createTestUser();
-    const event = await createTestEvent(organizer.id, undefined, "TZS", {
+    const event = await createTestEvent(organizationId, undefined, "TZS", {
       vendorApplicationsOpen: true,
       vendorStallFeeCents: 5000,
     });
@@ -257,9 +280,9 @@ describe("handleApplyVendor", () => {
   });
 
   it("returns APPLICATIONS_CLOSED when the event isn't accepting vendors", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const applicant = await createTestUser();
-    const event = await createTestEvent(organizer.id); // vendorApplicationsOpen defaults false
+    const event = await createTestEvent(organizationId); // vendorApplicationsOpen defaults false
 
     const result = await handleApplyVendor(applicant.id, {
       clientId: "vendor-client-closed",
@@ -275,9 +298,9 @@ describe("handleApplyVendor", () => {
   });
 
   it("is idempotent — replaying the same clientId doesn't create a duplicate vendor", async () => {
-    const organizer = await createTestUser();
+    const { organizationId } = await newOrganizer();
     const applicant = await createTestUser();
-    const event = await createTestEvent(organizer.id, undefined, "TZS", { vendorApplicationsOpen: true });
+    const event = await createTestEvent(organizationId, undefined, "TZS", { vendorApplicationsOpen: true });
     const payload = {
       clientId: "vendor-client-replay",
       eventId: event.id,
@@ -310,10 +333,10 @@ describe("handleApplyVendor", () => {
 
 describe("handleAddVendor", () => {
   it("creates an APPROVED vendor directly with the given badge code", async () => {
-    const organizer = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
 
-    const result = await handleAddVendor(organizer.id, {
+    const result = await handleAddVendor(organizer.id, organizationId, {
       clientId: "vendor-manual-1",
       eventId: event.id,
       name: "Walk-up Grill",
@@ -326,12 +349,30 @@ describe("handleAddVendor", () => {
     expect(result.vendor.badgeCode).toBe("VENDR-00001");
   });
 
-  it("refuses to add a vendor to an event you don't organize", async () => {
-    const organizer = await createTestUser();
-    const someoneElse = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+  it("same-org staff can add a vendor, not just the org's owner", async () => {
+    const { organizationId } = await newOrganizer();
+    const staff = await createTestUser();
+    await addMembership(organizationId, staff.id, "STAFF");
+    const event = await createTestEvent(organizationId);
 
-    const result = await handleAddVendor(someoneElse.id, {
+    const result = await handleAddVendor(staff.id, organizationId, {
+      clientId: "vendor-manual-staff",
+      eventId: event.id,
+      name: "Staff-added Stall",
+      category: "Food",
+      badgeCode: "VENDR-STAFF-1",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.vendor.status).toBe("APPROVED");
+  });
+
+  it("refuses to add a vendor to an event owned by a different organization", async () => {
+    const { organizationId } = await newOrganizer();
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const result = await handleAddVendor(someoneElse.id, someoneElseOrgId, {
       clientId: "vendor-manual-forbidden",
       eventId: event.id,
       name: "Interloper",
@@ -344,8 +385,8 @@ describe("handleAddVendor", () => {
   });
 
   it("is idempotent — replaying the same clientId doesn't create a duplicate", async () => {
-    const organizer = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
     const payload = {
       clientId: "vendor-manual-replay",
       eventId: event.id,
@@ -354,17 +395,17 @@ describe("handleAddVendor", () => {
       badgeCode: "VENDR-00003",
     };
 
-    await handleAddVendor(organizer.id, payload);
-    await handleAddVendor(organizer.id, payload);
+    await handleAddVendor(organizer.id, organizationId, payload);
+    await handleAddVendor(organizer.id, organizationId, payload);
     expect(await prisma.vendor.count({ where: { clientId: "vendor-manual-replay" } })).toBe(1);
   });
 });
 
 describe("handleApproveVendor / handleRejectVendor", () => {
   async function pendingVendor(vendorStallFeeCents = 0) {
-    const organizer = await createTestUser();
+    const { user: organizer, organizationId } = await newOrganizer();
     const applicant = await createTestUser();
-    const event = await createTestEvent(organizer.id, undefined, "TZS", {
+    const event = await createTestEvent(organizationId, undefined, "TZS", {
       vendorApplicationsOpen: true,
       vendorStallFeeCents,
     });
@@ -376,12 +417,12 @@ describe("handleApproveVendor / handleRejectVendor", () => {
       contactEmail: "pending@test.local",
       contactPhone: "0712345683",
     });
-    return { organizer, applicant, event, vendorId: applied.vendor.id };
+    return { organizer, organizationId, applicant, event, vendorId: applied.vendor.id };
   }
 
   it("approves a pending vendor and assigns booth + badge", async () => {
-    const { organizer, vendorId } = await pendingVendor();
-    const result = await handleApproveVendor(organizer.id, {
+    const { organizer, organizationId, vendorId } = await pendingVendor();
+    const result = await handleApproveVendor(organizer.id, organizationId, {
       vendorId,
       boothNumber: "A12",
       badgeCode: "VENDR-APPROVE-1",
@@ -392,18 +433,18 @@ describe("handleApproveVendor / handleRejectVendor", () => {
     expect(result.vendor.badgeCode).toBe("VENDR-APPROVE-1");
   });
 
-  it("refuses to approve a vendor on an event you don't organize", async () => {
+  it("refuses to approve a vendor on an event owned by a different organization", async () => {
     const { vendorId } = await pendingVendor();
-    const someoneElse = await createTestUser();
-    const result = await handleApproveVendor(someoneElse.id, { vendorId, badgeCode: "VENDR-X" });
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const result = await handleApproveVendor(someoneElse.id, someoneElseOrgId, { vendorId, badgeCode: "VENDR-X" });
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
   });
 
   it("is idempotent — approving an already-approved vendor just returns it", async () => {
-    const { organizer, vendorId } = await pendingVendor();
-    await handleApproveVendor(organizer.id, { vendorId, badgeCode: "VENDR-IDEM-1" });
-    const second = await handleApproveVendor(organizer.id, { vendorId, badgeCode: "VENDR-IDEM-2" });
+    const { organizer, organizationId, vendorId } = await pendingVendor();
+    await handleApproveVendor(organizer.id, organizationId, { vendorId, badgeCode: "VENDR-IDEM-1" });
+    const second = await handleApproveVendor(organizer.id, organizationId, { vendorId, badgeCode: "VENDR-IDEM-2" });
     expect(second.ok).toBe(true);
     expect(second.vendor.status).toBe("APPROVED");
     // second call's badge code is ignored — already-approved vendors keep theirs
@@ -411,23 +452,23 @@ describe("handleApproveVendor / handleRejectVendor", () => {
   });
 
   it("rejects a pending vendor", async () => {
-    const { organizer, vendorId } = await pendingVendor();
-    const result = await handleRejectVendor(organizer.id, { vendorId });
+    const { organizer, organizationId, vendorId } = await pendingVendor();
+    const result = await handleRejectVendor(organizer.id, organizationId, { vendorId });
     expect(result.ok).toBe(true);
     expect(result.vendor.status).toBe("REJECTED");
   });
 
   it("refunds a paid fee symbolically on rejection — feeStatus becomes REFUNDED", async () => {
-    const { organizer, vendorId } = await pendingVendor(5000);
-    const result = await handleRejectVendor(organizer.id, { vendorId });
+    const { organizer, organizationId, vendorId } = await pendingVendor(5000);
+    const result = await handleRejectVendor(organizer.id, organizationId, { vendorId });
     expect(result.ok).toBe(true);
     expect(result.vendor.feeStatus).toBe("REFUNDED");
   });
 
-  it("refuses to reject a vendor on an event you don't organize", async () => {
+  it("refuses to reject a vendor on an event owned by a different organization", async () => {
     const { vendorId } = await pendingVendor();
-    const someoneElse = await createTestUser();
-    const result = await handleRejectVendor(someoneElse.id, { vendorId });
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const result = await handleRejectVendor(someoneElse.id, someoneElseOrgId, { vendorId });
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
   });
@@ -435,16 +476,16 @@ describe("handleApproveVendor / handleRejectVendor", () => {
 
 describe("handleCheckInVendor", () => {
   async function approvedVendor() {
-    const organizer = await createTestUser();
-    const event = await createTestEvent(organizer.id);
-    const added = await handleAddVendor(organizer.id, {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const added = await handleAddVendor(organizer.id, organizationId, {
       clientId: `vendor-checkin-${event.id}`,
       eventId: event.id,
       name: "Gate Test Vendor",
       category: "Food",
       badgeCode: `VENDR-CHECKIN-${event.id}`,
     });
-    return { organizer, event, badgeCode: added.vendor.badgeCode as string };
+    return { organizer, organizationId, event, badgeCode: added.vendor.badgeCode as string };
   }
 
   it("checks an approved vendor's badge in", async () => {
@@ -466,19 +507,19 @@ describe("handleCheckInVendor", () => {
     // A badge only exists once a vendor is approved — the realistic path to
     // NOT_APPROVED is an organizer reverting that decision afterward, not a
     // badge that was never issued (that's VENDOR_NOT_FOUND instead).
-    const { organizer, vendorId } = await (async () => {
-      const organizer = await createTestUser();
-      const event = await createTestEvent(organizer.id);
-      const added = await handleAddVendor(organizer.id, {
+    const { organizer, organizationId, vendorId } = await (async () => {
+      const { user: organizer, organizationId } = await newOrganizer();
+      const event = await createTestEvent(organizationId);
+      const added = await handleAddVendor(organizer.id, organizationId, {
         clientId: `vendor-torevoke-${event.id}`,
         eventId: event.id,
         name: "Revoked Vendor",
         category: "Food",
         badgeCode: `VENDR-REVOKE-${event.id}`,
       });
-      return { organizer, vendorId: added.vendor.id, badgeCode: added.vendor.badgeCode };
+      return { organizer, organizationId, vendorId: added.vendor.id, badgeCode: added.vendor.badgeCode };
     })();
-    const rejected = await handleRejectVendor(organizer.id, { vendorId });
+    const rejected = await handleRejectVendor(organizer.id, organizationId, { vendorId });
 
     const result = await handleCheckInVendor({ badgeCode: rejected.vendor.badgeCode });
     expect(result.ok).toBe(false);

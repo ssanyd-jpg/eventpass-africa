@@ -125,7 +125,7 @@ export default function EditEventPage() {
     );
   }
 
-  if (event.organizerId !== user.id) {
+  if (event.organizationId !== user.organizationId) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <p className="font-semibold">You don&apos;t manage this event.</p>

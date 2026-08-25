@@ -31,8 +31,44 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
-        return { id: user.id, name: user.name, email: user.email, role: user.role };
+        const membership = await prisma.organizationMembership.findUnique({
+          where: { userId: user.id },
+          include: { organization: { select: { id: true, name: true } } },
+        });
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          organizationId: membership?.organizationId,
+          organizationRole: membership?.role,
+          organizationName: membership?.organization.name,
+        };
       },
     }),
   ],
+  callbacks: {
+    ...authConfig.callbacks,
+    // Runs the shared jwt callback first (copies id/role/org fields off
+    // `user` at sign-in), then — only on an explicit client-side
+    // useSession().update() call (invite-accept, remove-member) — re-reads
+    // the membership so the JWT reflects an org change without a re-login.
+    // Kept out of auth.config.ts (Edge-safe base) since it needs Prisma.
+    async jwt(params) {
+      const token = await authConfig.callbacks!.jwt!(params);
+      if (token && params.trigger === "update" && token.id) {
+        const membership = await prisma.organizationMembership.findUnique({
+          where: { userId: token.id as string },
+          include: { organization: { select: { id: true, name: true } } },
+        });
+        if (membership) {
+          token.organizationId = membership.organizationId;
+          token.organizationRole = membership.role;
+          token.organizationName = membership.organization.name;
+        }
+      }
+      return token;
+    },
+  },
 });

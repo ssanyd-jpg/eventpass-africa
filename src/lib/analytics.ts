@@ -164,18 +164,18 @@ export interface RankedEntry {
   value: number;
 }
 
-// Top organizers by revenue — one ranked list per currency (the same rule
-// that forbids summing revenue across currencies also forbids ranking
-// organizers against each other across them).
+// Top organizations by revenue — one ranked list per currency (the same
+// rule that forbids summing revenue across currencies also forbids ranking
+// organizations against each other across them).
 export function topOrganizersByRevenue(
-  orders: { totalCents: number; currency: string; event: { organizerId: string; organizer: { name: string } } }[],
+  orders: { totalCents: number; currency: string; event: { organizationId: string; organization: { name: string } } }[],
   limit = 5
 ): Record<string, RankedEntry[]> {
   const byCurrency = new Map<string, Map<string, RankedEntry>>();
   for (const o of orders) {
     const organizerMap = byCurrency.get(o.currency) ?? new Map<string, RankedEntry>();
-    const key = o.event.organizerId;
-    const entry = organizerMap.get(key) ?? { label: o.event.organizer.name, value: 0 };
+    const key = o.event.organizationId;
+    const entry = organizerMap.get(key) ?? { label: o.event.organization.name, value: 0 };
     entry.value += o.totalCents;
     organizerMap.set(key, entry);
     byCurrency.set(o.currency, organizerMap);

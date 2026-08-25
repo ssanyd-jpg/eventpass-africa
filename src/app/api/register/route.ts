@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
+import { createPersonalOrganization } from "@/lib/organizations";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(80),
@@ -41,9 +42,13 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: { name, email, passwordHash },
-    select: { id: true, name: true, email: true },
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: { name, email, passwordHash },
+      select: { id: true, name: true, email: true },
+    });
+    await createPersonalOrganization(tx, created.id, created.name);
+    return created;
   });
 
   return NextResponse.json({ user }, { status: 201 });

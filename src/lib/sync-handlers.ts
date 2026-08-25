@@ -189,19 +189,19 @@ async function resolveEventId(eventId: string, eventClientId?: string | null) {
   return null;
 }
 
-export async function handleCreateEvent(userId: string, payload: any) {
+export async function handleCreateEvent(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.eventId);
 
   const existing = await prisma.event.findUnique({
     where: { clientId },
     include: {
       ticketTypes: true,
-      organizer: { select: { name: true } },
+      organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
     },
   });
   if (existing) {
-    return { ok: true, event: shapeEvent(existing, existing.organizer.name) };
+    return { ok: true, event: shapeEvent(existing, existing.organization.name) };
   }
 
   const baseSlug = slugify(String(payload.title));
@@ -223,7 +223,7 @@ export async function handleCreateEvent(userId: string, payload: any) {
       startsAt: new Date(payload.startsAt),
       imageUrl: String(payload.imageUrl),
       currency: String(payload.currency ?? DEFAULT_CURRENCY),
-      organizerId: userId,
+      organizationId,
       ticketTypes: {
         create: (payload.ticketTypes as any[]).map((tt) => ({
           clientId: String(tt.clientId),
@@ -236,12 +236,12 @@ export async function handleCreateEvent(userId: string, payload: any) {
     },
     include: {
       ticketTypes: true,
-      organizer: { select: { name: true } },
+      organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
     },
   });
 
-  return { ok: true, event: shapeEvent(created, created.organizer.name) };
+  return { ok: true, event: shapeEvent(created, created.organization.name) };
 }
 
 export function shapeEvent(e: any, organizerName: string) {
@@ -260,7 +260,7 @@ export function shapeEvent(e: any, organizerName: string) {
     currency: e.currency,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
-    organizerId: e.organizerId,
+    organizationId: e.organizationId,
     organizerName,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
@@ -437,18 +437,18 @@ export async function handleCheckIn(payload: any) {
   };
 }
 
-export async function handleAddMobileMoneyAccount(userId: string, payload: any) {
+export async function handleAddMobileMoneyAccount(userId: string, organizationId: string, payload: any) {
   const account = await prisma.mobileMoneyAccount.create({
     data: {
       provider: String(payload.provider),
       phoneNumber: String(payload.phoneNumber),
       accountName: String(payload.accountName),
       isDefault: true,
-      organizerId: userId,
+      organizationId,
     },
   });
   await prisma.mobileMoneyAccount.updateMany({
-    where: { organizerId: userId, id: { not: account.id } },
+    where: { organizationId, id: { not: account.id } },
     data: { isDefault: false },
   });
   return {
@@ -460,17 +460,17 @@ export async function handleAddMobileMoneyAccount(userId: string, payload: any) 
       phoneNumber: account.phoneNumber,
       accountName: account.accountName,
       isDefault: account.isDefault,
-      organizerId: account.organizerId,
+      organizationId: account.organizationId,
     },
   };
 }
 
-export async function handleEditEvent(userId: string, payload: any) {
+export async function handleEditEvent(userId: string, organizationId: string, payload: any) {
   const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
   if (!event) {
     return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
   }
-  if (event.organizerId !== userId) {
+  if (event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
 
@@ -535,20 +535,20 @@ export async function handleEditEvent(userId: string, payload: any) {
     data,
     include: {
       ticketTypes: true,
-      organizer: { select: { name: true } },
+      organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
     },
   });
 
-  return { ok: true, event: shapeEvent(updated, updated.organizer.name) };
+  return { ok: true, event: shapeEvent(updated, updated.organization.name) };
 }
 
-export async function handleCancelEvent(userId: string, payload: any) {
+export async function handleCancelEvent(userId: string, organizationId: string, payload: any) {
   const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
   if (!event) {
     return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
   }
-  if (event.organizerId !== userId) {
+  if (event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
 
@@ -557,7 +557,7 @@ export async function handleCancelEvent(userId: string, payload: any) {
     data: { status: "CANCELLED" },
     include: {
       ticketTypes: true,
-      organizer: { select: { name: true } },
+      organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
     },
   });
@@ -577,17 +577,17 @@ export async function handleCancelEvent(userId: string, payload: any) {
     });
   }
 
-  return { ok: true, event: shapeEvent(updated, updated.organizer.name) };
+  return { ok: true, event: shapeEvent(updated, updated.organization.name) };
 }
 
-export async function handleRefundOrder(userId: string, payload: any) {
+export async function handleRefundOrder(userId: string, organizationId: string, payload: any) {
   const orderId = String(payload.orderId);
   const orderClientId = payload.orderClientId as string | null | undefined;
 
   const fullInclude = {
     items: { include: { ticketType: true } },
     tickets: { include: { ticketType: true } },
-    event: { select: { id: true, clientId: true, title: true, organizerId: true } },
+    event: { select: { id: true, clientId: true, title: true, organizationId: true } },
     user: { select: { email: true, name: true } },
   } as const;
 
@@ -600,7 +600,7 @@ export async function handleRefundOrder(userId: string, payload: any) {
   if (!order) {
     return { ok: false, retry: true, reason: "ORDER_NOT_SYNCED_YET" };
   }
-  if (order.event.organizerId !== userId) {
+  if (order.event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   if (order.status === "REFUNDED") {
@@ -669,7 +669,7 @@ export function shapeVendor(v: any) {
   };
 }
 
-const vendorInclude = { event: { select: { id: true, clientId: true, organizerId: true } } } as const;
+const vendorInclude = { event: { select: { id: true, clientId: true, organizationId: true } } } as const;
 
 export async function handleApplyVendor(userId: string, payload: any) {
   const clientId = String(payload.clientId);
@@ -710,7 +710,7 @@ export async function handleApplyVendor(userId: string, payload: any) {
   return { ok: true, vendor: shapeVendor(created) };
 }
 
-export async function handleAddVendor(userId: string, payload: any) {
+export async function handleAddVendor(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.clientId);
 
   const existing = await prisma.vendor.findUnique({ where: { clientId }, include: vendorInclude });
@@ -722,7 +722,7 @@ export async function handleAddVendor(userId: string, payload: any) {
   if (!event) {
     return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
   }
-  if (event.organizerId !== userId) {
+  if (event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
 
@@ -756,12 +756,12 @@ async function resolveVendor(vendorId: string, vendorClientId?: string | null) {
   );
 }
 
-export async function handleApproveVendor(userId: string, payload: any) {
+export async function handleApproveVendor(userId: string, organizationId: string, payload: any) {
   const vendor = await resolveVendor(String(payload.vendorId), payload.vendorClientId);
   if (!vendor) {
     return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
   }
-  if (vendor.event.organizerId !== userId) {
+  if (vendor.event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   if (vendor.status === "APPROVED") {
@@ -781,12 +781,12 @@ export async function handleApproveVendor(userId: string, payload: any) {
   return { ok: true, vendor: shapeVendor(updated) };
 }
 
-export async function handleRejectVendor(userId: string, payload: any) {
+export async function handleRejectVendor(userId: string, organizationId: string, payload: any) {
   const vendor = await resolveVendor(String(payload.vendorId), payload.vendorClientId);
   if (!vendor) {
     return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
   }
-  if (vendor.event.organizerId !== userId) {
+  if (vendor.event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   if (vendor.status === "REJECTED") {

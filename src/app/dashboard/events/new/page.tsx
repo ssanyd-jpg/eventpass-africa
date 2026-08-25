@@ -89,8 +89,8 @@ export default function NewEventPage() {
       // once the event exists.
       vendorApplicationsOpen: false,
       vendorStallFeeCents: 0,
-      organizerId: user.id,
-      organizerName: user.name ?? "",
+      organizationId: user.organizationId,
+      organizerName: user.organizationName ?? user.name ?? "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ticketTypes: localTicketTypes,

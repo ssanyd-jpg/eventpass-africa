@@ -4,7 +4,10 @@ import { formatDate } from "@/lib/format";
 export default async function AdminUsersPage() {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { events: true, orders: true } } },
+    include: {
+      _count: { select: { orders: true } },
+      organizationMembership: { include: { organization: { include: { _count: { select: { events: true } } } } } },
+    },
   });
 
   return (
@@ -19,7 +22,7 @@ export default async function AdminUsersPage() {
             <p className="text-muted">{u.email}</p>
           </div>
           <div className="text-right text-xs text-muted">
-            <p>{u._count.events} events organized · {u._count.orders} orders placed</p>
+            <p>{u.organizationMembership?.organization._count.events ?? 0} events organized · {u._count.orders} orders placed</p>
             <p>Joined {formatDate(u.createdAt)}</p>
           </div>
         </div>

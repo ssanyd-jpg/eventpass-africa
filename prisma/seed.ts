@@ -27,6 +27,19 @@ function usd(amount: number) {
   return Math.round(amount * 100);
 }
 
+// Every user needs exactly one Organization (see the model comment in
+// schema.prisma) — the seed's two demo organizers each get a personal one,
+// upserted by userId so re-running the seed doesn't create duplicates.
+async function ensureOrganization(user: { id: string; name: string }) {
+  const existing = await prisma.organizationMembership.findUnique({ where: { userId: user.id } });
+  if (existing) return existing.organizationId;
+  const organization = await prisma.organization.create({ data: { name: `${user.name}'s Organization` } });
+  await prisma.organizationMembership.create({
+    data: { userId: user.id, organizationId: organization.id, role: "OWNER" },
+  });
+  return organization.id;
+}
+
 async function main() {
   const demoPassword = await bcrypt.hash("password123", 10);
 
@@ -50,7 +63,10 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
+  const organizationId = await ensureOrganization(organizer);
+  const secondOrganizationId = await ensureOrganization(secondOrganizer);
+
+  const fan = await prisma.user.upsert({
     where: { email: "fan@eventpassafrica.dev" },
     update: {},
     create: {
@@ -59,8 +75,9 @@ async function main() {
       passwordHash: demoPassword,
     },
   });
+  await ensureOrganization(fan);
 
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: "admin@eventpassafrica.dev" },
     update: {},
     create: {
@@ -70,6 +87,7 @@ async function main() {
       role: "ADMIN",
     },
   });
+  await ensureOrganization(admin);
 
   const events = [
     {
@@ -81,7 +99,7 @@ async function main() {
       city: "Dar es Salaam",
       startsAt: daysFromNow(21, 16, 0),
       imageUrl: "https://picsum.photos/seed/bongo-beats/1200/675",
-      organizerId: organizer.id,
+      organizationId,
       ticketTypes: [
         { name: "General Admission", priceCents: tzs(20000), quantityTotal: 400 },
         { name: "VIP", priceCents: tzs(60000), quantityTotal: 80 },
@@ -97,7 +115,7 @@ async function main() {
       city: "Dar es Salaam",
       startsAt: daysFromNow(9, 20, 0),
       imageUrl: "https://picsum.photos/seed/dar-comedy/1200/675",
-      organizerId: organizer.id,
+      organizationId,
       ticketTypes: [
         { name: "Standard Seat", priceCents: tzs(15000), quantityTotal: 150 },
         { name: "Front Row", priceCents: tzs(30000), quantityTotal: 24 },
@@ -112,7 +130,7 @@ async function main() {
       city: "Moshi",
       startsAt: daysFromNow(45, 7, 0),
       imageUrl: "https://picsum.photos/seed/kilimanjaro-marathon/1200/675",
-      organizerId: secondOrganizer.id,
+      organizationId: secondOrganizationId,
       // Post-race festival has room for free water/gear stalls — demonstrates
       // the no-fee vendor path.
       vendorApplicationsOpen: true,
@@ -131,7 +149,7 @@ async function main() {
       city: "Dar es Salaam",
       startsAt: daysFromNow(60, 9, 0),
       imageUrl: "https://picsum.photos/seed/ea-tech-summit/1200/675",
-      organizerId: secondOrganizer.id,
+      organizationId: secondOrganizationId,
       // International conference, priced in USD — demonstrates an event
       // with a currency other than the platform default.
       currency: "USD",
@@ -150,7 +168,7 @@ async function main() {
       city: "Zanzibar City",
       startsAt: daysFromNow(14, 19, 30),
       imageUrl: "https://picsum.photos/seed/zanzibar-acoustic/1200/675",
-      organizerId: organizer.id,
+      organizationId,
       ticketTypes: [
         { name: "Standing", priceCents: tzs(20000), quantityTotal: 200 },
         { name: "Seated", priceCents: tzs(35000), quantityTotal: 180 },
@@ -166,7 +184,7 @@ async function main() {
       city: "Arusha",
       startsAt: daysFromNow(30, 17, 0),
       imageUrl: "https://picsum.photos/seed/arusha-harvest/1200/675",
-      organizerId: secondOrganizer.id,
+      organizationId: secondOrganizationId,
       // This event is literally built around vendor stalls (the "40+ local
       // restaurants" in the description) — demonstrates the paid vendor path.
       vendorApplicationsOpen: true,
@@ -195,7 +213,7 @@ async function main() {
         currency: "currency" in e ? e.currency : "TZS",
         vendorApplicationsOpen: "vendorApplicationsOpen" in e ? e.vendorApplicationsOpen : false,
         vendorStallFeeCents: "vendorStallFeeCents" in e ? e.vendorStallFeeCents : 0,
-        organizerId: e.organizerId,
+        organizationId: e.organizationId,
         ticketTypes: { create: e.ticketTypes },
       },
     });

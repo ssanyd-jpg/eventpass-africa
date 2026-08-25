@@ -17,8 +17,18 @@ export async function createTestUser(overrides: Partial<{ name: string; email: s
   });
 }
 
+export async function createTestOrganization(overrides: Partial<{ name: string }> = {}) {
+  return prisma.organization.create({
+    data: { name: overrides.name ?? "Test Org" },
+  });
+}
+
+export async function addMembership(organizationId: string, userId: string, role: "OWNER" | "STAFF" = "OWNER") {
+  return prisma.organizationMembership.create({ data: { organizationId, userId, role } });
+}
+
 export async function createTestEvent(
-  organizerId: string,
+  organizationId: string,
   ticketTypes: Array<{ priceCents: number; quantityTotal: number; quantitySold?: number }> = [
     { priceCents: 200000, quantityTotal: 10 },
   ],
@@ -36,7 +46,7 @@ export async function createTestEvent(
       startsAt: new Date(Date.now() + 86400000),
       imageUrl: "https://example.com/x.jpg",
       currency,
-      organizerId,
+      organizationId,
       vendorApplicationsOpen: vendorOptions.vendorApplicationsOpen ?? false,
       vendorStallFeeCents: vendorOptions.vendorStallFeeCents ?? 0,
       ticketTypes: {

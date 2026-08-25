@@ -4,7 +4,8 @@ export type NotificationType =
   | "ORDER_CONFIRMATION"
   | "PASSWORD_RESET"
   | "EVENT_CANCELLED"
-  | "REFUND_ISSUED";
+  | "REFUND_ISSUED"
+  | "ORGANIZATION_INVITE";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 

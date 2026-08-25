@@ -32,7 +32,7 @@ export interface LocalEvent {
   currency: string;
   vendorApplicationsOpen: boolean;
   vendorStallFeeCents: number;
-  organizerId: string;
+  organizationId: string;
   organizerName: string;
   createdAt: string;
   updatedAt: string;
@@ -88,13 +88,13 @@ export interface LocalMobileMoneyAccount {
   phoneNumber: string;
   accountName: string;
   isDefault: boolean;
-  organizerId: string;
+  organizationId: string;
   syncStatus: "synced" | "pending";
 }
 
 export interface LocalSettlement {
   id: string;
-  organizerId: string;
+  organizationId: string;
   mobileMoneyAccountId: string;
   periodStart: string;
   periodEnd: string;
@@ -235,6 +235,23 @@ class EventPassAfricaDB extends Dexie {
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizerId",
       settlements: "id, organizerId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+    });
+    // organizerId -> organizationId rename (events/mobileMoneyAccounts/
+    // settlements now belong to an Organization, not directly to a User —
+    // see prisma/schema.prisma). No .upgrade() transform needed, matching
+    // every prior version bump in this file: pullFromServer() runs on every
+    // app mount and bulkPuts fresh server data straight over any stale local
+    // shape.
+    this.version(4).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
       outbox: "++id, status, type, createdAt",
       meta: "key",
       vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",

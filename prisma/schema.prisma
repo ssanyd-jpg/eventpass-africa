@@ -9,8 +9,9 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// role is USER | ADMIN. Anyone can organize events regardless of role —
-// ADMIN only gates access to the /admin moderation panel.
+// role is USER | ADMIN — a platform-wide flag (ADMIN only gates the /admin
+// moderation panel). This is unrelated to OrganizationMembership.role
+// (OWNER | STAFF), which governs what a user can do within their org.
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -20,13 +21,70 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  events               Event[]              @relation("Organizer")
-  orders               Order[]
-  mobileMoneyAccounts  MobileMoneyAccount[]
-  settlements          Settlement[]
-  passwordResetTokens  PasswordResetToken[]
-  vendorApplications   Vendor[]
-  wallets              Wallet[]
+  organizationMembership OrganizationMembership?
+  sentInvites            OrganizationInvite[]     @relation("InvitedBy")
+  orders                 Order[]
+  passwordResetTokens    PasswordResetToken[]
+  vendorApplications     Vendor[]
+  wallets                Wallet[]
+}
+
+// Every user belongs to exactly one organization, always — registration
+// auto-creates a personal one (see createPersonalOrganization in
+// src/lib/organizations.ts). This keeps the offline-first CREATE_EVENT flow
+// simple (the client always has a cached organizationId) and avoids
+// nullable-org branching throughout the session/auth code.
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  membership          OrganizationMembership[]
+  invites             OrganizationInvite[]
+  events              Event[]
+  mobileMoneyAccounts MobileMoneyAccount[]
+  settlements         Settlement[]
+}
+
+// role is OWNER | STAFF (plain-string convention — see
+// MobileMoneyAccount.provider). @@unique([userId]), not
+// @@unique([organizationId, userId]) — that's the v1 "one org per user"
+// scope cut: a user can never belong to two organizations at once.
+model OrganizationMembership {
+  id        String   @id @default(cuid())
+  role      String   @default("OWNER")
+  createdAt DateTime @default(now())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// Same hashed-token + expiry shape as PasswordResetToken. status is
+// PENDING | ACCEPTED | REVOKED. Always invites as STAFF in v1 — no role
+// picker; an OWNER promoting someone is out of scope until Access Control.
+model OrganizationInvite {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  email      String
+  role       String    @default("STAFF")
+  status     String    @default("PENDING")
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  invitedByUserId String
+  invitedBy       User   @relation("InvitedBy", fields: [invitedByUserId], references: [id])
+
+  @@index([organizationId])
 }
 
 model PasswordResetToken {
@@ -51,8 +109,8 @@ model MobileMoneyAccount {
   isDefault   Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  organizerId String
-  organizer   User   @relation(fields: [organizerId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   settlements Settlement[]
 }
@@ -62,7 +120,7 @@ model Settlement {
   periodStart       DateTime
   periodEnd         DateTime
   // A settlement only ever covers orders in one currency — runSettlement
-  // groups an organizer's unsettled orders by currency and creates one
+  // groups an organization's unsettled orders by currency and creates one
   // settlement per group, so this never mixes amounts across currencies.
   currency          String   @default("TZS")
   grossCents        Int
@@ -73,8 +131,8 @@ model Settlement {
   createdAt         DateTime @default(now())
   paidAt            DateTime?
 
-  organizerId String
-  organizer   User   @relation(fields: [organizerId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   mobileMoneyAccountId String
   mobileMoneyAccount   MobileMoneyAccount @relation(fields: [mobileMoneyAccountId], references: [id])
@@ -94,7 +152,7 @@ model SettlementItem {
 }
 
 // status is LIVE | CANCELLED. Cancelled events are hidden from public
-// browse but stay visible (badged) to the organizer and existing ticket
+// browse but stay visible (badged) to the organization and existing ticket
 // holders.
 model Event {
   id          String   @id @default(cuid())
@@ -117,8 +175,8 @@ model Event {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organizerId String
-  organizer   User   @relation("Organizer", fields: [organizerId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   ticketTypes TicketType[]
   orders      Order[]

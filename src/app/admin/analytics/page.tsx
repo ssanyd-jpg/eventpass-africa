@@ -45,7 +45,7 @@ export default async function AdminAnalyticsPage() {
       select: {
         totalCents: true,
         currency: true,
-        event: { select: { organizerId: true, organizer: { select: { name: true } } } },
+        event: { select: { organizationId: true, organization: { select: { name: true } } } },
       },
     }),
     prisma.wallet.findMany({ select: { balanceCents: true, currency: true } }),

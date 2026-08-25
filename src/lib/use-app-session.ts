@@ -11,6 +11,9 @@ interface CachedProfile {
   name: string;
   email: string;
   role: string;
+  organizationId: string;
+  organizationRole: string;
+  organizationName: string;
 }
 
 /**
@@ -43,6 +46,9 @@ export function useAppSession() {
         name: data.user.name ?? "",
         email: data.user.email ?? "",
         role: data.user.role ?? "USER",
+        organizationId: data.user.organizationId,
+        organizationRole: data.user.organizationRole,
+        organizationName: data.user.organizationName,
       };
       localStorage.setItem(CACHE_KEY, JSON.stringify(profile));
       setCached(profile);
@@ -55,7 +61,15 @@ export function useAppSession() {
 
   if (status === "authenticated" && data?.user) {
     return {
-      user: { id: data.user.id, name: data.user.name, email: data.user.email, role: data.user.role ?? "USER" },
+      user: {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role ?? "USER",
+        organizationId: data.user.organizationId,
+        organizationRole: data.user.organizationRole,
+        organizationName: data.user.organizationName,
+      },
       status: "authenticated" as const,
       offline: false,
     };

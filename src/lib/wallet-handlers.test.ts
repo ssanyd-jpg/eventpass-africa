@@ -1,6 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { createTestEvent, createTestUser, createTestVendor, createTestWallet } from "@/lib/test-fixtures";
+import {
+  createTestEvent,
+  createTestUser,
+  createTestVendor,
+  createTestWallet,
+  createTestOrganization,
+  addMembership,
+} from "@/lib/test-fixtures";
 import {
   handleCreateWallet,
   handleTopupWallet,
@@ -31,8 +38,10 @@ beforeEach(() => {
 describe("handleCreateWallet", () => {
   it("creates a wallet for a LIVE event", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
 
     const result = await handleCreateWallet(attendee.id, {
       clientId: "wallet-client-1",
@@ -47,8 +56,10 @@ describe("handleCreateWallet", () => {
 
   it("is idempotent — replaying the same clientId doesn't create a duplicate wallet", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const payload = { clientId: "wallet-client-replay", code: "WALLET-00002", eventId: event.id };
 
     await handleCreateWallet(attendee.id, payload);
@@ -58,8 +69,10 @@ describe("handleCreateWallet", () => {
 
   it("returns the existing wallet rather than violating the one-per-user-per-event constraint", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
 
     const first = await handleCreateWallet(attendee.id, { clientId: "wallet-a", code: "WALLET-A", eventId: event.id });
     const second = await handleCreateWallet(attendee.id, { clientId: "wallet-b", code: "WALLET-B", eventId: event.id });
@@ -70,8 +83,10 @@ describe("handleCreateWallet", () => {
 describe("handleTopupWallet", () => {
   it("credits the balance instantly when the provider returns PAID", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { currency: event.currency });
 
     const result = await handleTopupWallet(attendee.id, {
@@ -88,8 +103,10 @@ describe("handleTopupWallet", () => {
   it("does not touch the balance when the provider returns PENDING", async () => {
     mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "MOCK-PENDING-REF" });
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
 
     const result = await handleTopupWallet(attendee.id, {
@@ -107,8 +124,10 @@ describe("handleTopupWallet", () => {
   it("does not touch the balance when the provider returns FAILED", async () => {
     mockInitiateCharge.mockResolvedValue({ status: "FAILED", reference: "", message: "Declined" });
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
 
     const result = await handleTopupWallet(attendee.id, {
@@ -125,8 +144,10 @@ describe("handleTopupWallet", () => {
 
   it("rejects a top-up on a cancelled event", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     await prisma.event.update({ where: { id: event.id }, data: { status: "CANCELLED" } });
 
@@ -141,8 +162,10 @@ describe("handleTopupWallet", () => {
 
   it("is idempotent — replaying the same clientId doesn't double-credit", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const payload = { clientId: "topup-replay", walletId: wallet.id, amountCents: 5000 };
 
@@ -156,8 +179,10 @@ describe("handleTopupWallet", () => {
 describe("handleCheckTopupStatus", () => {
   it("is a no-op for a transaction that's already resolved", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const topup = await handleTopupWallet(attendee.id, { clientId: "check-resolved", walletId: wallet.id, amountCents: 1000 });
 
@@ -170,8 +195,10 @@ describe("handleCheckTopupStatus", () => {
 describe("handleChargeWallet", () => {
   it("decrements the balance and logs a COMPLETED sale", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
 
@@ -190,8 +217,10 @@ describe("handleChargeWallet", () => {
 
   it("declines (not errors) when the balance is insufficient, and leaves the balance unchanged", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 1000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
 
@@ -212,8 +241,10 @@ describe("handleChargeWallet", () => {
 
   it("never lets a wallet go negative under concurrent charges — exactly one of two simultaneous charges succeeds", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 5000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
 
@@ -232,8 +263,10 @@ describe("handleChargeWallet", () => {
 
   it("refuses to charge against a vendor that isn't approved", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000 });
     const vendor = await createTestVendor(event.id, { status: "PENDING" });
 
@@ -250,8 +283,10 @@ describe("handleChargeWallet", () => {
 
   it("rejects a charge on a cancelled event", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000 });
     const vendor = await createTestVendor(event.id);
     await prisma.event.update({ where: { id: event.id }, data: { status: "CANCELLED" } });
@@ -269,8 +304,10 @@ describe("handleChargeWallet", () => {
 
   it("is idempotent — replaying the same clientId doesn't double-charge", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
     const payload = { clientId: "charge-replay", walletCode: wallet.code, vendorId: vendor.id, amountCents: 2000, eventId: event.id };
@@ -285,8 +322,10 @@ describe("handleChargeWallet", () => {
 describe("handleSponsorTap", () => {
   it("logs a tap with no balance change", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 5000 });
 
     const result = await handleSponsorTap({
@@ -304,8 +343,10 @@ describe("handleSponsorTap", () => {
 
   it("is idempotent — replaying the same clientId doesn't create a duplicate tap", async () => {
     const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
     const attendee = await createTestUser();
-    const event = await createTestEvent(organizer.id);
+    const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const payload = { clientId: "tap-replay", walletCode: wallet.code, sponsorZoneLabel: "MTN Booth", eventId: event.id };
 

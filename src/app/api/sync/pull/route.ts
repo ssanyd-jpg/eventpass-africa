@@ -8,7 +8,7 @@ export async function GET() {
   const events = await prisma.event.findMany({
     include: {
       ticketTypes: true,
-      organizer: { select: { name: true } },
+      organization: { select: { name: true } },
       // Public summary only — no contact info/badgeCode. Full vendor
       // detail (all statuses) goes out separately in myVendors below,
       // gated to the vendor's own owner or the event's organizer.
@@ -32,8 +32,8 @@ export async function GET() {
     currency: e.currency,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
-    organizerId: e.organizerId,
-    organizerName: e.organizer.name,
+    organizationId: e.organizationId,
+    organizerName: e.organization.name,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
     ticketTypes: e.ticketTypes.map((tt) => ({
@@ -53,12 +53,13 @@ export async function GET() {
     events: shapedEvents,
   };
 
-  if (session?.user?.id) {
+  if (session?.user?.id && session.user.organizationId) {
     const userId = session.user.id;
+    const organizationId = session.user.organizationId;
 
     const myOrders = await prisma.order.findMany({
       where: {
-        OR: [{ userId }, { event: { organizerId: userId } }],
+        OR: [{ userId }, { event: { organizationId } }],
       },
       include: {
         items: { include: { ticketType: true } },
@@ -97,7 +98,7 @@ export async function GET() {
     }));
 
     const myVendors = await prisma.vendor.findMany({
-      where: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] },
+      where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
       include: { event: { select: { id: true, clientId: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -125,7 +126,7 @@ export async function GET() {
     }));
 
     const myWallets = await prisma.wallet.findMany({
-      where: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] },
+      where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
       include: { event: { select: { id: true, clientId: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -143,7 +144,7 @@ export async function GET() {
     }));
 
     const myWalletTransactions = await prisma.walletTransaction.findMany({
-      where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] } },
+      where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] } },
       include: { vendor: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -166,7 +167,7 @@ export async function GET() {
     }));
 
     const accounts = await prisma.mobileMoneyAccount.findMany({
-      where: { organizerId: userId },
+      where: { organizationId },
     });
     payload.mobileMoneyAccounts = accounts.map((a) => ({
       id: a.id,
@@ -175,16 +176,16 @@ export async function GET() {
       phoneNumber: a.phoneNumber,
       accountName: a.accountName,
       isDefault: a.isDefault,
-      organizerId: a.organizerId,
+      organizationId: a.organizationId,
     }));
 
     const settlements = await prisma.settlement.findMany({
-      where: { organizerId: userId },
+      where: { organizationId },
       orderBy: { createdAt: "desc" },
     });
     payload.settlements = settlements.map((s) => ({
       id: s.id,
-      organizerId: s.organizerId,
+      organizationId: s.organizationId,
       mobileMoneyAccountId: s.mobileMoneyAccountId,
       periodStart: s.periodStart.toISOString(),
       periodEnd: s.periodEnd.toISOString(),

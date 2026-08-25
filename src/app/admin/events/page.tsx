@@ -6,7 +6,12 @@ export default async function AdminEventsPage() {
   const events = await prisma.event.findMany({
     orderBy: { createdAt: "desc" },
     include: {
-      organizer: { select: { name: true, email: true } },
+      organization: {
+        select: {
+          name: true,
+          membership: { where: { role: "OWNER" }, take: 1, select: { user: { select: { email: true } } } },
+        },
+      },
       _count: { select: { orders: true } },
       ticketTypes: true,
     },
@@ -26,7 +31,8 @@ export default async function AdminEventsPage() {
                 )}
               </p>
               <p className="text-muted">
-                {e.organizer.name} ({e.organizer.email}) · {formatDate(e.startsAt)}
+                {e.organization.name}
+                {e.organization.membership[0] ? ` (${e.organization.membership[0].user.email})` : ""} · {formatDate(e.startsAt)}
               </p>
               <p className="text-xs text-muted">{e._count.orders} orders · {formatCents(gross, e.currency)} gross</p>
             </div>

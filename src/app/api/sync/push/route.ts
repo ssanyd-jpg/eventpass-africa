@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     let result;
     switch (body.type) {
       case "CREATE_EVENT":
-        result = await handleCreateEvent(session.user.id, body.payload);
+        result = await handleCreateEvent(session.user.id, session.user.organizationId, body.payload);
         break;
       case "SELL_TICKETS":
         result = await handleSellTickets(session.user.id, body.payload);
@@ -58,28 +58,28 @@ export async function POST(request: Request) {
         result = await handleCheckIn(body.payload);
         break;
       case "ADD_MOBILE_MONEY_ACCOUNT":
-        result = await handleAddMobileMoneyAccount(session.user.id, body.payload);
+        result = await handleAddMobileMoneyAccount(session.user.id, session.user.organizationId, body.payload);
         break;
       case "EDIT_EVENT":
-        result = await handleEditEvent(session.user.id, body.payload);
+        result = await handleEditEvent(session.user.id, session.user.organizationId, body.payload);
         break;
       case "CANCEL_EVENT":
-        result = await handleCancelEvent(session.user.id, body.payload);
+        result = await handleCancelEvent(session.user.id, session.user.organizationId, body.payload);
         break;
       case "REFUND_ORDER":
-        result = await handleRefundOrder(session.user.id, body.payload);
+        result = await handleRefundOrder(session.user.id, session.user.organizationId, body.payload);
         break;
       case "APPLY_VENDOR":
         result = await handleApplyVendor(session.user.id, body.payload);
         break;
       case "ADD_VENDOR":
-        result = await handleAddVendor(session.user.id, body.payload);
+        result = await handleAddVendor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "APPROVE_VENDOR":
-        result = await handleApproveVendor(session.user.id, body.payload);
+        result = await handleApproveVendor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "REJECT_VENDOR":
-        result = await handleRejectVendor(session.user.id, body.payload);
+        result = await handleRejectVendor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "CHECK_IN_VENDOR":
         result = await handleCheckInVendor(body.payload);

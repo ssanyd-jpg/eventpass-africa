@@ -4,10 +4,18 @@ import { formatCents, formatDate } from "@/lib/format";
 export default async function AdminSettlementsPage() {
   const settlements = await prisma.settlement.findMany({
     orderBy: { createdAt: "desc" },
-    include: { organizer: { select: { name: true, email: true } }, mobileMoneyAccount: true },
+    include: {
+      organization: {
+        select: {
+          name: true,
+          membership: { where: { role: "OWNER" }, take: 1, select: { user: { select: { email: true } } } },
+        },
+      },
+      mobileMoneyAccount: true,
+    },
   });
 
-  // Settlements span every organizer on the platform, who can each run
+  // Settlements span every organization on the platform, who can each run
   // events in different currencies — totals are grouped per currency
   // rather than summed into one meaningless number.
   const totalsByCurrency: Record<string, { net: number; fees: number }> = {};
@@ -48,7 +56,10 @@ export default async function AdminSettlementsPage() {
         {settlements.map((s) => (
           <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm">
             <div>
-              <p className="font-medium">{s.organizer.name} ({s.organizer.email})</p>
+              <p className="font-medium">
+                {s.organization.name}
+                {s.organization.membership[0] ? ` (${s.organization.membership[0].user.email})` : ""}
+              </p>
               <p className="text-muted">
                 {formatDate(s.createdAt)} · {s.mobileMoneyAccount.provider} · {s.payoutReference}
               </p>

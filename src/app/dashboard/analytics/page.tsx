@@ -26,7 +26,7 @@ export default async function OrganizerAnalyticsPage() {
   }
 
   const myEvents = await prisma.event.findMany({
-    where: { organizerId: session.user.id },
+    where: { organizationId: session.user.organizationId },
     select: { id: true, title: true },
   });
 

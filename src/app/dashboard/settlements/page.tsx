@@ -29,21 +29,21 @@ export default function SettlementsPage() {
 
   const accounts = useLiveQuery(async () => {
     if (!user) return [];
-    return db.mobileMoneyAccounts.where("organizerId").equals(user.id).toArray();
-  }, [user?.id]);
+    return db.mobileMoneyAccounts.where("organizationId").equals(user.organizationId).toArray();
+  }, [user?.organizationId]);
 
   const settlements = useLiveQuery(async () => {
     if (!user) return [];
-    const all = await db.settlements.where("organizerId").equals(user.id).toArray();
+    const all = await db.settlements.where("organizationId").equals(user.organizationId).toArray();
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  }, [user?.id]);
+  }, [user?.organizationId]);
 
-  // An organizer can run events in more than one currency — grouped here
+  // An organization can run events in more than one currency — grouped here
   // (via each order's own `currency`, snapshotted at sale time) rather than
   // summed into one meaningless total.
   const estimatedUnsettledByCurrency = useLiveQuery(async () => {
     if (!user) return {} as Record<string, number>;
-    const events = await db.events.where("organizerId").equals(user.id).toArray();
+    const events = await db.events.where("organizationId").equals(user.organizationId).toArray();
     const eventIds = new Set(events.map((e) => e.id));
     const orders = await db.orders.toArray();
     const grossByCurrency: Record<string, number> = {};
@@ -52,7 +52,7 @@ export default function SettlementsPage() {
         grossByCurrency[o.currency] = (grossByCurrency[o.currency] ?? 0) + o.totalCents;
       }
     }
-    const mySettlements = await db.settlements.where("organizerId").equals(user.id).toArray();
+    const mySettlements = await db.settlements.where("organizationId").equals(user.organizationId).toArray();
     for (const s of mySettlements) {
       grossByCurrency[s.currency] = Math.max(0, (grossByCurrency[s.currency] ?? 0) - s.grossCents);
     }
@@ -76,7 +76,7 @@ export default function SettlementsPage() {
       phoneNumber: phone.trim(),
       accountName: accountName.trim(),
       isDefault: true,
-      organizerId: user.id,
+      organizationId: user.organizationId,
       syncStatus: "pending",
     });
     await queueOp("ADD_MOBILE_MONEY_ACCOUNT", {

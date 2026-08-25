@@ -19,6 +19,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, reason: "INVALID_PAYLOAD" }, { status: 400 });
   }
 
-  const result = await runSettlement(session.user.id, parsed.data.mobileMoneyAccountId);
+  const result = await runSettlement(session.user.organizationId, parsed.data.mobileMoneyAccountId);
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
 }

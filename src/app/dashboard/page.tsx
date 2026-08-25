@@ -14,7 +14,7 @@ export default function DashboardPage() {
 
   const events = useLiveQuery(async () => {
     if (!user) return [];
-    const all = await db.events.where("organizerId").equals(user.id).toArray();
+    const all = await db.events.where("organizationId").equals(user.organizationId).toArray();
     return all.sort((a, b) => (a.startsAt > b.startsAt ? 1 : -1));
   }, [user?.id]);
 
@@ -48,7 +48,7 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-6xl px-4 pb-20 pt-8 sm:px-6">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Organizer Dashboard</h1>
+          <h1 className="text-2xl font-bold">{user.organizationName ?? "Organizer Dashboard"}</h1>
           <p className="text-sm text-muted">{user.name}</p>
         </div>
         <div className="flex gap-2">

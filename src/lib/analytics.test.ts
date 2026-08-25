@@ -124,11 +124,11 @@ describe("summarizeVendors", () => {
 });
 
 describe("topOrganizersByRevenue", () => {
-  it("ranks organizers within each currency separately, never mixed", () => {
+  it("ranks organizations within each currency separately, never mixed", () => {
     const orders = [
-      { totalCents: 500000, currency: "TZS", event: { organizerId: "u1", organizer: { name: "Nova Events Co." } } },
-      { totalCents: 200000, currency: "TZS", event: { organizerId: "u2", organizer: { name: "Skyline Presents" } } },
-      { totalCents: 6500, currency: "USD", event: { organizerId: "u2", organizer: { name: "Skyline Presents" } } },
+      { totalCents: 500000, currency: "TZS", event: { organizationId: "o1", organization: { name: "Nova Events Co." } } },
+      { totalCents: 200000, currency: "TZS", event: { organizationId: "o2", organization: { name: "Skyline Presents" } } },
+      { totalCents: 6500, currency: "USD", event: { organizationId: "o2", organization: { name: "Skyline Presents" } } },
     ];
     const byCurrency = topOrganizersByRevenue(orders);
     expect(byCurrency.TZS[0]).toEqual({ label: "Nova Events Co.", value: 500000 });
@@ -139,7 +139,7 @@ describe("topOrganizersByRevenue", () => {
     const orders = Array.from({ length: 8 }, (_, i) => ({
       totalCents: 1000 * (i + 1),
       currency: "TZS",
-      event: { organizerId: `u${i}`, organizer: { name: `Org ${i}` } },
+      event: { organizationId: `o${i}`, organization: { name: `Org ${i}` } },
     }));
     const byCurrency = topOrganizersByRevenue(orders, 3);
     expect(byCurrency.TZS).toHaveLength(3);

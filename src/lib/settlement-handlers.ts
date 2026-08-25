@@ -4,7 +4,7 @@ const PLATFORM_FEE_RATE = 0.08;
 
 function shapeSettlement(s: {
   id: string;
-  organizerId: string;
+  organizationId: string;
   mobileMoneyAccountId: string;
   periodStart: Date;
   periodEnd: Date;
@@ -19,7 +19,7 @@ function shapeSettlement(s: {
 }) {
   return {
     id: s.id,
-    organizerId: s.organizerId,
+    organizationId: s.organizationId,
     mobileMoneyAccountId: s.mobileMoneyAccountId,
     periodStart: s.periodStart.toISOString(),
     periodEnd: s.periodEnd.toISOString(),
@@ -37,18 +37,18 @@ function shapeSettlement(s: {
 // Extracted from POST /api/settlements/run for the same reason as
 // sync-handlers.ts — testable without HTTP/session plumbing.
 //
-// An organizer can run events in more than one currency, so unsettled
+// An organization can run events in more than one currency, so unsettled
 // orders are grouped by currency and settled independently — summing
 // across currencies into one total would silently produce a meaningless
 // number. Each currency group becomes its own Settlement record, all
 // created in this one call.
-export async function runSettlement(userId: string, mobileMoneyAccountId?: string) {
+export async function runSettlement(organizationId: string, mobileMoneyAccountId?: string) {
   const account = mobileMoneyAccountId
     ? await prisma.mobileMoneyAccount.findFirst({
-        where: { id: mobileMoneyAccountId, organizerId: userId },
+        where: { id: mobileMoneyAccountId, organizationId },
       })
     : await prisma.mobileMoneyAccount.findFirst({
-        where: { organizerId: userId },
+        where: { organizationId },
         orderBy: { isDefault: "desc" },
       });
 
@@ -57,7 +57,7 @@ export async function runSettlement(userId: string, mobileMoneyAccountId?: strin
   }
 
   const myEvents = await prisma.event.findMany({
-    where: { organizerId: userId },
+    where: { organizationId },
     select: { id: true },
   });
   const eventIds = myEvents.map((e) => e.id);
@@ -103,7 +103,7 @@ export async function runSettlement(userId: string, mobileMoneyAccountId?: strin
 
     const settlement = await prisma.settlement.create({
       data: {
-        organizerId: userId,
+        organizationId,
         mobileMoneyAccountId: account.id,
         periodStart,
         periodEnd: now,
