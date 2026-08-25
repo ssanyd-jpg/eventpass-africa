@@ -141,7 +141,7 @@ describe("handleCheckIn", () => {
   });
 
   it("returns retry:true for an unknown code", async () => {
-    const { organizer, organizationId } = await newOrganizer();
+    const { user: organizer, organizationId } = await newOrganizer();
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: "NOPE-00000" });
     expect(result.ok).toBe(false);
     expect(result.retry).toBe(true);
