@@ -51,3 +51,35 @@ export async function createTestEvent(
     include: { ticketTypes: true },
   });
 }
+
+export async function createTestVendor(
+  eventId: string,
+  overrides: Partial<{ status: string; name: string; badgeCode: string }> = {}
+) {
+  return prisma.vendor.create({
+    data: {
+      eventId,
+      name: overrides.name ?? "Test Vendor",
+      category: "Food",
+      status: overrides.status ?? "APPROVED",
+      badgeCode: overrides.badgeCode ?? unique("badge"),
+    },
+  });
+}
+
+export async function createTestWallet(
+  eventId: string,
+  ownerUserId: string,
+  overrides: Partial<{ balanceCents: number; currency: string; code: string }> = {}
+) {
+  return prisma.wallet.create({
+    data: {
+      eventId,
+      ownerUserId,
+      code: overrides.code ?? unique("wallet"),
+      balanceCents: overrides.balanceCents ?? 0,
+      currency: overrides.currency ?? "TZS",
+    },
+    include: { event: { select: { id: true, clientId: true, status: true, currency: true } } },
+  });
+}

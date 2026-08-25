@@ -7,6 +7,8 @@ import {
   type LocalEvent,
   type LocalOrder,
   type LocalVendor,
+  type LocalWallet,
+  type LocalWalletTransaction,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -116,6 +118,25 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
           await db.vendors.delete(existing.id);
         }
         await db.vendors.put({ ...vendor, syncStatus: "synced" });
+      }
+    }
+
+    if (Array.isArray(data.myWallets)) {
+      await db.wallets.bulkPut(
+        data.myWallets.map((w: LocalWallet): LocalWallet => ({ ...w, syncStatus: "synced" }))
+      );
+    }
+
+    if (Array.isArray(data.myWalletTransactions)) {
+      for (const t of data.myWalletTransactions as LocalWalletTransaction[]) {
+        const existing = await db.walletTransactions
+          .where("clientId")
+          .equals(t.clientId ?? "")
+          .first();
+        if (existing && existing.id !== t.id) {
+          await db.walletTransactions.delete(existing.id);
+        }
+        await db.walletTransactions.put({ ...t, syncStatus: "synced" });
       }
     }
 
@@ -247,6 +268,54 @@ async function applyCheckInVendorResult(_payload: any, result: any) {
   await db.vendors.put({ ...result.vendor, syncStatus: "synced" });
 }
 
+async function applyCreateWalletResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.wallets.delete(localId);
+  await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+}
+
+// TOPUP_WALLET creates a genuine new local-id transaction row that needs
+// remapping to its server id. Balance is only patched if the server says it
+// actually changed (COMPLETED) — never trust an optimistic local increment
+// for money.
+async function applyTopupWalletResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
+// CHECK_TOPUP_STATUS acts on an already-synced transaction id (its own
+// payload.clientId is just this op's idempotency key, not any local
+// record's id) — no local-temp-id to remap, just an upsert-by-real-id.
+async function applyCheckTopupStatusResult(_payload: any, result: any) {
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
+async function applyChargeWalletResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({
+    ...result.transaction,
+    syncStatus: result.declined ? "conflict" : "synced",
+    syncError: result.declined ? "Insufficient balance — declined." : null,
+  });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
+async function applySponsorTapResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+}
+
 export async function flushOutbox(): Promise<{ flushed: number; failed: number }> {
   if (!db || !navigator.onLine) return { flushed: 0, failed: 0 };
 
@@ -311,6 +380,21 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CHECK_IN_VENDOR":
           await applyCheckInVendorResult(entry.payload, result);
+          break;
+        case "CREATE_WALLET":
+          await applyCreateWalletResult(entry.payload, result);
+          break;
+        case "TOPUP_WALLET":
+          await applyTopupWalletResult(entry.payload, result);
+          break;
+        case "CHECK_TOPUP_STATUS":
+          await applyCheckTopupStatusResult(entry.payload, result);
+          break;
+        case "CHARGE_WALLET":
+          await applyChargeWalletResult(entry.payload, result);
+          break;
+        case "SPONSOR_TAP":
+          await applySponsorTapResult(entry.payload, result);
           break;
       }
 

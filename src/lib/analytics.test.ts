@@ -8,6 +8,10 @@ import {
   summarizeVendors,
   topOrganizersByRevenue,
   topEventsByTicketsSold,
+  summarizeWalletBalances,
+  summarizeWalletActivity,
+  spendByVendor,
+  sponsorTapsByZone,
 } from "./analytics";
 
 describe("bucketByDay", () => {
@@ -152,5 +156,76 @@ describe("topEventsByTicketsSold", () => {
     ]);
     expect(ranked[0]).toEqual({ label: "Bongo Beats", value: 15 });
     expect(ranked[1]).toEqual({ label: "Comedy Night", value: 3 });
+  });
+});
+
+describe("summarizeWalletBalances", () => {
+  it("sums outstanding balance by currency and counts wallets", () => {
+    const stats = summarizeWalletBalances([
+      { balanceCents: 5000, currency: "TZS" },
+      { balanceCents: 3000, currency: "TZS" },
+      { balanceCents: 1000, currency: "USD" },
+    ]);
+    expect(stats.walletCount).toBe(3);
+    expect(stats.outstandingBalanceByCurrency).toEqual({ TZS: 8000, USD: 1000 });
+  });
+
+  it("handles zero wallets cleanly", () => {
+    const stats = summarizeWalletBalances([]);
+    expect(stats.walletCount).toBe(0);
+    expect(stats.outstandingBalanceByCurrency).toEqual({});
+  });
+});
+
+describe("summarizeWalletActivity", () => {
+  it("only counts COMPLETED top-ups and sales toward volume, by currency", () => {
+    const stats = summarizeWalletActivity([
+      { type: "TOPUP", status: "COMPLETED", amountCents: 5000, currency: "TZS" },
+      { type: "TOPUP", status: "PENDING", amountCents: 2000, currency: "TZS" },
+      { type: "SALE", status: "COMPLETED", amountCents: 1500, currency: "TZS" },
+      { type: "SALE", status: "FAILED", amountCents: 9999, currency: "TZS" },
+      { type: "SPONSOR_TAP", status: "COMPLETED", amountCents: null, currency: "TZS" },
+      { type: "SPONSOR_TAP", status: "COMPLETED", amountCents: null, currency: "TZS" },
+    ]);
+    expect(stats.topupVolumeByCurrency).toEqual({ TZS: 5000 });
+    expect(stats.spendVolumeByCurrency).toEqual({ TZS: 1500 });
+    expect(stats.sponsorTapCount).toBe(2);
+  });
+
+  it("handles zero activity cleanly", () => {
+    const stats = summarizeWalletActivity([]);
+    expect(stats.topupVolumeByCurrency).toEqual({});
+    expect(stats.spendVolumeByCurrency).toEqual({});
+    expect(stats.sponsorTapCount).toBe(0);
+  });
+});
+
+describe("spendByVendor", () => {
+  it("ranks vendors by completed sale volume, one list per currency", () => {
+    const byCurrency = spendByVendor([
+      { type: "SALE", status: "COMPLETED", amountCents: 3000, currency: "TZS", vendor: { id: "v1", name: "Spice Grill" } },
+      { type: "SALE", status: "COMPLETED", amountCents: 1000, currency: "TZS", vendor: { id: "v2", name: "Coconut Water" } },
+      { type: "SALE", status: "FAILED", amountCents: 9999, currency: "TZS", vendor: { id: "v1", name: "Spice Grill" } },
+      { type: "TOPUP", status: "COMPLETED", amountCents: 5000, currency: "TZS", vendor: null },
+    ]);
+    expect(byCurrency.TZS[0]).toEqual({ label: "Spice Grill", value: 3000 });
+    expect(byCurrency.TZS[1]).toEqual({ label: "Coconut Water", value: 1000 });
+  });
+
+  it("returns an empty object for no sales", () => {
+    expect(spendByVendor([])).toEqual({});
+  });
+});
+
+describe("sponsorTapsByZone", () => {
+  it("counts taps per zone label and ranks them", () => {
+    const ranked = sponsorTapsByZone([
+      { type: "SPONSOR_TAP", sponsorZoneLabel: "Red Bull Stage" },
+      { type: "SPONSOR_TAP", sponsorZoneLabel: "Red Bull Stage" },
+      { type: "SPONSOR_TAP", sponsorZoneLabel: "MTN Booth" },
+      { type: "SALE", sponsorZoneLabel: null },
+    ]);
+    expect(ranked[0]).toEqual({ label: "Red Bull Stage", value: 2 });
+    expect(ranked[1]).toEqual({ label: "MTN Booth", value: 1 });
   });
 });

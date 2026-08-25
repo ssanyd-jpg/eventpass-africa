@@ -158,6 +158,15 @@ export default function EventDetailPage() {
             {event.description}
           </p>
 
+          {event.status === "LIVE" && (
+            <Link
+              href="/account/wallet"
+              className="mt-4 inline-flex text-sm font-medium text-accent-hover"
+            >
+              Get a cashless wallet for this event →
+            </Link>
+          )}
+
           {(event.vendors.length > 0 || (event.vendorApplicationsOpen && new Date(event.startsAt) > new Date())) && (
             <div className="mt-8 border-t border-border pt-6">
               <div className="mb-3 flex items-center justify-between">

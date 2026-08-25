@@ -14,6 +14,11 @@ import {
   handleApproveVendor,
   handleRejectVendor,
   handleCheckInVendor,
+  handleCreateWallet,
+  handleTopupWallet,
+  handleCheckTopupStatus,
+  handleChargeWallet,
+  handleSponsorTap,
 } from "@/lib/sync-handlers";
 
 export async function POST(request: Request) {
@@ -78,6 +83,21 @@ export async function POST(request: Request) {
         break;
       case "CHECK_IN_VENDOR":
         result = await handleCheckInVendor(body.payload);
+        break;
+      case "CREATE_WALLET":
+        result = await handleCreateWallet(session.user.id, body.payload);
+        break;
+      case "TOPUP_WALLET":
+        result = await handleTopupWallet(session.user.id, body.payload);
+        break;
+      case "CHECK_TOPUP_STATUS":
+        result = await handleCheckTopupStatus(body.payload);
+        break;
+      case "CHARGE_WALLET":
+        result = await handleChargeWallet(body.payload);
+        break;
+      case "SPONSOR_TAP":
+        result = await handleSponsorTap(body.payload);
         break;
       default:
         return NextResponse.json({ ok: false, reason: "UNKNOWN_OP" }, { status: 400 });

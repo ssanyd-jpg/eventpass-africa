@@ -132,6 +132,40 @@ export interface LocalVendor {
   syncStatus: "synced" | "pending";
 }
 
+export interface LocalWallet {
+  id: string;
+  clientId?: string | null;
+  code: string;
+  eventId: string;
+  eventClientId?: string | null;
+  ownerUserId: string;
+  balanceCents: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus: "synced" | "pending";
+}
+
+export interface LocalWalletTransaction {
+  id: string;
+  clientId?: string | null;
+  walletId: string;
+  type: "TOPUP" | "SALE" | "SPONSOR_TAP";
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  amountCents: number | null;
+  currency: string;
+  providerReference: string | null;
+  providerMessage: string | null;
+  phoneNumber: string | null;
+  vendorId: string | null;
+  vendorName: string | null;
+  sponsorZoneLabel: string | null;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus: "synced" | "pending" | "conflict";
+  syncError?: string | null;
+}
+
 export type OutboxOpType =
   | "CREATE_EVENT"
   | "EDIT_EVENT"
@@ -144,7 +178,12 @@ export type OutboxOpType =
   | "ADD_VENDOR"
   | "APPROVE_VENDOR"
   | "REJECT_VENDOR"
-  | "CHECK_IN_VENDOR";
+  | "CHECK_IN_VENDOR"
+  | "CREATE_WALLET"
+  | "TOPUP_WALLET"
+  | "CHECK_TOPUP_STATUS"
+  | "CHARGE_WALLET"
+  | "SPONSOR_TAP";
 
 export interface OutboxEntry {
   id?: number;
@@ -169,6 +208,8 @@ class EventPassAfricaDB extends Dexie {
   outbox!: Table<OutboxEntry, number>;
   meta!: Table<MetaEntry, string>;
   vendors!: Table<LocalVendor, string>;
+  wallets!: Table<LocalWallet, string>;
+  walletTransactions!: Table<LocalWalletTransaction, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -188,6 +229,17 @@ class EventPassAfricaDB extends Dexie {
       outbox: "++id, status, type, createdAt",
       meta: "key",
       vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+    });
+    this.version(3).stores({
+      events: "id, clientId, slug, organizerId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizerId",
+      settlements: "id, organizerId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
     });
   }
 }

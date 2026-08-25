@@ -10,6 +10,10 @@ import {
   checkInRateByEvent,
   ticketTypeSellThrough,
   summarizeVendors,
+  summarizeWalletBalances,
+  summarizeWalletActivity,
+  spendByVendor,
+  sponsorTapsByZone,
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
 import BarSeries from "@/components/charts/BarSeries";
@@ -39,7 +43,7 @@ export default async function OrganizerAnalyticsPage() {
   const eventIds = myEvents.map((e) => e.id);
   const windowStart = trendWindowStart();
 
-  const [revenueOrders, ticketTypes, tickets, vendors] = await Promise.all([
+  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs] = await Promise.all([
     prisma.order.findMany({
       where: { eventId: { in: eventIds }, status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
       select: { createdAt: true, totalCents: true, currency: true },
@@ -56,6 +60,14 @@ export default async function OrganizerAnalyticsPage() {
       where: { eventId: { in: eventIds } },
       select: { status: true, feeStatus: true, stallFeeCents: true, currency: true },
     }),
+    prisma.wallet.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { balanceCents: true, currency: true },
+    }),
+    prisma.walletTransaction.findMany({
+      where: { wallet: { eventId: { in: eventIds } } },
+      select: { type: true, status: true, amountCents: true, currency: true, sponsorZoneLabel: true, vendor: { select: { id: true, name: true } } },
+    }),
   ]);
 
   const revenueByCurrency = bucketRevenueByDay(revenueOrders);
@@ -68,6 +80,10 @@ export default async function OrganizerAnalyticsPage() {
   const sellThrough = ticketTypeSellThrough(ticketTypes);
   const vendorStats = summarizeVendors(vendors);
   const revenueCurrencies = Object.keys(revenueByCurrency).sort();
+  const walletBalanceStats = summarizeWalletBalances(wallets);
+  const walletActivityStats = summarizeWalletActivity(walletTxs);
+  const vendorSpend = spendByVendor(walletTxs);
+  const tapsByZone = sponsorTapsByZone(walletTxs);
 
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-8 sm:px-6">
@@ -157,6 +173,70 @@ export default async function OrganizerAnalyticsPage() {
           )}
         </div>
       </div>
+
+      <h2 className="mb-3 mt-8 font-semibold">Cashless wallets</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Top-up volume</p>
+          {Object.keys(walletActivityStats.topupVolumeByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(walletActivityStats.topupVolumeByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Spend volume</p>
+          {Object.keys(walletActivityStats.spendVolumeByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(walletActivityStats.spendVolumeByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Outstanding balance</p>
+          {Object.keys(walletBalanceStats.outstandingBalanceByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(walletBalanceStats.outstandingBalanceByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">{walletBalanceStats.walletCount} wallet(s) registered</p>
+        </div>
+      </div>
+
+      {Object.keys(vendorSpend).length > 0 && (
+        <>
+          <h3 className="mb-3 mt-6 text-sm font-semibold text-muted">Spend by vendor</h3>
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {Object.entries(vendorSpend).map(([currency, entries]) => (
+              <div key={currency} className="card p-5">
+                <p className="mb-3 text-xs uppercase tracking-wide text-muted">By {currency}</p>
+                <BarSeries
+                  data={entries.map((e) => ({ label: e.label, value: e.value, displayValue: formatCents(e.value, currency) }))}
+                  emptyLabel="No wallet spend yet."
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {tapsByZone.length > 0 && (
+        <>
+          <h3 className="mb-3 mt-6 text-sm font-semibold text-muted">Sponsor zone taps</h3>
+          <div className="card mb-8 p-5">
+            <BarSeries
+              data={tapsByZone.map((e) => ({ label: e.label, value: e.value, displayValue: `${e.value} taps` }))}
+              emptyLabel="No sponsor taps yet."
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

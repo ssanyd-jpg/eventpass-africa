@@ -205,3 +205,87 @@ export function topEventsByTicketsSold(
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
 }
+
+export interface WalletBalanceStats {
+  walletCount: number;
+  outstandingBalanceByCurrency: Record<string, number>;
+}
+
+export function summarizeWalletBalances(
+  wallets: { balanceCents: number; currency: string }[]
+): WalletBalanceStats {
+  const outstandingBalanceByCurrency: Record<string, number> = {};
+  for (const w of wallets) {
+    outstandingBalanceByCurrency[w.currency] = (outstandingBalanceByCurrency[w.currency] ?? 0) + w.balanceCents;
+  }
+  return { walletCount: wallets.length, outstandingBalanceByCurrency };
+}
+
+export interface WalletActivityStats {
+  topupVolumeByCurrency: Record<string, number>;
+  spendVolumeByCurrency: Record<string, number>;
+  sponsorTapCount: number;
+}
+
+// Only COMPLETED rows count toward volume — a PENDING top-up hasn't
+// actually landed yet, and a FAILED/declined sale never moved any balance.
+export function summarizeWalletActivity(
+  txs: { type: string; status: string; amountCents: number | null; currency: string }[]
+): WalletActivityStats {
+  const topupVolumeByCurrency: Record<string, number> = {};
+  const spendVolumeByCurrency: Record<string, number> = {};
+  let sponsorTapCount = 0;
+
+  for (const t of txs) {
+    if (t.type === "TOPUP" && t.status === "COMPLETED") {
+      topupVolumeByCurrency[t.currency] = (topupVolumeByCurrency[t.currency] ?? 0) + (t.amountCents ?? 0);
+    } else if (t.type === "SALE" && t.status === "COMPLETED") {
+      spendVolumeByCurrency[t.currency] = (spendVolumeByCurrency[t.currency] ?? 0) + (t.amountCents ?? 0);
+    } else if (t.type === "SPONSOR_TAP") {
+      sponsorTapCount += 1;
+    }
+  }
+
+  return { topupVolumeByCurrency, spendVolumeByCurrency, sponsorTapCount };
+}
+
+// Same currency-partitioned ranked-list shape as topOrganizersByRevenue —
+// spend can't be compared across currencies either.
+export function spendByVendor(
+  txs: { type: string; status: string; amountCents: number | null; currency: string; vendor: { id: string; name: string } | null }[],
+  limit = 5
+): Record<string, RankedEntry[]> {
+  const byCurrency = new Map<string, Map<string, RankedEntry>>();
+  for (const t of txs) {
+    if (t.type !== "SALE" || t.status !== "COMPLETED" || !t.vendor) continue;
+    const vendorMap = byCurrency.get(t.currency) ?? new Map<string, RankedEntry>();
+    const entry = vendorMap.get(t.vendor.id) ?? { label: t.vendor.name, value: 0 };
+    entry.value += t.amountCents ?? 0;
+    vendorMap.set(t.vendor.id, entry);
+    byCurrency.set(t.currency, vendorMap);
+  }
+  const result: Record<string, RankedEntry[]> = {};
+  for (const [currency, vendorMap] of Array.from(byCurrency)) {
+    result[currency] = Array.from(vendorMap.values())
+      .sort((a, b) => b.value - a.value)
+      .slice(0, limit);
+  }
+  return result;
+}
+
+// Plain count, no currency involved — same reasoning as topEventsByTicketsSold.
+export function sponsorTapsByZone(
+  txs: { type: string; sponsorZoneLabel: string | null }[],
+  limit = 10
+): RankedEntry[] {
+  const totals = new Map<string, RankedEntry>();
+  for (const t of txs) {
+    if (t.type !== "SPONSOR_TAP" || !t.sponsorZoneLabel) continue;
+    const entry = totals.get(t.sponsorZoneLabel) ?? { label: t.sponsorZoneLabel, value: 0 };
+    entry.value += 1;
+    totals.set(t.sponsorZoneLabel, entry);
+  }
+  return Array.from(totals.values())
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+}

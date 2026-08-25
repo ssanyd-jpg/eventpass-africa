@@ -124,6 +124,47 @@ export async function GET() {
       updatedAt: v.updatedAt.toISOString(),
     }));
 
+    const myWallets = await prisma.wallet.findMany({
+      where: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] },
+      include: { event: { select: { id: true, clientId: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myWallets = myWallets.map((w) => ({
+      id: w.id,
+      clientId: w.clientId,
+      code: w.code,
+      eventId: w.eventId,
+      eventClientId: w.event.clientId,
+      ownerUserId: w.ownerUserId,
+      balanceCents: w.balanceCents,
+      currency: w.currency,
+      createdAt: w.createdAt.toISOString(),
+      updatedAt: w.updatedAt.toISOString(),
+    }));
+
+    const myWalletTransactions = await prisma.walletTransaction.findMany({
+      where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizerId: userId } }] } },
+      include: { vendor: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myWalletTransactions = myWalletTransactions.map((t) => ({
+      id: t.id,
+      clientId: t.clientId,
+      walletId: t.walletId,
+      type: t.type,
+      status: t.status,
+      amountCents: t.amountCents,
+      currency: t.currency,
+      providerReference: t.providerReference,
+      providerMessage: t.providerMessage,
+      phoneNumber: t.phoneNumber,
+      vendorId: t.vendorId,
+      vendorName: t.vendor?.name ?? null,
+      sponsorZoneLabel: t.sponsorZoneLabel,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
+    }));
+
     const accounts = await prisma.mobileMoneyAccount.findMany({
       where: { organizerId: userId },
     });

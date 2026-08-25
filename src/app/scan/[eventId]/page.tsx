@@ -185,9 +185,14 @@ export default function GateScannerPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
-      <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
-        ← {event.title}
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
+          ← {event.title}
+        </Link>
+        <Link href={`/scan/${event.id}/wallet`} className="text-sm font-medium text-accent-hover">
+          Charge wallets →
+        </Link>
+      </div>
 
       <h1 className="mt-3 text-2xl font-bold">{t("scan.title")}</h1>
 

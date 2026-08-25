@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { generateTicketCode, slugify, formatCents } from "@/lib/format";
 import { sendNotification } from "@/lib/notifications";
 import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@/lib/currency";
+import { getActivePaymentProvider } from "@/lib/payments";
+import { verifyAirpayOrder } from "@/lib/payments/airpay";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -133,6 +135,46 @@ export const payloadSchemas = {
     clientId: z.string().min(1),
     badgeCode: z.string().min(1).max(40),
     eventId: z.string().min(1),
+    scannedAt: z.string().optional(),
+  }),
+  CREATE_WALLET: z.object({
+    clientId: z.string().min(1),
+    code: z.string().min(1).max(40),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+  }),
+  TOPUP_WALLET: z.object({
+    clientId: z.string().min(1),
+    walletId: z.string().min(1),
+    walletClientId: z.string().nullable().optional(),
+    amountCents: z.number().int().min(100).max(50000000),
+    phoneNumber: z.string().min(6).max(20).optional(),
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+  }),
+  CHECK_TOPUP_STATUS: z.object({
+    clientId: z.string().min(1),
+    walletTransactionId: z.string().min(1),
+    walletTransactionClientId: z.string().nullable().optional(),
+  }),
+  // Deliberately excludes anything currency/fee-derived — the server
+  // re-derives currency from the wallet, same discipline SELL_TICKETS uses
+  // for totalCents and APPLY_VENDOR uses for feeStatus.
+  CHARGE_WALLET: z.object({
+    clientId: z.string().min(1),
+    walletCode: z.string().min(1).max(40),
+    vendorId: z.string().min(1),
+    vendorClientId: z.string().nullable().optional(),
+    amountCents: z.number().int().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    scannedAt: z.string().optional(),
+  }),
+  SPONSOR_TAP: z.object({
+    clientId: z.string().min(1),
+    walletCode: z.string().min(1).max(40),
+    sponsorZoneLabel: z.string().min(1).max(80),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
     scannedAt: z.string().optional(),
   }),
 } as const;
@@ -783,4 +825,355 @@ export async function handleCheckInVendor(payload: any) {
     include: vendorInclude,
   });
   return { ok: true, vendor: shapeVendor(updated) };
+}
+
+export function shapeWallet(w: any) {
+  return {
+    id: w.id,
+    clientId: w.clientId,
+    code: w.code,
+    eventId: w.eventId,
+    eventClientId: w.event?.clientId ?? null,
+    ownerUserId: w.ownerUserId,
+    balanceCents: w.balanceCents,
+    currency: w.currency,
+    createdAt: w.createdAt.toISOString(),
+    updatedAt: w.updatedAt.toISOString(),
+  };
+}
+
+export function shapeWalletTransaction(t: any) {
+  return {
+    id: t.id,
+    clientId: t.clientId,
+    walletId: t.walletId,
+    type: t.type,
+    status: t.status,
+    amountCents: t.amountCents,
+    currency: t.currency,
+    providerReference: t.providerReference,
+    providerMessage: t.providerMessage,
+    phoneNumber: t.phoneNumber,
+    vendorId: t.vendorId,
+    vendorName: t.vendor?.name ?? null,
+    sponsorZoneLabel: t.sponsorZoneLabel,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  };
+}
+
+const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true } } } as const;
+const walletTxInclude = { vendor: { select: { name: true } } } as const;
+
+async function resolveWallet(walletId: string, walletClientId?: string | null) {
+  return (
+    (await prisma.wallet.findUnique({ where: { id: walletId }, include: walletInclude })) ??
+    (walletClientId
+      ? await prisma.wallet.findUnique({ where: { clientId: walletClientId }, include: walletInclude })
+      : null)
+  );
+}
+
+export async function handleCreateWallet(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.wallet.findUnique({ where: { clientId }, include: walletInclude });
+  if (existing) {
+    return { ok: true, wallet: shapeWallet(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+
+  // One wallet per user per event — if they already have one (e.g. this is
+  // a replay with a different clientId, or a stale local record), return
+  // the existing one instead of hitting the @@unique constraint.
+  const existingForUser = await prisma.wallet.findUnique({
+    where: { eventId_ownerUserId: { eventId: event.id, ownerUserId: userId } },
+    include: walletInclude,
+  });
+  if (existingForUser) {
+    return { ok: true, wallet: shapeWallet(existingForUser) };
+  }
+
+  const created = await prisma.wallet.create({
+    data: {
+      clientId,
+      code: String(payload.code),
+      eventId: event.id,
+      ownerUserId: userId,
+      currency: event.currency,
+    },
+    include: walletInclude,
+  });
+
+  return { ok: true, wallet: shapeWallet(created) };
+}
+
+export async function handleTopupWallet(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
+  if (existingTx) {
+    return { ok: true, transaction: shapeWalletTransaction(existingTx), wallet: null };
+  }
+
+  const wallet = await resolveWallet(String(payload.walletId), payload.walletClientId);
+  if (!wallet) {
+    return { ok: false, retry: true, reason: "WALLET_NOT_SYNCED_YET" };
+  }
+  if (wallet.event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+  if (wallet.ownerUserId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const amountCents = Number(payload.amountCents);
+  const provider = getActivePaymentProvider();
+  const charge = await provider.initiateCharge({
+    orderClientId: clientId,
+    amountCents,
+    phoneNumber: payload.phoneNumber ? String(payload.phoneNumber) : undefined,
+    mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : undefined,
+    description: `Wallet top-up — ${wallet.code}`,
+  });
+
+  const baseData = {
+    clientId,
+    type: "TOPUP",
+    amountCents,
+    currency: wallet.currency,
+    providerReference: charge.reference || null,
+    providerMessage: charge.message ?? null,
+    phoneNumber: payload.phoneNumber ? String(payload.phoneNumber) : null,
+    walletId: wallet.id,
+  };
+
+  if (charge.status === "PAID") {
+    // Credit the balance and log the transaction in one transaction — see
+    // handleChargeWallet for why this codebase treats wallet balance
+    // mutations as needing the same $transaction discipline as ticket
+    // inventory (oversell guard) rather than two separate writes.
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balanceCents: { increment: amountCents } },
+        include: walletInclude,
+      });
+      const transaction = await tx.walletTransaction.create({
+        data: { ...baseData, status: "COMPLETED" },
+        include: walletTxInclude,
+      });
+      return { updatedWallet, transaction };
+    }, { timeout: 15000, maxWait: 10000 });
+
+    return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.updatedWallet) };
+  }
+
+  // PENDING (awaiting buyer confirmation) or FAILED (declined) — either way
+  // the balance is untouched. Both are legitimate terminal-for-now states,
+  // not sync failures, so this still returns ok: true.
+  const transaction = await prisma.walletTransaction.create({
+    data: { ...baseData, status: charge.status === "PENDING" ? "PENDING" : "FAILED" },
+    include: walletTxInclude,
+  });
+  return { ok: true, transaction: shapeWalletTransaction(transaction), wallet: shapeWallet(wallet) };
+}
+
+export async function handleCheckTopupStatus(payload: any) {
+  const tx =
+    (await prisma.walletTransaction.findUnique({
+      where: { id: String(payload.walletTransactionId) },
+      include: walletTxInclude,
+    })) ??
+    (payload.walletTransactionClientId
+      ? await prisma.walletTransaction.findUnique({
+          where: { clientId: String(payload.walletTransactionClientId) },
+          include: walletTxInclude,
+        })
+      : null);
+
+  if (!tx) {
+    return { ok: false, retry: true, reason: "TRANSACTION_NOT_SYNCED_YET" };
+  }
+  if (tx.status !== "PENDING") {
+    return { ok: true, transaction: shapeWalletTransaction(tx), wallet: null };
+  }
+  if (!tx.providerReference) {
+    return { ok: true, transaction: shapeWalletTransaction(tx), wallet: null };
+  }
+
+  const result = await verifyAirpayOrder(tx.providerReference);
+  if (result.status === "PENDING") {
+    return { ok: true, transaction: shapeWalletTransaction(tx), wallet: null };
+  }
+
+  if (result.status === "PAID") {
+    // Compare-and-swap on status so a racing auto-check (page mount) and a
+    // manual "check status" click can't both credit the balance.
+    const updated = await prisma.$transaction(async (dbTx) => {
+      const res = await dbTx.walletTransaction.updateMany({
+        where: { id: tx.id, status: "PENDING" },
+        data: { status: "COMPLETED", providerMessage: result.message ?? null },
+      });
+      if (res.count === 0) return null;
+      const updatedWallet = await dbTx.wallet.update({
+        where: { id: tx.walletId },
+        data: { balanceCents: { increment: tx.amountCents ?? 0 } },
+        include: walletInclude,
+      });
+      const updatedTx = await dbTx.walletTransaction.findUniqueOrThrow({
+        where: { id: tx.id },
+        include: walletTxInclude,
+      });
+      return { updatedWallet, updatedTx };
+    }, { timeout: 15000, maxWait: 10000 });
+
+    if (!updated) {
+      // Already resolved by a concurrent check — fetch fresh and return it.
+      const fresh = await prisma.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
+      return { ok: true, transaction: shapeWalletTransaction(fresh), wallet: null };
+    }
+    return { ok: true, transaction: shapeWalletTransaction(updated.updatedTx), wallet: shapeWallet(updated.updatedWallet) };
+  }
+
+  // FAILED
+  const updated = await prisma.walletTransaction.updateMany({
+    where: { id: tx.id, status: "PENDING" },
+    data: { status: "FAILED", providerMessage: result.message ?? null },
+  });
+  const fresh = await prisma.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
+  return { ok: true, transaction: shapeWalletTransaction(fresh), wallet: null, updated: updated.count > 0 };
+}
+
+export async function handleChargeWallet(payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
+  if (existingTx) {
+    const wallet = await prisma.wallet.findUnique({ where: { id: existingTx.walletId }, include: walletInclude });
+    return { ok: true, transaction: shapeWalletTransaction(existingTx), wallet: wallet ? shapeWallet(wallet) : null };
+  }
+
+  const walletCode = String(payload.walletCode);
+  const wallet = await prisma.wallet.findUnique({ where: { code: walletCode }, include: walletInclude });
+  if (!wallet) {
+    return { ok: false, retry: true, reason: "WALLET_NOT_FOUND" };
+  }
+  if (wallet.event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+
+  const vendor =
+    (await prisma.vendor.findUnique({ where: { id: String(payload.vendorId) } })) ??
+    (payload.vendorClientId
+      ? await prisma.vendor.findUnique({ where: { clientId: String(payload.vendorClientId) } })
+      : null);
+  if (!vendor) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
+  }
+  if (vendor.status !== "APPROVED") {
+    return { ok: false, reason: "VENDOR_NOT_APPROVED" };
+  }
+  if (vendor.eventId !== wallet.eventId) {
+    return { ok: false, reason: "VENDOR_EVENT_MISMATCH" };
+  }
+
+  const amountCents = Number(payload.amountCents);
+
+  // Compare-and-swap + audit log, atomically paired — same $transaction
+  // discipline handleSellTickets/handleRefundOrder use for inventory, and
+  // the same Neon-pooled-connection timeout every $transaction here needs.
+  // The WHERE clause on the updateMany itself enforces the balance floor,
+  // so at most one concurrent charge against the same wallet can succeed —
+  // no separate read-then-write race window.
+  const result = await prisma.$transaction(async (tx) => {
+    const res = await tx.wallet.updateMany({
+      where: { id: wallet.id, balanceCents: { gte: amountCents } },
+      data: { balanceCents: { decrement: amountCents } },
+    });
+
+    if (res.count === 0) {
+      // Declined, not a sync failure — log it (audit trail, same reasoning
+      // as a FAILED top-up) and report ok:true with declined:true, matching
+      // how handleSellTickets reports an oversold order as a successful
+      // sync with a flag rather than a dropped/retried outbox entry.
+      const declinedTx = await tx.walletTransaction.create({
+        data: {
+          clientId,
+          type: "SALE",
+          status: "FAILED",
+          amountCents,
+          currency: wallet.currency,
+          walletId: wallet.id,
+          vendorId: vendor.id,
+          providerMessage: "Insufficient balance",
+        },
+        include: walletTxInclude,
+      });
+      return { declined: true as const, transaction: declinedTx, wallet: null };
+    }
+
+    const updatedWallet = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id }, include: walletInclude });
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        clientId,
+        type: "SALE",
+        status: "COMPLETED",
+        amountCents,
+        currency: wallet.currency,
+        walletId: wallet.id,
+        vendorId: vendor.id,
+      },
+      include: walletTxInclude,
+    });
+    return { declined: false as const, transaction, wallet: updatedWallet };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (result.declined) {
+    return {
+      ok: true,
+      transaction: shapeWalletTransaction(result.transaction),
+      wallet: shapeWallet(wallet),
+      declined: true,
+      reason: "INSUFFICIENT_BALANCE",
+    };
+  }
+
+  return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };
+}
+
+export async function handleSponsorTap(payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
+  if (existingTx) {
+    return { ok: true, transaction: shapeWalletTransaction(existingTx) };
+  }
+
+  const walletCode = String(payload.walletCode);
+  const wallet = await prisma.wallet.findUnique({ where: { code: walletCode }, include: walletInclude });
+  if (!wallet) {
+    return { ok: false, retry: true, reason: "WALLET_NOT_FOUND" };
+  }
+
+  const transaction = await prisma.walletTransaction.create({
+    data: {
+      clientId,
+      type: "SPONSOR_TAP",
+      status: "COMPLETED",
+      currency: wallet.currency,
+      walletId: wallet.id,
+      sponsorZoneLabel: String(payload.sponsorZoneLabel),
+    },
+    include: walletTxInclude,
+  });
+
+  return { ok: true, transaction: shapeWalletTransaction(transaction) };
 }

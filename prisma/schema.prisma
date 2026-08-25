@@ -26,6 +26,7 @@ model User {
   settlements          Settlement[]
   passwordResetTokens  PasswordResetToken[]
   vendorApplications   Vendor[]
+  wallets              Wallet[]
 }
 
 model PasswordResetToken {
@@ -123,6 +124,7 @@ model Event {
   orders      Order[]
   tickets     Ticket[]
   vendors     Vendor[]
+  wallets     Wallet[]
 }
 
 model TicketType {
@@ -244,4 +246,55 @@ model Vendor {
 
   ownerUserId String?
   owner       User?   @relation(fields: [ownerUserId], references: [id])
+
+  walletSales WalletTransaction[]
+}
+
+// One wallet per user per event (v1 scope cut — no multi-wristband/family
+// sharing). currency snapshots Event.currency at creation, same discipline
+// as Order.currency/Vendor.currency.
+model Wallet {
+  id           String   @id @default(cuid())
+  clientId     String?  @unique
+  code         String   @unique // generateTicketCode() — same generator Ticket.code/Vendor.badgeCode already reuse
+  balanceCents Int      @default(0)
+  currency     String   @default("TZS")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id])
+
+  transactions WalletTransaction[]
+
+  @@unique([eventId, ownerUserId])
+}
+
+// type is TOPUP | SALE | SPONSOR_TAP. status is PENDING | COMPLETED | FAILED
+// (plain-string convention — see MobileMoneyAccount.provider). Only TOPUP is
+// ever PENDING (waiting on an async mobile-money charge); SALE/SPONSOR_TAP
+// always resolve synchronously. sponsorZoneLabel is free text rather than
+// its own model — no attributes worth a table, same reasoning as Vendor.category.
+model WalletTransaction {
+  id                String   @id @default(cuid())
+  clientId          String?  @unique
+  type              String
+  status            String   @default("COMPLETED")
+  amountCents       Int?     // null only for SPONSOR_TAP
+  currency          String   @default("TZS")
+  providerReference String?  // aggregator's merchant order id, for reconciliation
+  providerMessage   String?
+  phoneNumber       String?  // TOPUP only
+  sponsorZoneLabel  String?  // SPONSOR_TAP only
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  walletId String
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  vendorId String? // SALE only
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
 }

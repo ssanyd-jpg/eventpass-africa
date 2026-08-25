@@ -96,6 +96,7 @@ export default function ManageEventPage() {
         <div className="flex gap-2">
           <Link href={`/dashboard/events/${event.id}/edit`} className="btn-secondary">Edit</Link>
           <Link href={`/dashboard/events/${event.id}/vendors`} className="btn-secondary">Vendors</Link>
+          <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>
       </div>
