@@ -1,18 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
+import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime } from "@/lib/format";
 
 export default function ManageEventPage() {
   const { id: rawId } = useParams<{ id: string }>();
   const id = decodeURIComponent(rawId);
+  const router = useRouter();
+  const { user } = useAppSession();
   const [refunding, setRefunding] = useState<string | null>(null);
   const [refundError, setRefundError] = useState<string | null>(null);
+
+  // Middleware already redirects GATE_CREW away from this route server-side
+  // — this is defense-in-depth for a device offline with an already-cached
+  // page shell (see src/middleware.ts).
+  useEffect(() => {
+    if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
+  }, [user, router]);
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(id);
@@ -29,6 +39,8 @@ export default function ManageEventPage() {
     if (!event) return [];
     return db.vendors.where("eventId").equals(event.id).toArray();
   }, [event?.id]);
+
+  if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
     return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;

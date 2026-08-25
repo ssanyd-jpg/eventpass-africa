@@ -24,6 +24,11 @@ export default async function OrganizerAnalyticsPage() {
   if (!session?.user?.id) {
     redirect("/login?callbackUrl=/dashboard/analytics");
   }
+  // Middleware already redirects GATE_CREW away from this route — this is
+  // defense-in-depth (see src/middleware.ts).
+  if (session.user.organizationRole === "GATE_CREW") {
+    redirect("/dashboard");
+  }
 
   const myEvents = await prisma.event.findMany({
     where: { organizationId: session.user.organizationId },

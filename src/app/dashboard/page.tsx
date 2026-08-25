@@ -44,6 +44,8 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
+  const isGateCrew = user.organizationRole === "GATE_CREW";
+
   return (
     <div className="mx-auto max-w-6xl px-4 pb-20 pt-8 sm:px-6">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -51,15 +53,17 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold">{user.organizationName ?? "Organizer Dashboard"}</h1>
           <p className="text-sm text-muted">{user.name}</p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/dashboard/analytics" className="btn-secondary">Analytics</Link>
-          <Link href="/dashboard/settlements" className="btn-secondary">Settlements</Link>
-          <Link href="/dashboard/events/new" className="btn-primary">+ Create Event</Link>
-        </div>
+        {!isGateCrew && (
+          <div className="flex gap-2">
+            <Link href="/dashboard/analytics" className="btn-secondary">Analytics</Link>
+            <Link href="/dashboard/settlements" className="btn-secondary">Settlements</Link>
+            <Link href="/dashboard/events/new" className="btn-primary">+ Create Event</Link>
+          </div>
+        )}
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <RevenueStatCard revenueByCurrency={stats.revenueByCurrency} />
+        {!isGateCrew && <RevenueStatCard revenueByCurrency={stats.revenueByCurrency} />}
         <StatCard label="Tickets sold" value={String(stats.ticketsSold)} />
         <StatCard
           label="Pending sync"
@@ -73,10 +77,16 @@ export default function DashboardPage() {
         <div className="card h-24 animate-pulse bg-surface2" />
       ) : events.length === 0 ? (
         <div className="card p-10 text-center text-muted">
-          You haven&apos;t created any events yet.
-          <div className="mt-4">
-            <Link href="/dashboard/events/new" className="btn-primary">Create your first event</Link>
-          </div>
+          {isGateCrew ? (
+            "No events to scan yet."
+          ) : (
+            <>
+              You haven&apos;t created any events yet.
+              <div className="mt-4">
+                <Link href="/dashboard/events/new" className="btn-primary">Create your first event</Link>
+              </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -97,9 +107,11 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/dashboard/events/${event.id}`} className="btn-secondary !px-3 !py-1.5 text-xs">
-                    Manage
-                  </Link>
+                  {!isGateCrew && (
+                    <Link href={`/dashboard/events/${event.id}`} className="btn-secondary !px-3 !py-1.5 text-xs">
+                      Manage
+                    </Link>
+                  )}
                   <Link href={`/scan/${event.id}`} className="btn-primary !px-3 !py-1.5 text-xs">
                     Scan gate
                   </Link>

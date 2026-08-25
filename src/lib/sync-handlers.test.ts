@@ -113,7 +113,7 @@ describe("handleSellTickets", () => {
 
 describe("handleCheckIn", () => {
   async function soldTicket() {
-    const { organizationId } = await newOrganizer();
+    const { user: organizer, organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const event = await createTestEvent(organizationId);
     const tt = event.ticketTypes[0];
@@ -122,29 +122,38 @@ describe("handleCheckIn", () => {
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHK-${Date.now()}-${Math.random()}`] }],
     });
-    return sale.order.tickets[0].code as string;
+    return { code: sale.order.tickets[0].code as string, organizer, organizationId };
   }
 
   it("checks a valid ticket in", async () => {
-    const code = await soldTicket();
-    const result = await handleCheckIn({ ticketCode: code });
+    const { code, organizer, organizationId } = await soldTicket();
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
     expect(result.ok).toBe(true);
     expect(result.ticket.checkedIn).toBe(true);
   });
 
   it("reports already-checked-in without erroring on replay", async () => {
-    const code = await soldTicket();
-    await handleCheckIn({ ticketCode: code });
-    const second = await handleCheckIn({ ticketCode: code });
+    const { code, organizer, organizationId } = await soldTicket();
+    await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
+    const second = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
     expect(second.ok).toBe(true);
     expect(second.alreadyCheckedIn).toBe(true);
   });
 
   it("returns retry:true for an unknown code", async () => {
-    const result = await handleCheckIn({ ticketCode: "NOPE-00000" });
+    const { organizer, organizationId } = await newOrganizer();
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: "NOPE-00000" });
     expect(result.ok).toBe(false);
     expect(result.retry).toBe(true);
     expect(result.reason).toBe("TICKET_NOT_FOUND");
+  });
+
+  it("rejects check-in for a ticket belonging to a different organization", async () => {
+    const { code } = await soldTicket();
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const result = await handleCheckIn(someoneElse.id, someoneElseOrgId, { ticketCode: code });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
   });
 });
 
@@ -489,16 +498,16 @@ describe("handleCheckInVendor", () => {
   }
 
   it("checks an approved vendor's badge in", async () => {
-    const { badgeCode } = await approvedVendor();
-    const result = await handleCheckInVendor({ badgeCode });
+    const { badgeCode, organizer, organizationId } = await approvedVendor();
+    const result = await handleCheckInVendor(organizer.id, organizationId, { badgeCode });
     expect(result.ok).toBe(true);
     expect(result.vendor.checkedIn).toBe(true);
   });
 
   it("reports already-checked-in without erroring on replay", async () => {
-    const { badgeCode } = await approvedVendor();
-    await handleCheckInVendor({ badgeCode });
-    const second = await handleCheckInVendor({ badgeCode });
+    const { badgeCode, organizer, organizationId } = await approvedVendor();
+    await handleCheckInVendor(organizer.id, organizationId, { badgeCode });
+    const second = await handleCheckInVendor(organizer.id, organizationId, { badgeCode });
     expect(second.ok).toBe(true);
     expect((second as any).alreadyCheckedIn).toBe(true);
   });
@@ -521,14 +530,23 @@ describe("handleCheckInVendor", () => {
     })();
     const rejected = await handleRejectVendor(organizer.id, organizationId, { vendorId });
 
-    const result = await handleCheckInVendor({ badgeCode: rejected.vendor.badgeCode });
+    const result = await handleCheckInVendor(organizer.id, organizationId, { badgeCode: rejected.vendor.badgeCode });
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("NOT_APPROVED");
   });
 
   it("returns retry:true for an unknown badge code", async () => {
-    const result = await handleCheckInVendor({ badgeCode: "VENDR-UNKNOWN" });
+    const { user: organizer, organizationId } = await newOrganizer();
+    const result = await handleCheckInVendor(organizer.id, organizationId, { badgeCode: "VENDR-UNKNOWN" });
     expect(result.ok).toBe(false);
     expect((result as any).retry).toBe(true);
+  });
+
+  it("rejects badge check-in for a vendor belonging to a different organization", async () => {
+    const { badgeCode } = await approvedVendor();
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const result = await handleCheckInVendor(someoneElse.id, someoneElseOrgId, { badgeCode });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
   });
 });

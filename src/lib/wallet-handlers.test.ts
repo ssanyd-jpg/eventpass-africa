@@ -202,7 +202,7 @@ describe("handleChargeWallet", () => {
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
 
-    const result = await handleChargeWallet({
+    const result = await handleChargeWallet(organizer.id, organization.id, {
       clientId: "charge-1",
       walletCode: wallet.code,
       vendorId: vendor.id,
@@ -224,7 +224,7 @@ describe("handleChargeWallet", () => {
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 1000, currency: event.currency });
     const vendor = await createTestVendor(event.id);
 
-    const result = await handleChargeWallet({
+    const result = await handleChargeWallet(organizer.id, organization.id, {
       clientId: "charge-insufficient",
       walletCode: wallet.code,
       vendorId: vendor.id,
@@ -249,8 +249,8 @@ describe("handleChargeWallet", () => {
     const vendor = await createTestVendor(event.id);
 
     const [a, b] = await Promise.all([
-      handleChargeWallet({ clientId: "concurrent-a", walletCode: wallet.code, vendorId: vendor.id, amountCents: 5000, eventId: event.id }),
-      handleChargeWallet({ clientId: "concurrent-b", walletCode: wallet.code, vendorId: vendor.id, amountCents: 5000, eventId: event.id }),
+      handleChargeWallet(organizer.id, organization.id, { clientId: "concurrent-a", walletCode: wallet.code, vendorId: vendor.id, amountCents: 5000, eventId: event.id }),
+      handleChargeWallet(organizer.id, organization.id, { clientId: "concurrent-b", walletCode: wallet.code, vendorId: vendor.id, amountCents: 5000, eventId: event.id }),
     ]);
 
     const outcomes = [a, b].map((r: any) => (r.declined ? "declined" : "completed"));
@@ -270,7 +270,7 @@ describe("handleChargeWallet", () => {
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000 });
     const vendor = await createTestVendor(event.id, { status: "PENDING" });
 
-    const result = await handleChargeWallet({
+    const result = await handleChargeWallet(organizer.id, organization.id, {
       clientId: "charge-not-approved",
       walletCode: wallet.code,
       vendorId: vendor.id,
@@ -291,7 +291,7 @@ describe("handleChargeWallet", () => {
     const vendor = await createTestVendor(event.id);
     await prisma.event.update({ where: { id: event.id }, data: { status: "CANCELLED" } });
 
-    const result = await handleChargeWallet({
+    const result = await handleChargeWallet(organizer.id, organization.id, {
       clientId: "charge-cancelled",
       walletCode: wallet.code,
       vendorId: vendor.id,
@@ -312,10 +312,55 @@ describe("handleChargeWallet", () => {
     const vendor = await createTestVendor(event.id);
     const payload = { clientId: "charge-replay", walletCode: wallet.code, vendorId: vendor.id, amountCents: 2000, eventId: event.id };
 
-    await handleChargeWallet(payload);
-    await handleChargeWallet(payload);
+    await handleChargeWallet(organizer.id, organization.id, payload);
+    await handleChargeWallet(organizer.id, organization.id, payload);
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(8000);
+  });
+
+  it("rejects a charge against a wallet belonging to a different organization", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
+    const vendor = await createTestVendor(event.id);
+
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleChargeWallet(someoneElse.id, someoneElseOrg.id, {
+      clientId: "charge-cross-org",
+      walletCode: wallet.code,
+      vendorId: vendor.id,
+      amountCents: 1000,
+      eventId: event.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("rejects a replayed charge against a wallet belonging to a different organization", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
+    const vendor = await createTestVendor(event.id);
+    const payload = { clientId: "charge-replay-cross-org", walletCode: wallet.code, vendorId: vendor.id, amountCents: 1000, eventId: event.id };
+
+    await handleChargeWallet(organizer.id, organization.id, payload);
+
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleChargeWallet(someoneElse.id, someoneElseOrg.id, payload);
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
   });
 });
 
@@ -328,7 +373,7 @@ describe("handleSponsorTap", () => {
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 5000 });
 
-    const result = await handleSponsorTap({
+    const result = await handleSponsorTap(organizer.id, organization.id, {
       clientId: "tap-1",
       walletCode: wallet.code,
       sponsorZoneLabel: "Red Bull Stage",
@@ -350,8 +395,50 @@ describe("handleSponsorTap", () => {
     const wallet = await createTestWallet(event.id, attendee.id);
     const payload = { clientId: "tap-replay", walletCode: wallet.code, sponsorZoneLabel: "MTN Booth", eventId: event.id };
 
-    await handleSponsorTap(payload);
-    await handleSponsorTap(payload);
+    await handleSponsorTap(organizer.id, organization.id, payload);
+    await handleSponsorTap(organizer.id, organization.id, payload);
     expect(await prisma.walletTransaction.count({ where: { clientId: "tap-replay" } })).toBe(1);
+  });
+
+  it("rejects a tap against a wallet belonging to a different organization", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleSponsorTap(someoneElse.id, someoneElseOrg.id, {
+      clientId: "tap-cross-org",
+      walletCode: wallet.code,
+      sponsorZoneLabel: "Interloper Booth",
+      eventId: event.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("rejects a replayed tap against a wallet belonging to a different organization", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+    const payload = { clientId: "tap-replay-cross-org", walletCode: wallet.code, sponsorZoneLabel: "MTN Booth", eventId: event.id };
+
+    await handleSponsorTap(organizer.id, organization.id, payload);
+
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleSponsorTap(someoneElse.id, someoneElseOrg.id, payload);
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
   });
 });

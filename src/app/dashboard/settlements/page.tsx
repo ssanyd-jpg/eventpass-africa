@@ -61,6 +61,9 @@ export default function SettlementsPage() {
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push("/login?callbackUrl=/dashboard/settlements");
+    // Middleware already redirects GATE_CREW away from this route — this
+    // is defense-in-depth (see src/middleware.ts).
+    if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
   }, [status, user, router]);
 
   const hasAccount = (accounts?.length ?? 0) > 0;
@@ -118,7 +121,7 @@ export default function SettlementsPage() {
     setRunning(false);
   }
 
-  if (!user) return null;
+  if (!user || user.organizationRole === "GATE_CREW") return null;
 
   const unsettledEntries = Object.entries(estimatedUnsettledByCurrency ?? {}).filter(([, cents]) => cents > 0);
 

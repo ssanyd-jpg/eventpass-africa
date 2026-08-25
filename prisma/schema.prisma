@@ -47,7 +47,7 @@ model Organization {
   settlements         Settlement[]
 }
 
-// role is OWNER | STAFF (plain-string convention — see
+// role is OWNER | STAFF | GATE_CREW (plain-string convention — see
 // MobileMoneyAccount.provider). @@unique([userId]), not
 // @@unique([organizationId, userId]) — that's the v1 "one org per user"
 // scope cut: a user can never belong to two organizations at once.
@@ -66,8 +66,8 @@ model OrganizationMembership {
 }
 
 // Same hashed-token + expiry shape as PasswordResetToken. status is
-// PENDING | ACCEPTED | REVOKED. Always invites as STAFF in v1 — no role
-// picker; an OWNER promoting someone is out of scope until Access Control.
+// PENDING | ACCEPTED | REVOKED. role is STAFF | GATE_CREW — never OWNER
+// (no promote-to-owner-via-invite, and no role-change UI after acceptance).
 model OrganizationInvite {
   id         String    @id @default(cuid())
   tokenHash  String    @unique

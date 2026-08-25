@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useOnlineStatus } from "@/lib/sync-engine";
+import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 
@@ -21,8 +22,17 @@ type ScanResult = {
 export default function GateScannerPage() {
   const { eventId: rawEventId } = useParams<{ eventId: string }>();
   const eventId = decodeURIComponent(rawEventId);
+  const router = useRouter();
+  const { user, status } = useAppSession();
   const online = useOnlineStatus();
   const { t } = useTranslation();
+
+  // Previously this page had no auth check at all — anyone who guessed the
+  // URL saw the full scanner. Real enforcement is server-side (per-org
+  // checks in sync-handlers.ts); this just requires being signed in.
+  useEffect(() => {
+    if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}`);
+  }, [status, user, router, eventId]);
   const [mode, setMode] = useState<"attendee" | "vendor">("attendee");
   const [code, setCode] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -165,6 +175,8 @@ export default function GateScannerPage() {
     setCode("");
     inputRef.current?.focus();
   }
+
+  if (!user) return null;
 
   if (event === undefined) {
     return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;

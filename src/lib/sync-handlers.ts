@@ -418,22 +418,41 @@ export async function handleSellTickets(userId: string, payload: any) {
   return { ok: true, order: shapeOrder(order), oversold, ticketTypeUpdates };
 }
 
-export async function handleCheckIn(payload: any) {
+const ticketInclude = { event: { select: { id: true, organizationId: true } } } as const;
+
+export function shapeTicket(t: any) {
+  return {
+    id: t.id,
+    clientId: t.clientId,
+    code: t.code,
+    checkedIn: t.checkedIn,
+    checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
+    orderId: t.orderId,
+    eventId: t.eventId,
+    ticketTypeId: t.ticketTypeId,
+  };
+}
+
+export async function handleCheckIn(userId: string, organizationId: string, payload: any) {
   const code = String(payload.ticketCode);
-  const ticket = await prisma.ticket.findUnique({ where: { code } });
+  const ticket = await prisma.ticket.findUnique({ where: { code }, include: ticketInclude });
   if (!ticket) {
     return { ok: false, retry: true, reason: "TICKET_NOT_FOUND" };
   }
+  if (ticket.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
   if (ticket.checkedIn) {
-    return { ok: true, ticket: { ...ticket, checkedInAt: ticket.checkedInAt?.toISOString() ?? null }, alreadyCheckedIn: true };
+    return { ok: true, ticket: shapeTicket(ticket), alreadyCheckedIn: true };
   }
   const updated = await prisma.ticket.update({
     where: { id: ticket.id },
     data: { checkedIn: true, checkedInAt: new Date(payload.scannedAt ?? Date.now()) },
+    include: ticketInclude,
   });
   return {
     ok: true,
-    ticket: { ...updated, checkedInAt: updated.checkedInAt?.toISOString() ?? null },
+    ticket: shapeTicket(updated),
   };
 }
 
@@ -807,11 +826,14 @@ export async function handleRejectVendor(userId: string, organizationId: string,
   return { ok: true, vendor: shapeVendor(updated) };
 }
 
-export async function handleCheckInVendor(payload: any) {
+export async function handleCheckInVendor(userId: string, organizationId: string, payload: any) {
   const badgeCode = String(payload.badgeCode);
   const vendor = await prisma.vendor.findUnique({ where: { badgeCode }, include: vendorInclude });
   if (!vendor) {
     return { ok: false, retry: true, reason: "VENDOR_NOT_FOUND" };
+  }
+  if (vendor.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
   }
   if (vendor.status !== "APPROVED") {
     return { ok: false, reason: "NOT_APPROVED" };
@@ -862,7 +884,7 @@ export function shapeWalletTransaction(t: any) {
   };
 }
 
-const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true } } } as const;
+const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } } } as const;
 const walletTxInclude = { vendor: { select: { name: true } } } as const;
 
 async function resolveWallet(walletId: string, walletClientId?: string | null) {
@@ -1052,19 +1074,25 @@ export async function handleCheckTopupStatus(payload: any) {
   return { ok: true, transaction: shapeWalletTransaction(fresh), wallet: null, updated: updated.count > 0 };
 }
 
-export async function handleChargeWallet(payload: any) {
+export async function handleChargeWallet(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.clientId);
 
   const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
   if (existingTx) {
     const wallet = await prisma.wallet.findUnique({ where: { id: existingTx.walletId }, include: walletInclude });
-    return { ok: true, transaction: shapeWalletTransaction(existingTx), wallet: wallet ? shapeWallet(wallet) : null };
+    if (!wallet || wallet.event.organizationId !== organizationId) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+    return { ok: true, transaction: shapeWalletTransaction(existingTx), wallet: shapeWallet(wallet) };
   }
 
   const walletCode = String(payload.walletCode);
   const wallet = await prisma.wallet.findUnique({ where: { code: walletCode }, include: walletInclude });
   if (!wallet) {
     return { ok: false, retry: true, reason: "WALLET_NOT_FOUND" };
+  }
+  if (wallet.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
   }
   if (wallet.event.status !== "LIVE") {
     return { ok: false, reason: "EVENT_NOT_LIVE" };
@@ -1149,11 +1177,15 @@ export async function handleChargeWallet(payload: any) {
   return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };
 }
 
-export async function handleSponsorTap(payload: any) {
+export async function handleSponsorTap(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.clientId);
 
   const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
   if (existingTx) {
+    const wallet = await prisma.wallet.findUnique({ where: { id: existingTx.walletId }, include: walletInclude });
+    if (!wallet || wallet.event.organizationId !== organizationId) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
     return { ok: true, transaction: shapeWalletTransaction(existingTx) };
   }
 
@@ -1161,6 +1193,9 @@ export async function handleSponsorTap(payload: any) {
   const wallet = await prisma.wallet.findUnique({ where: { code: walletCode }, include: walletInclude });
   if (!wallet) {
     return { ok: false, retry: true, reason: "WALLET_NOT_FOUND" };
+  }
+  if (wallet.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
   }
 
   const transaction = await prisma.walletTransaction.create({

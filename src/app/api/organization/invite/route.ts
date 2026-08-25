@@ -5,11 +5,13 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 
-const inviteSchema = z.object({ email: z.string().email() });
+const inviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(["STAFF", "GATE_CREW"]).default("STAFF"),
+});
 
-// OWNER-only, same hashed-token + expiry shape as password-reset/request —
-// always invites as STAFF (no role picker; an OWNER promoting a member is
-// out of scope until Access Control).
+// OWNER-only, same hashed-token + expiry shape as password-reset/request.
+// Role is STAFF or GATE_CREW — never OWNER (no promote-to-owner-via-invite).
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id || session.user.organizationRole !== "OWNER") {
@@ -28,7 +30,7 @@ export async function POST(request: Request) {
     data: {
       tokenHash,
       email: parsed.data.email,
-      role: "STAFF",
+      role: parsed.data.role,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       organizationId: session.user.organizationId,
       invitedByUserId: session.user.id,

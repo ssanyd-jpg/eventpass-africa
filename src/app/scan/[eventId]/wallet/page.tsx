@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp, flushOutbox, useOnlineStatus } from "@/lib/sync-engine";
+import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner from "@/components/NFCScanner";
@@ -19,7 +20,18 @@ type TerminalResult = {
 export default function WalletChargeTerminalPage() {
   const { eventId: rawEventId } = useParams<{ eventId: string }>();
   const eventId = decodeURIComponent(rawEventId);
+  const router = useRouter();
+  const { user, status } = useAppSession();
   const online = useOnlineStatus();
+
+  // Previously this page had no auth check at all. Middleware already
+  // redirects GATE_CREW away from this route server-side; this covers the
+  // baseline "must be signed in" case and the offline-cached-shell case
+  // (see src/middleware.ts).
+  useEffect(() => {
+    if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}/wallet`);
+    if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
+  }, [status, user, router, eventId]);
   const [mode, setMode] = useState<"sale" | "tap">("sale");
   const [code, setCode] = useState("");
   const [amountMajor, setAmountMajor] = useState("");
@@ -138,6 +150,8 @@ export default function WalletChargeTerminalPage() {
     setCode("");
     inputRef.current?.focus();
   }
+
+  if (!user || user.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
     return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;

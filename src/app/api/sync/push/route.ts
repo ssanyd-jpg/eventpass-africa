@@ -20,6 +20,7 @@ import {
   handleChargeWallet,
   handleSponsorTap,
 } from "@/lib/sync-handlers";
+import { isOpAllowedForRole } from "@/lib/access-control";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
   }
   body.payload = validated.data;
 
+  if (!isOpAllowedForRole(session.user.organizationRole, body.type as keyof typeof payloadSchemas)) {
+    return NextResponse.json({ ok: false, reason: "FORBIDDEN" }, { status: 403 });
+  }
+
   try {
     let result;
     switch (body.type) {
@@ -55,7 +60,7 @@ export async function POST(request: Request) {
         result = await handleSellTickets(session.user.id, body.payload);
         break;
       case "CHECK_IN":
-        result = await handleCheckIn(body.payload);
+        result = await handleCheckIn(session.user.id, session.user.organizationId, body.payload);
         break;
       case "ADD_MOBILE_MONEY_ACCOUNT":
         result = await handleAddMobileMoneyAccount(session.user.id, session.user.organizationId, body.payload);
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
         result = await handleRejectVendor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "CHECK_IN_VENDOR":
-        result = await handleCheckInVendor(body.payload);
+        result = await handleCheckInVendor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "CREATE_WALLET":
         result = await handleCreateWallet(session.user.id, body.payload);
@@ -94,10 +99,10 @@ export async function POST(request: Request) {
         result = await handleCheckTopupStatus(body.payload);
         break;
       case "CHARGE_WALLET":
-        result = await handleChargeWallet(body.payload);
+        result = await handleChargeWallet(session.user.id, session.user.organizationId, body.payload);
         break;
       case "SPONSOR_TAP":
-        result = await handleSponsorTap(body.payload);
+        result = await handleSponsorTap(session.user.id, session.user.organizationId, body.payload);
         break;
       default:
         return NextResponse.json({ ok: false, reason: "UNKNOWN_OP" }, { status: 400 });

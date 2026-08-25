@@ -23,7 +23,7 @@ export async function createTestOrganization(overrides: Partial<{ name: string }
   });
 }
 
-export async function addMembership(organizationId: string, userId: string, role: "OWNER" | "STAFF" = "OWNER") {
+export async function addMembership(organizationId: string, userId: string, role: "OWNER" | "STAFF" | "GATE_CREW" = "OWNER") {
   return prisma.organizationMembership.create({ data: { organizationId, userId, role } });
 }
 

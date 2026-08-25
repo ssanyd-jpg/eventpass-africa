@@ -6,6 +6,12 @@ import { formatDate } from "@/lib/format";
 import InviteForm from "./InviteForm";
 import { removeMember } from "./actions";
 
+const ROLE_LABEL: Record<string, string> = {
+  OWNER: "Owner",
+  STAFF: "Staff",
+  GATE_CREW: "Gate crew",
+};
+
 // Server-rendered, non-offline — mirrors dashboard/analytics/page.tsx's
 // pattern rather than the offline-first Dexie pages. Team management is
 // low-frequency and doesn't need to work at a gate with no signal.
@@ -51,7 +57,7 @@ export default async function TeamPage() {
               <p className="text-xs text-muted">{m.user.email}</p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="pill">{m.role}</span>
+              <span className="pill">{ROLE_LABEL[m.role] ?? m.role}</span>
               {m.role !== "OWNER" && (
                 <form
                   action={async () => {
@@ -75,7 +81,10 @@ export default async function TeamPage() {
           <div className="card mb-8 divide-y divide-border">
             {invites.map((i) => (
               <div key={i.id} className="flex items-center justify-between gap-3 p-4 text-sm">
-                <p className="font-medium">{i.email}</p>
+                <div>
+                  <p className="font-medium">{i.email}</p>
+                  <p className="text-xs text-muted">{ROLE_LABEL[i.role] ?? i.role}</p>
+                </div>
                 <span className="text-xs text-muted">Sent {formatDate(i.createdAt)}</span>
               </div>
             ))}

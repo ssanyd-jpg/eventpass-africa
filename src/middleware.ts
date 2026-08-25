@@ -7,14 +7,33 @@ import { authConfig } from "@/auth.config";
 const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
-  const isAdminRoute = req.nextUrl.pathname.startsWith("/admin");
-  if (!isAdminRoute) return NextResponse.next();
+  const path = req.nextUrl.pathname;
 
-  const role = req.auth?.user?.role;
-  if (role !== "ADMIN") {
+  if (path.startsWith("/admin")) {
+    if (req.auth?.user?.role !== "ADMIN") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("callbackUrl", path);
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
+
+  // GATE_CREW is event-day door staff — scoped to the gate scanner only.
+  // Real enforcement is server-side (see src/lib/access-control.ts and the
+  // organizationId checks in sync-handlers.ts); this redirect just keeps
+  // the UI from rendering surfaces they can't act on, and matters even
+  // offline since the PWA service worker precaches page shells.
+  const isGateCrewRestricted =
+    path.startsWith("/dashboard/events") ||
+    path.startsWith("/dashboard/team") ||
+    path.startsWith("/dashboard/settlements") ||
+    path.startsWith("/dashboard/analytics") ||
+    /^\/scan\/[^/]+\/wallet(\/|$)/.test(path);
+
+  if (isGateCrewRestricted && req.auth?.user?.organizationRole === "GATE_CREW") {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
 
@@ -22,5 +41,12 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/dashboard/events/:path*",
+    "/dashboard/team/:path*",
+    "/dashboard/settlements/:path*",
+    "/dashboard/analytics/:path*",
+    "/scan/:eventId/wallet",
+  ],
 };

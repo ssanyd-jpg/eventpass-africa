@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId, type LocalVendor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
+import { useAppSession } from "@/lib/use-app-session";
 import { generateTicketCode, formatCents } from "@/lib/format";
 
 const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
@@ -13,6 +14,15 @@ const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
 export default function ManageVendorsPage() {
   const { id: rawId } = useParams<{ id: string }>();
   const id = decodeURIComponent(rawId);
+  const router = useRouter();
+  const { user } = useAppSession();
+
+  // Middleware already redirects GATE_CREW away from this route server-side
+  // — this is defense-in-depth for a device offline with an already-cached
+  // page shell (see src/middleware.ts).
+  useEffect(() => {
+    if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
+  }, [user, router]);
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(id);
@@ -31,6 +41,8 @@ export default function ManageVendorsPage() {
   const [addCategory, setAddCategory] = useState(VENDOR_CATEGORIES[0]);
   const [addBooth, setAddBooth] = useState("");
   const [adding, setAdding] = useState(false);
+
+  if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
     return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
