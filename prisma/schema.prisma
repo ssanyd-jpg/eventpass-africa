@@ -45,6 +45,30 @@ model Organization {
   events              Event[]
   mobileMoneyAccounts MobileMoneyAccount[]
   settlements         Settlement[]
+  auditLogs           AuditLog[]
+}
+
+// action is a closed set of accountability events for actions an
+// organization's own members take (event/vendor/settlement/team changes)
+// — see AuditAction in src/lib/audit.ts. Deliberately excludes personal/
+// attendee actions (buying tickets, applying to vendor), gate-scan
+// check-ins (too high-frequency for an accountability trail), and
+// platform-admin moderation actions (a different actor namespace — an
+// admin isn't a member of the org they're moderating). actorName is a
+// denormalized snapshot, same discipline as Order.currency/Vendor's fee
+// snapshot, so the list page never needs a join to render.
+model AuditLog {
+  id             String   @id @default(cuid())
+  action         String
+  summary        String
+  actorUserId    String
+  actorName      String
+  createdAt      DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
 }
 
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see

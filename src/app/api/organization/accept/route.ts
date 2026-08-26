@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
 
 const acceptSchema = z.object({ token: z.string().min(1) });
 
@@ -63,6 +64,17 @@ export async function POST(request: Request) {
     prisma.organizationInvite.update({ where: { id: invite.id }, data: { status: "ACCEPTED", acceptedAt: new Date() } }),
     prisma.organization.delete({ where: { id: oldPersonalOrgId } }),
   ]);
+
+  // Logged against the org being joined (invite.organizationId), not
+  // session.user.organizationId — the JWT is still stale here (pre-
+  // update()) and would show the accepter's old personal org.
+  await logAudit({
+    organizationId: invite.organizationId,
+    actorUserId: session.user.id,
+    actorName: session.user.name ?? session.user.email ?? "Unknown",
+    action: "MEMBER_JOINED",
+    summary: `${session.user.name} joined as ${invite.role === "GATE_CREW" ? "gate crew" : "staff"}`,
+  });
 
   return NextResponse.json({ ok: true, organizationName: invite.organization.name });
 }

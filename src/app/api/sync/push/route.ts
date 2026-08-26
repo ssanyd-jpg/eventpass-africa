@@ -21,6 +21,7 @@ import {
   handleSponsorTap,
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
+import { logAudit, buildSyncAuditEntry } from "@/lib/audit";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -107,6 +108,17 @@ export async function POST(request: Request) {
       default:
         return NextResponse.json({ ok: false, reason: "UNKNOWN_OP" }, { status: 400 });
     }
+
+    const auditEntry = buildSyncAuditEntry(body.type, result);
+    if (auditEntry) {
+      await logAudit({
+        organizationId: session.user.organizationId,
+        actorUserId: session.user.id,
+        actorName: session.user.name ?? session.user.email ?? "Unknown",
+        ...auditEntry,
+      });
+    }
+
     return NextResponse.json(result);
   } catch (err) {
     console.error("sync/push error", err);

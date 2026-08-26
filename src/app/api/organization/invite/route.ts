@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
+import { logAudit } from "@/lib/audit";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -35,6 +36,14 @@ export async function POST(request: Request) {
       organizationId: session.user.organizationId,
       invitedByUserId: session.user.id,
     },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    actorUserId: session.user.id,
+    actorName: session.user.name ?? session.user.email ?? "Unknown",
+    action: "MEMBER_INVITED",
+    summary: `Invited ${parsed.data.email} as ${parsed.data.role === "GATE_CREW" ? "gate crew" : "staff"}`,
   });
 
   const acceptUrl = `${process.env.NEXTAUTH_URL ?? ""}/team/accept/${rawToken}`;

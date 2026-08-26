@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultOrganizationName } from "@/lib/organizations";
+import { logAudit } from "@/lib/audit";
 
 // Removing a member doesn't delete their membership row — per this
 // codebase's "every user has exactly one organization, always" invariant,
@@ -36,6 +37,14 @@ export async function removeMember(userId: string) {
       where: { userId },
       data: { organizationId: freshOrg.id, role: "OWNER" },
     });
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    actorUserId: session.user.id,
+    actorName: session.user.name ?? session.user.email ?? "Unknown",
+    action: "MEMBER_REMOVED",
+    summary: `Removed ${membership.user.name} from the team`,
   });
 
   revalidatePath("/dashboard/team");

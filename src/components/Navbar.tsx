@@ -68,6 +68,7 @@ export default function Navbar() {
           {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
           {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
+          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
           {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
         </nav>
 
@@ -104,6 +105,7 @@ export default function Navbar() {
         {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
         {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
         {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
+        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
         {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
       </div>
     </header>
