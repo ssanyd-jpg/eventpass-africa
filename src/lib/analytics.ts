@@ -274,16 +274,18 @@ export function spendByVendor(
 }
 
 // Plain count, no currency involved — same reasoning as topEventsByTicketsSold.
-export function sponsorTapsByZone(
-  txs: { type: string; sponsorZoneLabel: string | null }[],
+// Groups by the real Sponsor FK (id), not a string label, so two taps for the
+// same sponsor always collapse onto one entry.
+export function sponsorTapsBySponsor(
+  txs: { type: string; sponsor: { id: string; name: string } | null }[],
   limit = 10
 ): RankedEntry[] {
   const totals = new Map<string, RankedEntry>();
   for (const t of txs) {
-    if (t.type !== "SPONSOR_TAP" || !t.sponsorZoneLabel) continue;
-    const entry = totals.get(t.sponsorZoneLabel) ?? { label: t.sponsorZoneLabel, value: 0 };
+    if (t.type !== "SPONSOR_TAP" || !t.sponsor) continue;
+    const entry = totals.get(t.sponsor.id) ?? { label: t.sponsor.name, value: 0 };
     entry.value += 1;
-    totals.set(t.sponsorZoneLabel, entry);
+    totals.set(t.sponsor.id, entry);
   }
   return Array.from(totals.values())
     .sort((a, b) => b.value - a.value)

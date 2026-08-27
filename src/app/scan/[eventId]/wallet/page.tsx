@@ -36,7 +36,7 @@ export default function WalletChargeTerminalPage() {
   const [code, setCode] = useState("");
   const [amountMajor, setAmountMajor] = useState("");
   const [vendorId, setVendorId] = useState("");
-  const [zoneLabel, setZoneLabel] = useState("");
+  const [sponsorId, setSponsorId] = useState("");
   const [result, setResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +53,11 @@ export default function WalletChargeTerminalPage() {
   }, [event?.id]);
   const approvedVendors = useMemo(() => (vendors ?? []).filter((v) => v.status === "APPROVED"), [vendors]);
 
+  const sponsors = useLiveQuery(async () => {
+    if (!event) return [];
+    return db.sponsors.where("eventId").equals(event.id).toArray();
+  }, [event?.id]);
+
   // Refs so the scan handlers' identity stays stable across renders —
   // CameraScanner restarts its stream whenever onDetect changes, same
   // reasoning as the gate scanner's ref-stabilization.
@@ -62,8 +67,8 @@ export default function WalletChargeTerminalPage() {
   vendorIdRef.current = vendorId;
   const amountMajorRef = useRef(amountMajor);
   amountMajorRef.current = amountMajor;
-  const zoneLabelRef = useRef(zoneLabel);
-  zoneLabelRef.current = zoneLabel;
+  const sponsorIdRef = useRef(sponsorId);
+  sponsorIdRef.current = sponsorId;
   const onlineRef = useRef(online);
   onlineRef.current = online;
 
@@ -123,10 +128,10 @@ export default function WalletChargeTerminalPage() {
   const recordTap = useCallback(async (rawCode: string) => {
     const normalized = rawCode.trim().toUpperCase();
     const event = eventRef.current;
-    const label = zoneLabelRef.current.trim();
+    const sponsorId = sponsorIdRef.current;
     if (!normalized || !event) return;
-    if (!label) {
-      setResult({ kind: "invalid", message: "Enter a sponsor zone label first.", code: normalized });
+    if (!sponsorId) {
+      setResult({ kind: "invalid", message: "Pick which sponsor this tap is for first.", code: normalized });
       return;
     }
 
@@ -134,12 +139,12 @@ export default function WalletChargeTerminalPage() {
     await queueOp("SPONSOR_TAP", {
       clientId,
       walletCode: normalized,
-      sponsorZoneLabel: label,
+      sponsorId,
       eventId: event.id,
       eventClientId: event.clientId,
     });
 
-    setResult({ kind: "recorded", message: `Tap recorded at ${label}.`, code: normalized });
+    setResult({ kind: "recorded", message: "Tap recorded.", code: normalized });
   }, []);
 
   const activeHandler = mode === "sale" ? chargeWallet : recordTap;
@@ -217,14 +222,13 @@ export default function WalletChargeTerminalPage() {
         </div>
       ) : (
         <div className="card mt-5 p-5">
-          <label className="label" htmlFor="zone">Sponsor zone</label>
-          <input
-            id="zone"
-            className="input"
-            placeholder="e.g. Red Bull Stage"
-            value={zoneLabel}
-            onChange={(e) => setZoneLabel(e.target.value)}
-          />
+          <label className="label" htmlFor="sponsor">Sponsor</label>
+          <select id="sponsor" className="input" value={sponsorId} onChange={(e) => setSponsorId(e.target.value)}>
+            <option value="">Select a sponsor…</option>
+            {(sponsors ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name} ({s.tier})</option>
+            ))}
+          </select>
         </div>
       )}
 

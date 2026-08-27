@@ -206,6 +206,7 @@ model Event {
   orders      Order[]
   tickets     Ticket[]
   vendors     Vendor[]
+  sponsors    Sponsor[]
   wallets     Wallet[]
 }
 
@@ -332,6 +333,34 @@ model Vendor {
   walletSales WalletTransaction[]
 }
 
+// Organizer-managed sponsor entity — same shape as Vendor, simplified: no
+// ownerUserId/self-apply (no sponsor login/portal), no status
+// PENDING/APPROVED/REJECTED (every sponsor an organizer adds is immediately
+// active), no badgeCode/checkedIn (no sponsor check-in flow). feeCents is
+// real client-supplied input (not derived from the event, unlike Vendor's
+// stallFeeCents) — sponsorship fees are inherently variable per sponsor,
+// and this is the organizer's own number for their own reporting, not
+// charged to anyone.
+model Sponsor {
+  id           String   @id @default(cuid())
+  clientId     String?  @unique
+  name         String
+  tier         String // Platinum | Gold | Silver | Bronze | Other
+  description  String   @default("")
+  contactEmail String   @default("")
+  contactPhone String   @default("")
+  feeCents     Int      @default(0)
+  currency     String   @default("TZS")
+  feeStatus    String   @default("NONE") // NONE | PAID
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  sponsorTaps WalletTransaction[]
+}
+
 // One wallet per user per event (v1 scope cut — no multi-wristband/family
 // sharing). currency snapshots Event.currency at creation, same discipline
 // as Order.currency/Vendor.currency.
@@ -358,8 +387,7 @@ model Wallet {
 // type is TOPUP | SALE | SPONSOR_TAP. status is PENDING | COMPLETED | FAILED
 // (plain-string convention — see MobileMoneyAccount.provider). Only TOPUP is
 // ever PENDING (waiting on an async mobile-money charge); SALE/SPONSOR_TAP
-// always resolve synchronously. sponsorZoneLabel is free text rather than
-// its own model — no attributes worth a table, same reasoning as Vendor.category.
+// always resolve synchronously.
 model WalletTransaction {
   id                String   @id @default(cuid())
   clientId          String?  @unique
@@ -370,7 +398,6 @@ model WalletTransaction {
   providerReference String?  // aggregator's merchant order id, for reconciliation
   providerMessage   String?
   phoneNumber       String?  // TOPUP only
-  sponsorZoneLabel  String?  // SPONSOR_TAP only
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -379,4 +406,7 @@ model WalletTransaction {
 
   vendorId String? // SALE only
   vendor   Vendor? @relation(fields: [vendorId], references: [id])
+
+  sponsorId String? // SPONSOR_TAP only
+  sponsor   Sponsor? @relation(fields: [sponsorId], references: [id])
 }

@@ -11,6 +11,7 @@ import {
   handleRefundOrder,
   handleApplyVendor,
   handleAddVendor,
+  handleAddSponsor,
   handleApproveVendor,
   handleRejectVendor,
   handleCheckInVendor,
@@ -80,6 +81,9 @@ export async function POST(request: Request) {
         break;
       case "ADD_VENDOR":
         result = await handleAddVendor(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "ADD_SPONSOR":
+        result = await handleAddSponsor(session.user.id, session.user.organizationId, body.payload);
         break;
       case "APPROVE_VENDOR":
         result = await handleApproveVendor(session.user.id, session.user.organizationId, body.payload);

@@ -77,6 +77,20 @@ export async function createTestVendor(
   });
 }
 
+export async function createTestSponsor(
+  eventId: string,
+  overrides: Partial<{ name: string; tier: string; feeCents: number }> = {}
+) {
+  return prisma.sponsor.create({
+    data: {
+      eventId,
+      name: overrides.name ?? "Test Sponsor",
+      tier: overrides.tier ?? "Gold",
+      feeCents: overrides.feeCents ?? 0,
+    },
+  });
+}
+
 export async function createTestWallet(
   eventId: string,
   ownerUserId: string,

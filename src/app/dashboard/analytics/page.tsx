@@ -13,7 +13,7 @@ import {
   summarizeWalletBalances,
   summarizeWalletActivity,
   spendByVendor,
-  sponsorTapsByZone,
+  sponsorTapsBySponsor,
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
 import BarSeries from "@/components/charts/BarSeries";
@@ -71,7 +71,7 @@ export default async function OrganizerAnalyticsPage() {
     }),
     prisma.walletTransaction.findMany({
       where: { wallet: { eventId: { in: eventIds } } },
-      select: { type: true, status: true, amountCents: true, currency: true, sponsorZoneLabel: true, vendor: { select: { id: true, name: true } } },
+      select: { type: true, status: true, amountCents: true, currency: true, sponsor: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -88,7 +88,7 @@ export default async function OrganizerAnalyticsPage() {
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
   const vendorSpend = spendByVendor(walletTxs);
-  const tapsByZone = sponsorTapsByZone(walletTxs);
+  const tapsByZone = sponsorTapsBySponsor(walletTxs);
 
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-8 sm:px-6">

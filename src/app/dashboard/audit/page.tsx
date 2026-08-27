@@ -12,6 +12,7 @@ const ACTION_LABEL: Record<string, string> = {
   VENDOR_ADDED: "Vendor added",
   VENDOR_APPROVED: "Vendor approved",
   VENDOR_REJECTED: "Vendor rejected",
+  SPONSOR_ADDED: "Sponsor added",
   PAYOUT_ACCOUNT_ADDED: "Payout account added",
   SETTLEMENT_RUN: "Settlement run",
   MEMBER_INVITED: "Member invited",

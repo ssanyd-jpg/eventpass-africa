@@ -7,6 +7,7 @@ import {
   type LocalEvent,
   type LocalOrder,
   type LocalVendor,
+  type LocalSponsor,
   type LocalWallet,
   type LocalWalletTransaction,
   type OutboxOpType,
@@ -118,6 +119,19 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
           await db.vendors.delete(existing.id);
         }
         await db.vendors.put({ ...vendor, syncStatus: "synced" });
+      }
+    }
+
+    if (Array.isArray(data.mySponsors)) {
+      for (const sponsor of data.mySponsors as LocalSponsor[]) {
+        const existing = await db.sponsors
+          .where("clientId")
+          .equals(sponsor.clientId ?? "")
+          .first();
+        if (existing && existing.id !== sponsor.id) {
+          await db.sponsors.delete(existing.id);
+        }
+        await db.sponsors.put({ ...sponsor, syncStatus: "synced" });
       }
     }
 
@@ -268,6 +282,13 @@ async function applyCheckInVendorResult(_payload: any, result: any) {
   await db.vendors.put({ ...result.vendor, syncStatus: "synced" });
 }
 
+// Same delete-local-then-put-server shape as applyCreateVendorResult.
+async function applyCreateSponsorResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.sponsors.delete(localId);
+  await db.sponsors.put({ ...result.sponsor, syncStatus: "synced" });
+}
+
 async function applyCreateWalletResult(payload: any, result: any) {
   const localId = payload.clientId as string;
   await db.wallets.delete(localId);
@@ -380,6 +401,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CHECK_IN_VENDOR":
           await applyCheckInVendorResult(entry.payload, result);
+          break;
+        case "ADD_SPONSOR":
+          await applyCreateSponsorResult(entry.payload, result);
           break;
         case "CREATE_WALLET":
           await applyCreateWalletResult(entry.payload, result);

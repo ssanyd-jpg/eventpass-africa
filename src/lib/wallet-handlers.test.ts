@@ -4,6 +4,7 @@ import {
   createTestEvent,
   createTestUser,
   createTestVendor,
+  createTestSponsor,
   createTestWallet,
   createTestOrganization,
   addMembership,
@@ -372,16 +373,18 @@ describe("handleSponsorTap", () => {
     const attendee = await createTestUser();
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 5000 });
+    const sponsor = await createTestSponsor(event.id, { name: "Red Bull Stage" });
 
     const result = await handleSponsorTap(organizer.id, organization.id, {
       clientId: "tap-1",
       walletCode: wallet.code,
-      sponsorZoneLabel: "Red Bull Stage",
+      sponsorId: sponsor.id,
       eventId: event.id,
     });
 
     expect(result.ok).toBe(true);
     expect(result.transaction.amountCents).toBeNull();
+    expect(result.transaction.sponsorId).toBe(sponsor.id);
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(5000);
   });
@@ -393,7 +396,8 @@ describe("handleSponsorTap", () => {
     const attendee = await createTestUser();
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
-    const payload = { clientId: "tap-replay", walletCode: wallet.code, sponsorZoneLabel: "MTN Booth", eventId: event.id };
+    const sponsor = await createTestSponsor(event.id, { name: "MTN Booth" });
+    const payload = { clientId: "tap-replay", walletCode: wallet.code, sponsorId: sponsor.id, eventId: event.id };
 
     await handleSponsorTap(organizer.id, organization.id, payload);
     await handleSponsorTap(organizer.id, organization.id, payload);
@@ -407,6 +411,7 @@ describe("handleSponsorTap", () => {
     const attendee = await createTestUser();
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
+    const sponsor = await createTestSponsor(event.id, { name: "Interloper Booth" });
 
     const someoneElse = await createTestUser();
     const someoneElseOrg = await createTestOrganization();
@@ -415,7 +420,7 @@ describe("handleSponsorTap", () => {
     const result = await handleSponsorTap(someoneElse.id, someoneElseOrg.id, {
       clientId: "tap-cross-org",
       walletCode: wallet.code,
-      sponsorZoneLabel: "Interloper Booth",
+      sponsorId: sponsor.id,
       eventId: event.id,
     });
     expect(result.ok).toBe(false);
@@ -429,7 +434,8 @@ describe("handleSponsorTap", () => {
     const attendee = await createTestUser();
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
-    const payload = { clientId: "tap-replay-cross-org", walletCode: wallet.code, sponsorZoneLabel: "MTN Booth", eventId: event.id };
+    const sponsor = await createTestSponsor(event.id, { name: "MTN Booth" });
+    const payload = { clientId: "tap-replay-cross-org", walletCode: wallet.code, sponsorId: sponsor.id, eventId: event.id };
 
     await handleSponsorTap(organizer.id, organization.id, payload);
 
@@ -440,5 +446,44 @@ describe("handleSponsorTap", () => {
     const result = await handleSponsorTap(someoneElse.id, someoneElseOrg.id, payload);
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("rejects a tap when the sponsor belongs to a different event", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const otherEvent = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+    const sponsorFromOtherEvent = await createTestSponsor(otherEvent.id, { name: "Wrong Event Sponsor" });
+
+    const result = await handleSponsorTap(organizer.id, organization.id, {
+      clientId: "tap-event-mismatch",
+      walletCode: wallet.code,
+      sponsorId: sponsorFromOtherEvent.id,
+      eventId: event.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("SPONSOR_EVENT_MISMATCH");
+  });
+
+  it("returns retry:true when the sponsor hasn't synced yet", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+
+    const result = await handleSponsorTap(organizer.id, organization.id, {
+      clientId: "tap-sponsor-unsynced",
+      walletCode: wallet.code,
+      sponsorId: "does-not-exist",
+      eventId: event.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).retry).toBe(true);
+    expect((result as any).reason).toBe("SPONSOR_NOT_SYNCED_YET");
   });
 });

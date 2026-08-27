@@ -134,7 +134,8 @@ export default function WalletDetailPage() {
       phoneNumber: phone.trim() || null,
       vendorId: null,
       vendorName: null,
-      sponsorZoneLabel: null,
+      sponsorId: null,
+      sponsorName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -234,7 +235,7 @@ export default function WalletDetailPage() {
                 <p className="font-medium">
                   {TYPE_LABEL[t.type] ?? t.type}
                   {t.vendorName ? ` — ${t.vendorName}` : ""}
-                  {t.sponsorZoneLabel ? ` — ${t.sponsorZoneLabel}` : ""}
+                  {t.sponsorName ? ` — ${t.sponsorName}` : ""}
                 </p>
                 <p className="text-xs text-muted">{formatDateTime(t.createdAt)}</p>
                 {t.status === "PENDING" && (

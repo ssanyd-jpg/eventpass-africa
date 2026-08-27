@@ -8,6 +8,7 @@ export type AuditAction =
   | "VENDOR_ADDED"
   | "VENDOR_APPROVED"
   | "VENDOR_REJECTED"
+  | "SPONSOR_ADDED"
   | "PAYOUT_ACCOUNT_ADDED"
   | "SETTLEMENT_RUN"
   | "MEMBER_INVITED"
@@ -53,6 +54,8 @@ export function buildSyncAuditEntry(
       return { action: "VENDOR_APPROVED", summary: `Approved vendor "${result.vendor.name}"` };
     case "REJECT_VENDOR":
       return { action: "VENDOR_REJECTED", summary: `Rejected vendor "${result.vendor.name}"` };
+    case "ADD_SPONSOR":
+      return { action: "SPONSOR_ADDED", summary: `Added sponsor "${result.sponsor.name}"` };
     case "ADD_MOBILE_MONEY_ACCOUNT":
       return { action: "PAYOUT_ACCOUNT_ADDED", summary: `Linked a ${result.account.provider} payout account` };
     default:

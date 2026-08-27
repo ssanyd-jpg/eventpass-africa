@@ -20,6 +20,7 @@ const ticketTypeInputSchema = z.object({
 });
 
 export const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"] as const;
+export const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"] as const;
 
 export const payloadSchemas = {
   CREATE_EVENT: z.object({
@@ -121,6 +122,18 @@ export const payloadSchemas = {
     badgeCode: z.string().min(1).max(40),
     feeStatus: z.enum(["NONE", "PAID"]).optional(),
   }),
+  ADD_SPONSOR: z.object({
+    clientId: z.string().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    name: z.string().min(1).max(120),
+    tier: z.enum(SPONSOR_TIERS),
+    description: z.string().max(1000).optional(),
+    contactEmail: z.string().email().max(160).optional(),
+    contactPhone: z.string().min(6).max(20).optional(),
+    feeCents: z.number().int().min(0).optional(),
+    feeStatus: z.enum(["NONE", "PAID"]).optional(),
+  }),
   APPROVE_VENDOR: z.object({
     vendorId: z.string().min(1),
     vendorClientId: z.string().nullable().optional(),
@@ -172,7 +185,8 @@ export const payloadSchemas = {
   SPONSOR_TAP: z.object({
     clientId: z.string().min(1),
     walletCode: z.string().min(1).max(40),
-    sponsorZoneLabel: z.string().min(1).max(80),
+    sponsorId: z.string().min(1),
+    sponsorClientId: z.string().nullable().optional(),
     eventId: z.string().min(1),
     eventClientId: z.string().nullable().optional(),
     scannedAt: z.string().optional(),
@@ -766,6 +780,62 @@ export async function handleAddVendor(userId: string, organizationId: string, pa
   return { ok: true, vendor: shapeVendor(created) };
 }
 
+export function shapeSponsor(s: any) {
+  return {
+    id: s.id,
+    clientId: s.clientId,
+    eventId: s.eventId,
+    eventClientId: s.event?.clientId ?? null,
+    name: s.name,
+    tier: s.tier,
+    description: s.description,
+    contactEmail: s.contactEmail,
+    contactPhone: s.contactPhone,
+    feeCents: s.feeCents,
+    currency: s.currency,
+    feeStatus: s.feeStatus,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+const sponsorInclude = { event: { select: { id: true, clientId: true, organizationId: true } } } as const;
+
+export async function handleAddSponsor(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.sponsor.findUnique({ where: { clientId }, include: sponsorInclude });
+  if (existing) {
+    return { ok: true, sponsor: shapeSponsor(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const created = await prisma.sponsor.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      name: String(payload.name),
+      tier: String(payload.tier),
+      description: String(payload.description ?? ""),
+      contactEmail: String(payload.contactEmail ?? ""),
+      contactPhone: String(payload.contactPhone ?? ""),
+      feeCents: payload.feeCents != null ? Number(payload.feeCents) : 0,
+      feeStatus: payload.feeStatus === "PAID" ? "PAID" : "NONE",
+      currency: event.currency,
+    },
+    include: sponsorInclude,
+  });
+
+  return { ok: true, sponsor: shapeSponsor(created) };
+}
+
 async function resolveVendor(vendorId: string, vendorClientId?: string | null) {
   return (
     (await prisma.vendor.findUnique({ where: { id: vendorId }, include: vendorInclude })) ??
@@ -878,14 +948,15 @@ export function shapeWalletTransaction(t: any) {
     phoneNumber: t.phoneNumber,
     vendorId: t.vendorId,
     vendorName: t.vendor?.name ?? null,
-    sponsorZoneLabel: t.sponsorZoneLabel,
+    sponsorId: t.sponsorId,
+    sponsorName: t.sponsor?.name ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
 }
 
 const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } } } as const;
-const walletTxInclude = { vendor: { select: { name: true } } } as const;
+const walletTxInclude = { vendor: { select: { name: true } }, sponsor: { select: { name: true } } } as const;
 
 async function resolveWallet(walletId: string, walletClientId?: string | null) {
   return (
@@ -1198,6 +1269,18 @@ export async function handleSponsorTap(userId: string, organizationId: string, p
     return { ok: false, reason: "FORBIDDEN" };
   }
 
+  const sponsor =
+    (await prisma.sponsor.findUnique({ where: { id: String(payload.sponsorId) } })) ??
+    (payload.sponsorClientId
+      ? await prisma.sponsor.findUnique({ where: { clientId: String(payload.sponsorClientId) } })
+      : null);
+  if (!sponsor) {
+    return { ok: false, retry: true, reason: "SPONSOR_NOT_SYNCED_YET" };
+  }
+  if (sponsor.eventId !== wallet.eventId) {
+    return { ok: false, reason: "SPONSOR_EVENT_MISMATCH" };
+  }
+
   const transaction = await prisma.walletTransaction.create({
     data: {
       clientId,
@@ -1205,7 +1288,7 @@ export async function handleSponsorTap(userId: string, organizationId: string, p
       status: "COMPLETED",
       currency: wallet.currency,
       walletId: wallet.id,
-      sponsorZoneLabel: String(payload.sponsorZoneLabel),
+      sponsorId: sponsor.id,
     },
     include: walletTxInclude,
   });

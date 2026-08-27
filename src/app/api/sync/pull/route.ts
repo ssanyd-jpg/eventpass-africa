@@ -125,6 +125,28 @@ export async function GET() {
       updatedAt: v.updatedAt.toISOString(),
     }));
 
+    const mySponsors = await prisma.sponsor.findMany({
+      where: { event: { organizationId } },
+      include: { event: { select: { id: true, clientId: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.mySponsors = mySponsors.map((s) => ({
+      id: s.id,
+      clientId: s.clientId,
+      eventId: s.eventId,
+      eventClientId: s.event.clientId,
+      name: s.name,
+      tier: s.tier,
+      description: s.description,
+      contactEmail: s.contactEmail,
+      contactPhone: s.contactPhone,
+      feeCents: s.feeCents,
+      currency: s.currency,
+      feeStatus: s.feeStatus,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    }));
+
     const myWallets = await prisma.wallet.findMany({
       where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
       include: { event: { select: { id: true, clientId: true } } },
@@ -145,7 +167,7 @@ export async function GET() {
 
     const myWalletTransactions = await prisma.walletTransaction.findMany({
       where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] } },
-      include: { vendor: { select: { name: true } } },
+      include: { vendor: { select: { name: true } }, sponsor: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     });
     payload.myWalletTransactions = myWalletTransactions.map((t) => ({
@@ -161,7 +183,8 @@ export async function GET() {
       phoneNumber: t.phoneNumber,
       vendorId: t.vendorId,
       vendorName: t.vendor?.name ?? null,
-      sponsorZoneLabel: t.sponsorZoneLabel,
+      sponsorId: t.sponsorId,
+      sponsorName: t.sponsor?.name ?? null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     }));

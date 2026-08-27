@@ -12,7 +12,7 @@ import {
   summarizeWalletBalances,
   summarizeWalletActivity,
   spendByVendor,
-  sponsorTapsByZone,
+  sponsorTapsBySponsor,
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
 import BarSeries from "@/components/charts/BarSeries";
@@ -50,7 +50,7 @@ export default async function AdminAnalyticsPage() {
     }),
     prisma.wallet.findMany({ select: { balanceCents: true, currency: true } }),
     prisma.walletTransaction.findMany({
-      select: { type: true, status: true, amountCents: true, currency: true, sponsorZoneLabel: true, vendor: { select: { id: true, name: true } } },
+      select: { type: true, status: true, amountCents: true, currency: true, sponsor: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -70,7 +70,7 @@ export default async function AdminAnalyticsPage() {
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
   const vendorSpend = spendByVendor(walletTxs);
-  const tapsByZone = sponsorTapsByZone(walletTxs);
+  const tapsByZone = sponsorTapsBySponsor(walletTxs);
 
   return (
     <div>

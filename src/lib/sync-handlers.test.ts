@@ -7,6 +7,7 @@ import {
   handleRefundOrder,
   handleApplyVendor,
   handleAddVendor,
+  handleAddSponsor,
   handleApproveVendor,
   handleRejectVendor,
   handleCheckInVendor,
@@ -407,6 +408,57 @@ describe("handleAddVendor", () => {
     await handleAddVendor(organizer.id, organizationId, payload);
     await handleAddVendor(organizer.id, organizationId, payload);
     expect(await prisma.vendor.count({ where: { clientId: "vendor-manual-replay" } })).toBe(1);
+  });
+});
+
+describe("handleAddSponsor", () => {
+  it("creates a sponsor directly with the given tier", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const result = await handleAddSponsor(organizer.id, organizationId, {
+      clientId: "sponsor-1",
+      eventId: event.id,
+      name: "Red Bull",
+      tier: "Gold",
+      feeCents: 500000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.sponsor.name).toBe("Red Bull");
+    expect(result.sponsor.tier).toBe("Gold");
+    expect(result.sponsor.feeCents).toBe(500000);
+  });
+
+  it("refuses to add a sponsor to an event owned by a different organization", async () => {
+    const { organizationId } = await newOrganizer();
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const result = await handleAddSponsor(someoneElse.id, someoneElseOrgId, {
+      clientId: "sponsor-forbidden",
+      eventId: event.id,
+      name: "Interloper",
+      tier: "Bronze",
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — replaying the same clientId doesn't create a duplicate", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const payload = {
+      clientId: "sponsor-replay",
+      eventId: event.id,
+      name: "Replay Sponsor",
+      tier: "Silver",
+    };
+
+    await handleAddSponsor(organizer.id, organizationId, payload);
+    await handleAddSponsor(organizer.id, organizationId, payload);
+    expect(await prisma.sponsor.count({ where: { clientId: "sponsor-replay" } })).toBe(1);
   });
 });
 

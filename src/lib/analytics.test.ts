@@ -11,7 +11,7 @@ import {
   summarizeWalletBalances,
   summarizeWalletActivity,
   spendByVendor,
-  sponsorTapsByZone,
+  sponsorTapsBySponsor,
 } from "./analytics";
 
 describe("bucketByDay", () => {
@@ -217,13 +217,13 @@ describe("spendByVendor", () => {
   });
 });
 
-describe("sponsorTapsByZone", () => {
-  it("counts taps per zone label and ranks them", () => {
-    const ranked = sponsorTapsByZone([
-      { type: "SPONSOR_TAP", sponsorZoneLabel: "Red Bull Stage" },
-      { type: "SPONSOR_TAP", sponsorZoneLabel: "Red Bull Stage" },
-      { type: "SPONSOR_TAP", sponsorZoneLabel: "MTN Booth" },
-      { type: "SALE", sponsorZoneLabel: null },
+describe("sponsorTapsBySponsor", () => {
+  it("counts taps per sponsor and ranks them", () => {
+    const ranked = sponsorTapsBySponsor([
+      { type: "SPONSOR_TAP", sponsor: { id: "s1", name: "Red Bull Stage" } },
+      { type: "SPONSOR_TAP", sponsor: { id: "s1", name: "Red Bull Stage" } },
+      { type: "SPONSOR_TAP", sponsor: { id: "s2", name: "MTN Booth" } },
+      { type: "SALE", sponsor: null },
     ]);
     expect(ranked[0]).toEqual({ label: "Red Bull Stage", value: 2 });
     expect(ranked[1]).toEqual({ label: "MTN Booth", value: 1 });
