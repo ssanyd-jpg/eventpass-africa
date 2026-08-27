@@ -12,6 +12,7 @@ import {
   summarizeWalletActivity,
   spendByVendor,
   sponsorTapsBySponsor,
+  customerStatsByBuyer,
 } from "./analytics";
 
 describe("bucketByDay", () => {
@@ -227,5 +228,42 @@ describe("sponsorTapsBySponsor", () => {
     ]);
     expect(ranked[0]).toEqual({ label: "Red Bull Stage", value: 2 });
     expect(ranked[1]).toEqual({ label: "MTN Booth", value: 1 });
+  });
+});
+
+describe("customerStatsByBuyer", () => {
+  it("keeps totals separate per currency for the same buyer", () => {
+    const stats = customerStatsByBuyer([
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 100000, currency: "TZS", createdAt: new Date("2026-08-01") },
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 5000, currency: "USD", createdAt: new Date("2026-08-02") },
+    ]);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].totalCentsByCurrency).toEqual({ TZS: 100000, USD: 5000 });
+  });
+
+  it("aggregates ordersCount and sums totals across multiple orders from the same buyer", () => {
+    const stats = customerStatsByBuyer([
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 100000, currency: "TZS", createdAt: new Date("2026-08-01") },
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 50000, currency: "TZS", createdAt: new Date("2026-08-03") },
+    ]);
+    expect(stats[0].ordersCount).toBe(2);
+    expect(stats[0].totalCentsByCurrency).toEqual({ TZS: 150000 });
+  });
+
+  it("picks the max createdAt across orders as lastOrderAt, regardless of input order", () => {
+    const stats = customerStatsByBuyer([
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 100000, currency: "TZS", createdAt: new Date("2026-08-01") },
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 50000, currency: "TZS", createdAt: new Date("2026-08-10") },
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 25000, currency: "TZS", createdAt: new Date("2026-08-05") },
+    ]);
+    expect(stats[0].lastOrderAt).toEqual(new Date("2026-08-10"));
+  });
+
+  it("keeps different buyers as separate entries", () => {
+    const stats = customerStatsByBuyer([
+      { userId: "u1", user: { name: "Amina", email: "amina@test.local" }, totalCents: 100000, currency: "TZS", createdAt: new Date("2026-08-01") },
+      { userId: "u2", user: { name: "Baraka", email: "baraka@test.local" }, totalCents: 50000, currency: "TZS", createdAt: new Date("2026-08-02") },
+    ]);
+    expect(stats.map((s) => s.userId).sort()).toEqual(["u1", "u2"]);
   });
 });

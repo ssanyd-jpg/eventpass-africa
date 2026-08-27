@@ -147,3 +147,53 @@ export async function getPlatformAnalyticsData(): Promise<PlatformAnalyticsRawDa
 
   return { events, revenueOrders, ticketTypes, tickets, vendors, revenueOrdersWithOrganizer, wallets, walletTxs };
 }
+
+export interface CustomerListOrder {
+  userId: string;
+  user: { name: string; email: string };
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+}
+
+// Lifetime stats need every order ever, unlike the 30-day analytics
+// dashboard above — deliberately no trendWindowStart() gate here.
+export async function getCustomerListData(organizationId: string): Promise<CustomerListOrder[]> {
+  const myEvents = await prisma.event.findMany({ where: { organizationId }, select: { id: true } });
+  const eventIds = myEvents.map((e) => e.id);
+  return prisma.order.findMany({
+    where: { eventId: { in: eventIds }, status: { in: ["PAID", "NEEDS_REVIEW"] } },
+    select: { userId: true, user: { select: { name: true, email: true } }, totalCents: true, currency: true, createdAt: true },
+  });
+}
+
+export interface CustomerDetailOrder {
+  id: string;
+  status: string;
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+  event: { title: string };
+}
+
+export interface CustomerDetailData {
+  customer: { userId: string; name: string; email: string } | null;
+  orders: CustomerDetailOrder[];
+}
+
+// No status filter — order history shows REFUNDED too (badged), same as the
+// existing Attendees list at dashboard/events/[id]/page.tsx. customer: null
+// when there are zero in-org orders for this userId IS the cross-org guard
+// — the caller should 404 rather than leak a stranger's history.
+export async function getCustomerDetailData(organizationId: string, userId: string): Promise<CustomerDetailData> {
+  const myEvents = await prisma.event.findMany({ where: { organizationId }, select: { id: true } });
+  const eventIds = myEvents.map((e) => e.id);
+  const orders = await prisma.order.findMany({
+    where: { eventId: { in: eventIds }, userId },
+    orderBy: { createdAt: "desc" },
+    include: { event: { select: { title: true } }, user: { select: { name: true, email: true } } },
+  });
+  if (orders.length === 0) return { customer: null, orders: [] };
+  const { name, email } = orders[0].user;
+  return { customer: { userId, name, email }, orders };
+}

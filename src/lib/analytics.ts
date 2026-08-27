@@ -273,6 +273,40 @@ export function spendByVendor(
   return result;
 }
 
+export interface CustomerStat {
+  userId: string;
+  name: string;
+  email: string;
+  ordersCount: number;
+  totalCentsByCurrency: Record<string, number>; // never summed across currencies
+  lastOrderAt: Date;
+}
+
+// Groups an organization's orders by buyer into lifetime stats. Caller is
+// responsible for pre-scoping/filtering (org-scoped, status-filtered) — this
+// function doesn't re-filter, it only aggregates, same convention every
+// other bucket/summarize function in this file follows.
+export function customerStatsByBuyer(
+  orders: { userId: string; user: { name: string; email: string }; totalCents: number; currency: string; createdAt: Date }[]
+): CustomerStat[] {
+  const byUser = new Map<string, CustomerStat>();
+  for (const o of orders) {
+    const existing = byUser.get(o.userId) ?? {
+      userId: o.userId,
+      name: o.user.name,
+      email: o.user.email,
+      ordersCount: 0,
+      totalCentsByCurrency: {},
+      lastOrderAt: o.createdAt,
+    };
+    existing.ordersCount += 1;
+    existing.totalCentsByCurrency[o.currency] = (existing.totalCentsByCurrency[o.currency] ?? 0) + o.totalCents;
+    if (o.createdAt > existing.lastOrderAt) existing.lastOrderAt = o.createdAt;
+    byUser.set(o.userId, existing);
+  }
+  return Array.from(byUser.values()).sort((a, b) => b.lastOrderAt.getTime() - a.lastOrderAt.getTime());
+}
+
 // Plain count, no currency involved — same reasoning as topEventsByTicketsSold.
 // Groups by the real Sponsor FK (id), not a string label, so two taps for the
 // same sponsor always collapse onto one entry.

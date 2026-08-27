@@ -47,6 +47,8 @@ model Organization {
   settlements         Settlement[]
   auditLogs           AuditLog[]
   devices             Device[]
+  customerNotes       CustomerNote[]
+  broadcasts          Broadcast[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -94,6 +96,52 @@ model Device {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, deviceId])
+}
+
+// Append-only, org-scoped commentary about a ticket buyer. customerUserId is
+// a plain string, not a relation — same discipline as AuditLog.actorUserId/
+// Device.lastSeenByUserId: User is a platform-wide account with no org
+// ownership of its own, so this must never cascade with the User row.
+model CustomerNote {
+  id             String   @id @default(cuid())
+  body           String
+  createdAt      DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerUserId String
+  authorUserId   String
+  authorName     String
+
+  @@index([organizationId, customerUserId, createdAt])
+}
+
+// Records one broadcast-send event, org-scoped. NotificationLog itself has
+// no organizationId/userId (flat, platform-wide) so it can't be the
+// organizer-facing record of "I sent this"; each recipient's actual
+// delivery still goes through the unmodified sendNotification(), producing
+// its usual unscoped NotificationLog row exactly as every other send today.
+model Broadcast {
+  id             String   @id @default(cuid())
+  subject        String
+  body           String
+  recipientCount Int
+  createdAt      DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  ticketTypeId String?
+  ticketType   TicketType? @relation(fields: [ticketTypeId], references: [id])
+
+  sentByUserId String
+  sentByName   String
+
+  @@index([organizationId, createdAt])
 }
 
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see
@@ -233,6 +281,7 @@ model Event {
   vendors     Vendor[]
   sponsors    Sponsor[]
   wallets     Wallet[]
+  broadcasts  Broadcast[]
 }
 
 model TicketType {
@@ -250,6 +299,7 @@ model TicketType {
 
   orderItems OrderItem[]
   tickets    Ticket[]
+  broadcasts Broadcast[]
 }
 
 model Order {

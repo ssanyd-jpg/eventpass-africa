@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { handleSellTickets } from "@/lib/sync-handlers";
 
 let counter = 0;
 function unique(prefix: string) {
@@ -89,6 +90,25 @@ export async function createTestSponsor(
       feeCents: overrides.feeCents ?? 0,
     },
   });
+}
+
+// Promoted from a local helper that settlement-handlers.test.ts had
+// (paidOrder) — this variant takes an explicit buyer, since CRM tests need
+// multiple orders from the *same* buyer (lifetime-stat aggregation, dedupe).
+export async function createPaidOrder(
+  organizationId: string,
+  buyerUserId: string,
+  priceCents: number,
+  currency = "TZS"
+) {
+  const event = await createTestEvent(organizationId, [{ priceCents, quantityTotal: 10 }], currency);
+  const tt = event.ticketTypes[0];
+  const result = await handleSellTickets(buyerUserId, {
+    clientId: unique("order"),
+    eventId: event.id,
+    items: [{ ticketTypeId: tt.id, quantity: 1, codes: [unique("code")] }],
+  });
+  return { event, order: result.order };
 }
 
 export async function createTestDevice(

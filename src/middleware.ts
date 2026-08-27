@@ -31,6 +31,7 @@ export default auth((req) => {
     path.startsWith("/dashboard/settlements") ||
     path.startsWith("/dashboard/analytics") ||
     path.startsWith("/dashboard/devices") ||
+    path.startsWith("/dashboard/customers") ||
     /^\/scan\/[^/]+\/wallet(\/|$)/.test(path);
 
   if (isGateCrewRestricted && req.auth?.user?.organizationRole === "GATE_CREW") {
@@ -51,6 +52,7 @@ export const config = {
     "/dashboard/settlements/:path*",
     "/dashboard/analytics/:path*",
     "/dashboard/devices/:path*",
+    "/dashboard/customers/:path*",
     "/scan/:eventId/wallet",
   ],
 };
