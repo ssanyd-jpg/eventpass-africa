@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   db,
   newLocalId,
+  getOrCreateDeviceId,
   type LocalEvent,
   type LocalOrder,
   type LocalVendor,
@@ -71,7 +72,11 @@ export async function queueOp(type: OutboxOpType, payload: Record<string, unknow
 export async function pullFromServer(): Promise<{ ok: boolean }> {
   if (!db || !navigator.onLine) return { ok: false };
   try {
-    const res = await fetch("/api/sync/pull", { cache: "no-store" });
+    const deviceId = await getOrCreateDeviceId();
+    const res = await fetch("/api/sync/pull", {
+      cache: "no-store",
+      headers: deviceId ? { "X-Device-Id": deviceId } : undefined,
+    });
     if (!res.ok) return { ok: false };
     const data = await res.json();
 
@@ -343,6 +348,7 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
   const entries = await db.outbox.where("status").anyOf("pending", "failed").sortBy("createdAt");
   let flushed = 0;
   let failed = 0;
+  const deviceId = await getOrCreateDeviceId();
 
   for (const entry of entries) {
     if (entry.id == null) continue;
@@ -350,7 +356,10 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
     try {
       const res = await fetch("/api/sync/push", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+        },
         body: JSON.stringify({ type: entry.type, payload: entry.payload }),
       });
       const result = await res.json();

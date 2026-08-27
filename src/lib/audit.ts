@@ -13,7 +13,9 @@ export type AuditAction =
   | "SETTLEMENT_RUN"
   | "MEMBER_INVITED"
   | "MEMBER_JOINED"
-  | "MEMBER_REMOVED";
+  | "MEMBER_REMOVED"
+  | "DEVICE_REVOKED"
+  | "DEVICE_REACTIVATED";
 
 interface LogAuditInput {
   organizationId: string;

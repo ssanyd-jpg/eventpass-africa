@@ -303,3 +303,16 @@ export const db =
 export function newLocalId(): string {
   return `local:${crypto.randomUUID()}`;
 }
+
+// A persistent id for this browser/PWA install — generated once and reused
+// on every subsequent sync call, unlike newLocalId() above (a fresh id per
+// operation). Stored in the schemaless meta table, same one lastSyncedAt
+// already lives in — no .version() bump needed for a new key there.
+export async function getOrCreateDeviceId(): Promise<string> {
+  if (!db) return "";
+  const existing = await db.meta.get("deviceId");
+  if (existing && typeof existing.value === "string") return existing.value;
+  const id = crypto.randomUUID();
+  await db.meta.put({ key: "deviceId", value: id });
+  return id;
+}

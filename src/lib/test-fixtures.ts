@@ -91,6 +91,28 @@ export async function createTestSponsor(
   });
 }
 
+export async function createTestDevice(
+  organizationId: string,
+  overrides: Partial<{
+    deviceId: string;
+    label: string;
+    revokedAt: Date;
+    lastSeenByUserId: string;
+    lastSeenByName: string;
+  }> = {}
+) {
+  return prisma.device.create({
+    data: {
+      organizationId,
+      deviceId: overrides.deviceId ?? unique("device"),
+      label: overrides.label ?? "",
+      lastSeenByUserId: overrides.lastSeenByUserId ?? "seed-user",
+      lastSeenByName: overrides.lastSeenByName ?? "Seed User",
+      revokedAt: overrides.revokedAt,
+    },
+  });
+}
+
 export async function createTestWallet(
   eventId: string,
   ownerUserId: string,

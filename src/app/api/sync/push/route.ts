@@ -23,11 +23,28 @@ import {
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
 import { logAudit, buildSyncAuditEntry } from "@/lib/audit";
+import { checkAndTrackDevice } from "@/lib/device-handlers";
 
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, reason: "UNAUTHENTICATED", retry: true }, { status: 401 });
+  }
+
+  // Absent header = an already-installed PWA client running JS cached from
+  // before this device check shipped (next-pwa runtime-caches page/API
+  // responses) — skip tracking/enforcement entirely rather than lock it out.
+  const deviceId = request.headers.get("X-Device-Id");
+  if (deviceId) {
+    const deviceCheck = await checkAndTrackDevice(
+      session.user.organizationId,
+      deviceId,
+      session.user.id,
+      session.user.name ?? session.user.email ?? "Unknown"
+    );
+    if (!deviceCheck.ok) {
+      return NextResponse.json({ ok: false, reason: deviceCheck.reason }, { status: 403 });
+    }
   }
 
   const body = await request.json().catch(() => null);

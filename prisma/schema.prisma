@@ -46,6 +46,7 @@ model Organization {
   mobileMoneyAccounts MobileMoneyAccount[]
   settlements         Settlement[]
   auditLogs           AuditLog[]
+  devices             Device[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -69,6 +70,30 @@ model AuditLog {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
+}
+
+// Device registry for offline-first gate-scanning installs. deviceId is a
+// client-generated persistent UUID (see getOrCreateDeviceId in src/lib/db.ts)
+// — NOT the same thing as clientId (a per-operation idempotency key, see
+// newLocalId()). Scoped per-organization, not globally, matching every other
+// org-scoped model (Sponsor/Vendor/MobileMoneyAccount) — the same physical
+// phone could be used across two orgs over its lifetime; revocation should
+// only ever mean "cut this device off from OUR org."
+model Device {
+  id               String    @id @default(cuid())
+  deviceId         String
+  label            String    @default("")
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  lastSeenByUserId String
+  lastSeenByName   String
+  revokedAt        DateTime?
+  revokedByUserId  String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, deviceId])
 }
 
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see

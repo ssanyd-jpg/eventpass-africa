@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { checkAndTrackDevice } from "@/lib/device-handlers";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
 
   const events = await prisma.event.findMany({
@@ -56,6 +57,19 @@ export async function GET() {
   if (session?.user?.id && session.user.organizationId) {
     const userId = session.user.id;
     const organizationId = session.user.organizationId;
+
+    const deviceId = request.headers.get("X-Device-Id");
+    if (deviceId) {
+      const deviceCheck = await checkAndTrackDevice(
+        organizationId,
+        deviceId,
+        userId,
+        session.user.name ?? session.user.email ?? "Unknown"
+      );
+      if (!deviceCheck.ok) {
+        return NextResponse.json({ ok: false, reason: deviceCheck.reason }, { status: 403 });
+      }
+    }
 
     const myOrders = await prisma.order.findMany({
       where: {

@@ -18,6 +18,8 @@ const ACTION_LABEL: Record<string, string> = {
   MEMBER_INVITED: "Member invited",
   MEMBER_JOINED: "Member joined",
   MEMBER_REMOVED: "Member removed",
+  DEVICE_REVOKED: "Device revoked",
+  DEVICE_REACTIVATED: "Device reactivated",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:
