@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import {
   trendWindowStart,
@@ -16,6 +15,7 @@ import {
   sponsorTapsBySponsor,
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
+import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -30,10 +30,8 @@ export default async function OrganizerAnalyticsPage() {
     redirect("/dashboard");
   }
 
-  const myEvents = await prisma.event.findMany({
-    where: { organizationId: session.user.organizationId },
-    select: { id: true, title: true },
-  });
+  const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs } =
+    await getOrganizerAnalyticsData(session.user.organizationId);
 
   if (myEvents.length === 0) {
     return (
@@ -45,35 +43,7 @@ export default async function OrganizerAnalyticsPage() {
     );
   }
 
-  const eventIds = myEvents.map((e) => e.id);
   const windowStart = trendWindowStart();
-
-  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs] = await Promise.all([
-    prisma.order.findMany({
-      where: { eventId: { in: eventIds }, status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
-      select: { createdAt: true, totalCents: true, currency: true },
-    }),
-    prisma.ticketType.findMany({
-      where: { eventId: { in: eventIds } },
-      select: { id: true, name: true, quantityTotal: true, quantitySold: true, event: { select: { title: true } } },
-    }),
-    prisma.ticket.findMany({
-      where: { eventId: { in: eventIds }, order: { status: { not: "REFUNDED" } } },
-      select: { eventId: true, createdAt: true, checkedIn: true },
-    }),
-    prisma.vendor.findMany({
-      where: { eventId: { in: eventIds } },
-      select: { status: true, feeStatus: true, stallFeeCents: true, currency: true },
-    }),
-    prisma.wallet.findMany({
-      where: { eventId: { in: eventIds } },
-      select: { balanceCents: true, currency: true },
-    }),
-    prisma.walletTransaction.findMany({
-      where: { wallet: { eventId: { in: eventIds } } },
-      select: { type: true, status: true, amountCents: true, currency: true, sponsor: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
-    }),
-  ]);
 
   const revenueByCurrency = bucketRevenueByDay(revenueOrders);
   const ticketsSoldTrend = bucketByDay(
@@ -93,8 +63,13 @@ export default async function OrganizerAnalyticsPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-8 sm:px-6">
       <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">← Dashboard</Link>
-      <h1 className="mb-1 mt-3 text-2xl font-bold">Analytics</h1>
-      <p className="mb-6 text-sm text-muted">Last {TREND_WINDOW_DAYS} days, across all your events.</p>
+      <div className="mb-6 mt-3 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-2xl font-bold">Analytics</h1>
+          <p className="text-sm text-muted">Last {TREND_WINDOW_DAYS} days, across all your events.</p>
+        </div>
+        <a href="/api/dashboard/analytics/export" className="btn-secondary shrink-0 text-sm">Download CSV</a>
+      </div>
 
       <h2 className="mb-3 font-semibold">Revenue</h2>
       {revenueCurrencies.length === 0 ? (

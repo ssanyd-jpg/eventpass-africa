@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import {
   trendWindowStart,
@@ -15,6 +14,7 @@ import {
   sponsorTapsBySponsor,
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
+import { getPlatformAnalyticsData } from "@/lib/analytics-data";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -24,35 +24,8 @@ import ProgressBar from "@/components/charts/ProgressBar";
 export default async function AdminAnalyticsPage() {
   const windowStart = trendWindowStart();
 
-  const [events, revenueOrders, ticketTypes, tickets, vendors, revenueOrdersWithOrganizer, wallets, walletTxs] = await Promise.all([
-    prisma.event.findMany({ select: { id: true, title: true } }),
-    prisma.order.findMany({
-      where: { status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
-      select: { createdAt: true, totalCents: true, currency: true },
-    }),
-    prisma.ticketType.findMany({
-      select: { id: true, name: true, quantityTotal: true, quantitySold: true, event: { select: { id: true, title: true } } },
-    }),
-    prisma.ticket.findMany({
-      where: { order: { status: { not: "REFUNDED" } } },
-      select: { eventId: true, createdAt: true, checkedIn: true },
-    }),
-    prisma.vendor.findMany({
-      select: { status: true, feeStatus: true, stallFeeCents: true, currency: true },
-    }),
-    prisma.order.findMany({
-      where: { status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
-      select: {
-        totalCents: true,
-        currency: true,
-        event: { select: { organizationId: true, organization: { select: { name: true } } } },
-      },
-    }),
-    prisma.wallet.findMany({ select: { balanceCents: true, currency: true } }),
-    prisma.walletTransaction.findMany({
-      select: { type: true, status: true, amountCents: true, currency: true, sponsor: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
-    }),
-  ]);
+  const { events, revenueOrders, ticketTypes, tickets, vendors, revenueOrdersWithOrganizer, wallets, walletTxs } =
+    await getPlatformAnalyticsData();
 
   const revenueByCurrency = bucketRevenueByDay(revenueOrders);
   const ticketsSoldTrend = bucketByDay(
@@ -74,8 +47,13 @@ export default async function AdminAnalyticsPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-bold">Analytics</h1>
-      <p className="mb-6 text-sm text-muted">Platform-wide, last {TREND_WINDOW_DAYS} days for trends.</p>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-xl font-bold">Analytics</h1>
+          <p className="text-sm text-muted">Platform-wide, last {TREND_WINDOW_DAYS} days for trends.</p>
+        </div>
+        <a href="/api/admin/analytics/export" className="btn-secondary shrink-0 text-sm">Download CSV</a>
+      </div>
 
       <h2 className="mb-3 font-semibold">Revenue</h2>
       {revenueCurrencies.length === 0 ? (
