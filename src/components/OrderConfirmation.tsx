@@ -55,6 +55,9 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
           <span className="text-muted">Order total</span>
           <span className="font-semibold">{formatCents(order.totalCents, order.currency)}</span>
         </div>
+        {order.waiverAcceptedAt && (
+          <p className="mt-2 text-xs text-muted">Waiver accepted at checkout.</p>
+        )}
       </div>
 
       <div className="mt-6 flex gap-3">

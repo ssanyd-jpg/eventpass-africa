@@ -21,6 +21,17 @@ const ticketTypeInputSchema = z.object({
 
 export const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"] as const;
 export const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"] as const;
+export const REGISTRATION_QUESTION_TYPES = ["TEXT", "SELECT", "CHECKBOX"] as const;
+
+const registrationQuestionInputSchema = z.object({
+  id: z.string().optional(),
+  clientId: z.string().min(1),
+  label: z.string().min(1).max(200),
+  type: z.enum(REGISTRATION_QUESTION_TYPES),
+  options: z.string().max(1000).optional(),
+  required: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
 
 export const payloadSchemas = {
   CREATE_EVENT: z.object({
@@ -48,6 +59,8 @@ export const payloadSchemas = {
         })
       )
       .min(1),
+    answers: z.array(z.object({ questionId: z.string().min(1), value: z.string().max(2000) })).optional(),
+    waiverAccepted: z.boolean().optional(),
   }),
   CHECK_IN: z.object({
     clientId: z.string().min(1),
@@ -86,6 +99,8 @@ export const payloadSchemas = {
       .optional(),
     vendorApplicationsOpen: z.boolean().optional(),
     vendorStallFeeCents: z.number().int().min(0).optional(),
+    waiverText: z.string().max(8000).nullable().optional(),
+    registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
   }),
   CANCEL_EVENT: z.object({
     eventId: z.string().min(1),
@@ -212,6 +227,7 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
       ticketTypes: true,
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+      registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
   if (existing) {
@@ -252,6 +268,7 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
       ticketTypes: true,
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+      registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
 
@@ -297,6 +314,16 @@ export function shapeEvent(e: any, organizerName: string) {
       category: v.category,
       boothNumber: v.boothNumber,
     })),
+    waiverText: e.waiverText ?? null,
+    registrationQuestions: (e.registrationQuestions ?? []).map((q: any) => ({
+      id: q.id,
+      clientId: q.clientId,
+      label: q.label,
+      type: q.type,
+      options: q.options,
+      required: q.required,
+      sortOrder: q.sortOrder,
+    })),
   };
 }
 
@@ -327,6 +354,13 @@ export function shapeOrder(o: any) {
       checkedIn: t.checkedIn,
       checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
     })),
+    waiverText: o.waiverText ?? null,
+    waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
+    answers: (o.registrationAnswers ?? []).map((a: any) => ({
+      questionId: a.questionId,
+      questionLabel: a.question.label,
+      value: a.value,
+    })),
   };
 }
 
@@ -339,6 +373,7 @@ export async function handleSellTickets(userId: string, payload: any) {
       items: { include: { ticketType: true } },
       tickets: { include: { ticketType: true } },
       event: { select: { id: true, clientId: true, title: true } },
+      registrationAnswers: { include: { question: true } },
     },
   });
   if (existing) {
@@ -348,6 +383,13 @@ export async function handleSellTickets(userId: string, payload: any) {
   const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
   if (!event) {
     return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+
+  // Client-side "Continue" gating is a UX nicety only — never trust it for
+  // anything that matters, same discipline as APPLY_VENDOR deriving
+  // feeStatus server-side rather than trusting client input.
+  if (event.waiverText && !payload.waiverAccepted) {
+    return { ok: false, reason: "WAIVER_REQUIRED" };
   }
 
   const items = payload.items as Array<{ ticketTypeId: string; quantity: number; codes?: string[] }>;
@@ -392,21 +434,35 @@ export async function handleSellTickets(userId: string, payload: any) {
       }
     }
 
+    // Filtered against this event's real questions, defensive against a
+    // stale/tampered client — mirrors the silent-skip-on-not-found behavior
+    // the ticketType lookup above already applies.
+    const validQuestionIds = new Set(
+      (await tx.registrationQuestion.findMany({ where: { eventId: event.id }, select: { id: true } })).map((q) => q.id)
+    );
+    const answersData = ((payload.answers ?? []) as Array<{ questionId: string; value: string }>)
+      .filter((a) => validQuestionIds.has(a.questionId))
+      .map((a) => ({ questionId: a.questionId, value: String(a.value) }));
+
     const created = await tx.order.create({
       data: {
         clientId,
         status: oversold ? "NEEDS_REVIEW" : "PAID",
         totalCents,
         currency: event.currency,
+        waiverText: event.waiverText ?? null,
+        waiverAcceptedAt: payload.waiverAccepted ? new Date() : null,
         userId,
         eventId: event.id,
         items: { create: orderItemsData },
         tickets: { create: ticketsData },
+        registrationAnswers: { create: answersData },
       },
       include: {
         items: { include: { ticketType: true } },
         tickets: { include: { ticketType: true } },
         event: { select: { id: true, clientId: true, title: true } },
+        registrationAnswers: { include: { question: true } },
       },
     });
 
@@ -420,12 +476,13 @@ export async function handleSellTickets(userId: string, payload: any) {
 
   const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
   if (buyer) {
+    const waiverLine = order.waiverAcceptedAt ? " You accepted the event waiver at checkout." : "";
     await sendNotification({
       type: "ORDER_CONFIRMATION",
       channel: "EMAIL",
       recipient: buyer.email,
       subject: `Your tickets for ${event.title}`,
-      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${formatCents(totalCents, event.currency)}. Ticket code(s): ${order.tickets.map((t) => t.code).join(", ")}.`,
+      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${formatCents(totalCents, event.currency)}. Ticket code(s): ${order.tickets.map((t) => t.code).join(", ")}.${waiverLine}`,
     });
   }
 
@@ -514,6 +571,9 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
   if (payload.startsAt !== undefined) data.startsAt = new Date(payload.startsAt);
   if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
   if (payload.vendorStallFeeCents !== undefined) data.vendorStallFeeCents = Number(payload.vendorStallFeeCents);
+  if (payload.waiverText !== undefined) {
+    data.waiverText = payload.waiverText === null || payload.waiverText === "" ? null : String(payload.waiverText);
+  }
 
   if (payload.currency !== undefined && payload.currency !== event.currency) {
     // Changing currency after any ticket has sold would make historical
@@ -563,6 +623,43 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
     }
   }
 
+  // Same upsert-by-id-or-clientId shape as ticketTypes above — never
+  // deleted server-side: removing a question from the organizer's form
+  // just stops sending it, it isn't explicitly dropped (same convention).
+  if (Array.isArray(payload.registrationQuestions)) {
+    for (const q of payload.registrationQuestions as any[]) {
+      if (q.id) {
+        const current = await prisma.registrationQuestion.findUnique({ where: { id: q.id } });
+        if (!current || current.eventId !== event.id) continue;
+        await prisma.registrationQuestion.update({
+          where: { id: q.id },
+          data: {
+            label: String(q.label),
+            type: String(q.type),
+            options: q.options !== undefined ? String(q.options) : null,
+            required: Boolean(q.required ?? false),
+            sortOrder: Number(q.sortOrder ?? 0),
+          },
+        });
+      } else {
+        const existingByClientId = await prisma.registrationQuestion.findUnique({ where: { clientId: String(q.clientId) } });
+        if (!existingByClientId) {
+          await prisma.registrationQuestion.create({
+            data: {
+              clientId: String(q.clientId),
+              eventId: event.id,
+              label: String(q.label),
+              type: String(q.type),
+              options: q.options !== undefined ? String(q.options) : null,
+              required: Boolean(q.required ?? false),
+              sortOrder: Number(q.sortOrder ?? 0),
+            },
+          });
+        }
+      }
+    }
+  }
+
   const updated = await prisma.event.update({
     where: { id: event.id },
     data,
@@ -570,6 +667,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
       ticketTypes: true,
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+      registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
 
@@ -592,6 +690,7 @@ export async function handleCancelEvent(userId: string, organizationId: string, 
       ticketTypes: true,
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+      registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
 

@@ -19,6 +19,16 @@ interface DraftTicketType {
   quantitySold: number;
 }
 
+interface DraftQuestion {
+  key: string;
+  id?: string;
+  clientId: string;
+  label: string;
+  type: "TEXT" | "SELECT" | "CHECKBOX";
+  options: string;
+  required: boolean;
+}
+
 const CATEGORIES = ["Music", "Sports", "Comedy", "Conference", "Festival", "Other"];
 
 function isoToLocalInput(iso: string) {
@@ -48,6 +58,8 @@ export default function EditEventPage() {
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
+  const [questions, setQuestions] = useState<DraftQuestion[]>([]);
+  const [waiverText, setWaiverText] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +107,18 @@ export default function EditEventPage() {
       setStartsAt(isoToLocalInput(event.startsAt));
       setVendorApplicationsOpen(event.vendorApplicationsOpen);
       setVendorStallFeeMajor(String(event.vendorStallFeeCents / 100));
+      setWaiverText(event.waiverText ?? "");
+      setQuestions(
+        (event.registrationQuestions ?? []).map((q) => ({
+          key: q.id,
+          id: q.id,
+          clientId: q.clientId ?? q.id,
+          label: q.label,
+          type: q.type,
+          options: q.options ?? "",
+          required: q.required,
+        }))
+      );
       setTicketTypes(
         event.ticketTypes.map((tt) => ({
           key: tt.id,
@@ -140,6 +164,10 @@ export default function EditEventPage() {
     setTicketTypes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  function updateQuestion(key: string, patch: Partial<DraftQuestion>) {
+    setQuestions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -157,7 +185,33 @@ export default function EditEventPage() {
       }
     }
 
+    const validQuestions = questions.filter((q) => q.label.trim());
+
     setSubmitting(true);
+
+    // Local storage needs a definite id (fall back to clientId as a
+    // placeholder until it syncs, same as ticketTypes above); the wire
+    // payload keeps `id` genuinely undefined for new questions so the
+    // server knows to create rather than update — otherwise one shared
+    // shape, since nothing about a question is server-derived.
+    const localQuestions = validQuestions.map((q, index) => ({
+      id: q.id ?? q.clientId,
+      clientId: q.clientId,
+      label: q.label.trim(),
+      type: q.type,
+      options: q.type === "SELECT" ? q.options.trim() : null,
+      required: q.required,
+      sortOrder: index,
+    }));
+    const payloadQuestions = validQuestions.map((q, index) => ({
+      id: q.id,
+      clientId: q.clientId,
+      label: q.label.trim(),
+      type: q.type,
+      options: q.type === "SELECT" ? q.options.trim() : undefined,
+      required: q.required,
+      sortOrder: index,
+    }));
 
     // For local storage every ticket type needs a stable string id — reuse
     // the real server id when editing an existing one, otherwise the
@@ -197,10 +251,12 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       vendorApplicationsOpen,
       vendorStallFeeCents,
+      waiverText: waiverText.trim() || null,
       ticketTypes: [
         ...event.ticketTypes.filter((tt) => !localTicketTypes.some((u) => u.id === tt.id)),
         ...localTicketTypes,
       ],
+      registrationQuestions: localQuestions,
       syncStatus: "pending",
     });
 
@@ -216,6 +272,7 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       vendorApplicationsOpen,
       vendorStallFeeCents,
+      waiverText: waiverText.trim() || null,
       ticketTypes: payloadTicketTypes.map((t) => ({
         id: t.id,
         clientId: t.clientId,
@@ -224,6 +281,7 @@ export default function EditEventPage() {
         priceCents: t.priceCents,
         quantityTotal: t.quantityTotal,
       })),
+      registrationQuestions: payloadQuestions,
     });
 
     setSubmitting(false);
@@ -416,6 +474,86 @@ export default function EditEventPage() {
               <p className="mt-1 text-xs text-muted">0 means vendors apply for free.</p>
             </div>
           )}
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <label className="label !mb-0">Registration questions</label>
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover"
+              onClick={() =>
+                setQuestions((rows) => [
+                  ...rows,
+                  { key: crypto.randomUUID(), clientId: newLocalId(), label: "", type: "TEXT", options: "", required: false },
+                ])
+              }
+            >
+              + Add question
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-muted">Asked once per order at checkout, before payment.</p>
+          <div className="space-y-3">
+            {questions.map((q) => (
+              <div key={q.key} className="space-y-2 rounded-lg border border-border p-3">
+                <div className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
+                  <input
+                    placeholder="Question (e.g. Dietary requirements?)"
+                    className="input"
+                    value={q.label}
+                    onChange={(e) => updateQuestion(q.key, { label: e.target.value })}
+                  />
+                  <select
+                    className="input"
+                    value={q.type}
+                    onChange={(e) => updateQuestion(q.key, { type: e.target.value as DraftQuestion["type"] })}
+                  >
+                    <option value="TEXT">Text</option>
+                    <option value="SELECT">Choice</option>
+                    <option value="CHECKBOX">Checkbox</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-danger"
+                    onClick={() => setQuestions((rows) => rows.filter((r) => r.key !== q.key))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {q.type === "SELECT" && (
+                  <input
+                    placeholder="Options, comma-separated (e.g. Small,Medium,Large)"
+                    className="input"
+                    value={q.options}
+                    onChange={(e) => updateQuestion(q.key, { options: e.target.value })}
+                  />
+                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={q.required}
+                    onChange={(e) => updateQuestion(q.key, { required: e.target.checked })}
+                  />
+                  Required
+                </label>
+              </div>
+            ))}
+            {questions.length === 0 && <p className="text-sm text-muted">No questions yet.</p>}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <label className="label" htmlFor="waiverText">Waiver</label>
+          <textarea
+            id="waiverText"
+            className="input min-h-24"
+            placeholder="Leave blank for no waiver."
+            value={waiverText}
+            onChange={(e) => setWaiverText(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-muted">
+            If set, buyers must accept this at checkout before their purchase goes through.
+          </p>
         </div>
 
         {error && <p className="text-sm text-danger">{error}</p>}

@@ -17,6 +17,16 @@ export interface LocalEventVendorSummary {
   boothNumber: string | null;
 }
 
+export interface LocalRegistrationQuestion {
+  id: string;
+  clientId?: string | null;
+  label: string;
+  type: "TEXT" | "SELECT" | "CHECKBOX";
+  options: string | null;
+  required: boolean;
+  sortOrder: number;
+}
+
 export interface LocalEvent {
   id: string;
   clientId?: string | null;
@@ -42,6 +52,8 @@ export interface LocalEvent {
   // `vendors` table, populated only for the vendor's owner or the event's
   // organizer — see the pull route's public/private split.
   vendors: LocalEventVendorSummary[];
+  waiverText: string | null;
+  registrationQuestions: LocalRegistrationQuestion[];
   syncStatus: "synced" | "pending";
 }
 
@@ -64,6 +76,12 @@ export interface LocalTicket {
 
 export type OrderSyncStatus = "synced" | "pending" | "conflict";
 
+export interface LocalRegistrationAnswer {
+  questionId: string;
+  questionLabel: string;
+  value: string;
+}
+
 export interface LocalOrder {
   id: string;
   clientId: string;
@@ -77,6 +95,9 @@ export interface LocalOrder {
   eventTitle: string;
   items: LocalOrderItem[];
   tickets: LocalTicket[];
+  waiverText: string | null;
+  waiverAcceptedAt: string | null;
+  answers: LocalRegistrationAnswer[];
   syncStatus: OrderSyncStatus;
   syncError?: string | null;
 }

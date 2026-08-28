@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { createTestEvent, createTestUser, createTestOrganization, addMembership } from "@/lib/test-fixtures";
+import {
+  createTestEvent,
+  createTestUser,
+  createTestOrganization,
+  addMembership,
+  createTestRegistrationQuestion,
+} from "@/lib/test-fixtures";
 import {
   handleSellTickets,
   handleCheckIn,
@@ -11,6 +17,7 @@ import {
   handleApproveVendor,
   handleRejectVendor,
   handleCheckInVendor,
+  handleEditEvent,
 } from "@/lib/sync-handlers";
 
 // Every "organizer" in these tests needs a real Organization + OWNER
@@ -109,6 +116,142 @@ describe("handleSellTickets", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.retry).toBe(true);
+  });
+
+  it("persists registration answers and returns them on the order", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const question = await createTestRegistrationQuestion(event.id, { label: "Dietary requirements?" });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-answers",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["ANS-00001"] }],
+      answers: [{ questionId: question.id, value: "Vegetarian" }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.answers).toEqual([
+      { questionId: question.id, questionLabel: "Dietary requirements?", value: "Vegetarian" },
+    ]);
+    const stored = await prisma.registrationAnswer.findMany({ where: { orderId: result.order.id } });
+    expect(stored).toHaveLength(1);
+  });
+
+  it("silently drops an answer referencing a different event's question", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const otherEvent = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const foreignQuestion = await createTestRegistrationQuestion(otherEvent.id);
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-foreign-answer",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["ANS-00002"] }],
+      answers: [{ questionId: foreignQuestion.id, value: "Should be dropped" }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.answers).toEqual([]);
+  });
+
+  it("rejects the sale when the event requires a waiver that wasn't accepted", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, undefined, "TZS", {}, "I agree to the terms.");
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-no-waiver",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["WAIV-00001"] }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("WAIVER_REQUIRED");
+    const order = await prisma.order.findUnique({ where: { clientId: "client-no-waiver" } });
+    expect(order).toBeNull();
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0);
+  });
+
+  it("accepts the sale and snapshots the waiver text once accepted", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, undefined, "TZS", {}, "I agree to the terms.");
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-waiver-ok",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["WAIV-00002"] }],
+      waiverAccepted: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.waiverText).toBe("I agree to the terms.");
+    expect(result.order.waiverAcceptedAt).not.toBeNull();
+  });
+});
+
+describe("handleEditEvent", () => {
+  it("creates a registration question with no id, then updates the same row on replay with the now-known id", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const first = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      registrationQuestions: [{ clientId: "q-client-1", label: "T-shirt size?", type: "SELECT", options: "S,M,L" }],
+    });
+    expect(first.ok).toBe(true);
+    expect(first.event.registrationQuestions).toHaveLength(1);
+    const created = first.event.registrationQuestions[0];
+    expect(created.label).toBe("T-shirt size?");
+
+    const second = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      registrationQuestions: [{ id: created.id, clientId: "q-client-1", label: "T-shirt size (updated)?", type: "SELECT", options: "S,M,L,XL" }],
+    });
+    expect(second.ok).toBe(true);
+    expect(second.event.registrationQuestions).toHaveLength(1);
+    expect(second.event.registrationQuestions[0].id).toBe(created.id);
+    expect(second.event.registrationQuestions[0].label).toBe("T-shirt size (updated)?");
+  });
+
+  it("never deletes a question omitted from a later payload", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const question = await createTestRegistrationQuestion(event.id, { label: "Keep me" });
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      registrationQuestions: [],
+    });
+
+    expect(result.ok).toBe(true);
+    const stillThere = await prisma.registrationQuestion.findUnique({ where: { id: question.id } });
+    expect(stillThere).not.toBeNull();
+  });
+
+  it("sets and clears waiverText", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const withWaiver = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      waiverText: "Please sign here.",
+    });
+    expect(withWaiver.event.waiverText).toBe("Please sign here.");
+
+    const cleared = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      waiverText: null,
+    });
+    expect(cleared.event.waiverText).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@ export async function GET(request: Request) {
       // detail (all statuses) goes out separately in myVendors below,
       // gated to the vendor's own owner or the event's organizer.
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
+      registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
     orderBy: { startsAt: "asc" },
   });
@@ -47,6 +48,16 @@ export async function GET(request: Request) {
       quantitySold: tt.quantitySold,
     })),
     vendors: e.vendors,
+    waiverText: e.waiverText ?? null,
+    registrationQuestions: e.registrationQuestions.map((q) => ({
+      id: q.id,
+      clientId: q.clientId,
+      label: q.label,
+      type: q.type,
+      options: q.options,
+      required: q.required,
+      sortOrder: q.sortOrder,
+    })),
   }));
 
   const payload: Record<string, unknown> = {
@@ -79,6 +90,7 @@ export async function GET(request: Request) {
         items: { include: { ticketType: true } },
         tickets: { include: { ticketType: true } },
         event: { select: { id: true, clientId: true, title: true } },
+        registrationAnswers: { include: { question: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -108,6 +120,13 @@ export async function GET(request: Request) {
         ticketTypeName: t.ticketType.name,
         checkedIn: t.checkedIn,
         checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
+      })),
+      waiverText: o.waiverText ?? null,
+      waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
+      answers: o.registrationAnswers.map((a) => ({
+        questionId: a.questionId,
+        questionLabel: a.question.label,
+        value: a.value,
       })),
     }));
 

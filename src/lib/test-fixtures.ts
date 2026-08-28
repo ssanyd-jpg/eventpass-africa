@@ -34,7 +34,8 @@ export async function createTestEvent(
     { priceCents: 200000, quantityTotal: 10 },
   ],
   currency = "TZS",
-  vendorOptions: { vendorApplicationsOpen?: boolean; vendorStallFeeCents?: number } = {}
+  vendorOptions: { vendorApplicationsOpen?: boolean; vendorStallFeeCents?: number } = {},
+  waiverText: string | null = null
 ) {
   return prisma.event.create({
     data: {
@@ -50,6 +51,7 @@ export async function createTestEvent(
       organizationId,
       vendorApplicationsOpen: vendorOptions.vendorApplicationsOpen ?? false,
       vendorStallFeeCents: vendorOptions.vendorStallFeeCents ?? 0,
+      waiverText,
       ticketTypes: {
         create: ticketTypes.map((tt) => ({
           name: "General",
@@ -60,6 +62,22 @@ export async function createTestEvent(
       },
     },
     include: { ticketTypes: true },
+  });
+}
+
+export async function createTestRegistrationQuestion(
+  eventId: string,
+  overrides: Partial<{ label: string; type: string; options: string; required: boolean; sortOrder: number }> = {}
+) {
+  return prisma.registrationQuestion.create({
+    data: {
+      eventId,
+      label: overrides.label ?? "Dietary requirements?",
+      type: overrides.type ?? "TEXT",
+      options: overrides.options,
+      required: overrides.required ?? false,
+      sortOrder: overrides.sortOrder ?? 0,
+    },
   });
 }
 

@@ -95,6 +95,10 @@ export default function NewEventPage() {
       updatedAt: new Date().toISOString(),
       ticketTypes: localTicketTypes,
       vendors: [],
+      // Registration questions/waiver are configurable via Edit once the
+      // event exists — same reasoning as vendorApplicationsOpen above.
+      waiverText: null,
+      registrationQuestions: [],
       syncStatus: "pending",
     };
 

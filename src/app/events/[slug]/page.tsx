@@ -17,9 +17,11 @@ export default function EventDetailPage() {
   const events = useLiveQuery(() => db.events.toArray(), []);
   const event = events?.find((e) => e.slug === slug);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [step, setStep] = useState<"select" | "confirm">("select");
+  const [step, setStep] = useState<"select" | "questions" | "confirm">("select");
   const [placing, setPlacing] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<LocalOrder | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
 
   const selection = useMemo(() => {
     if (!event) return [];
@@ -30,6 +32,13 @@ export default function EventDetailPage() {
 
   const totalCents = selection.reduce((sum, s) => sum + s.tt.priceCents * s.qty, 0);
   const totalQty = selection.reduce((sum, s) => sum + s.qty, 0);
+
+  // Skip the questions step entirely when there's nothing to ask — no empty
+  // screen between selecting tickets and confirming.
+  const registrationQuestions = event?.registrationQuestions ?? [];
+  const hasQuestionsStep = registrationQuestions.length > 0 || !!event?.waiverText;
+  const answersValid = registrationQuestions.every((q) => !q.required || (answers[q.id] ?? "").trim());
+  const waiverOk = !event?.waiverText || waiverAccepted;
 
   if (placedOrder) {
     return <OrderConfirmation order={placedOrder} />;
@@ -94,6 +103,13 @@ export default function EventDetailPage() {
         unitPriceCents: s.tt.priceCents,
       })),
       tickets,
+      waiverText: event.waiverText ?? null,
+      waiverAcceptedAt: waiverAccepted ? new Date().toISOString() : null,
+      answers: registrationQuestions.map((q) => ({
+        questionId: q.id,
+        questionLabel: q.label,
+        value: answers[q.id] ?? "",
+      })),
       syncStatus: "pending",
     };
 
@@ -121,6 +137,8 @@ export default function EventDetailPage() {
         quantity: s.qty,
         codes: tickets.filter((t) => t.ticketTypeId === s.tt.id).map((t) => t.code),
       })),
+      answers: registrationQuestions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? "" })),
+      waiverAccepted,
     });
 
     // Update the address bar without a client-side route transition — a
@@ -252,10 +270,86 @@ export default function EventDetailPage() {
               <button
                 className="btn-primary mt-4 w-full"
                 disabled={totalQty === 0}
-                onClick={() => setStep("confirm")}
+                onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
               >
                 Continue
               </button>
+            </>
+          )}
+
+          {step === "questions" && (
+            <>
+              <h2 className="mb-4 font-semibold">A few questions</h2>
+              <div className="space-y-4">
+                {registrationQuestions.map((q) => (
+                  <div key={q.id}>
+                    <label className="label" htmlFor={`q-${q.id}`}>
+                      {q.label}{q.required && <span className="text-danger"> *</span>}
+                    </label>
+                    {q.type === "TEXT" && (
+                      <input
+                        id={`q-${q.id}`}
+                        className="input"
+                        value={answers[q.id] ?? ""}
+                        onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                      />
+                    )}
+                    {q.type === "SELECT" && (
+                      <select
+                        id={`q-${q.id}`}
+                        className="input"
+                        value={answers[q.id] ?? ""}
+                        onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                      >
+                        <option value="">Select…</option>
+                        {(q.options ?? "").split(",").map((opt) => opt.trim()).filter(Boolean).map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    )}
+                    {q.type === "CHECKBOX" && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={(answers[q.id] ?? "") === "yes"}
+                          onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.checked ? "yes" : "" }))}
+                        />
+                        Yes
+                      </label>
+                    )}
+                  </div>
+                ))}
+
+                {event.waiverText && (
+                  <div className="border-t border-border pt-4">
+                    <p className="label">Waiver</p>
+                    <div className="max-h-40 overflow-y-auto whitespace-pre-line rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
+                      {event.waiverText}
+                    </div>
+                    <label className="mt-2 flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={waiverAccepted}
+                        onChange={(e) => setWaiverAccepted(e.target.checked)}
+                      />
+                      I have read and accept this waiver.
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <button className="btn-secondary flex-1" onClick={() => setStep("select")}>
+                  Back
+                </button>
+                <button
+                  className="btn-primary flex-1"
+                  disabled={!answersValid || !waiverOk}
+                  onClick={() => setStep("confirm")}
+                >
+                  Continue
+                </button>
+              </div>
             </>
           )}
 
@@ -287,7 +381,7 @@ export default function EventDetailPage() {
               )}
 
               <div className="mt-4 flex gap-2">
-                <button className="btn-secondary flex-1" onClick={() => setStep("select")}>
+                <button className="btn-secondary flex-1" onClick={() => setStep(hasQuestionsStep ? "questions" : "select")}>
                   Back
                 </button>
                 <button className="btn-primary flex-1" disabled={placing} onClick={placeOrder}>

@@ -186,6 +186,48 @@ model Credential {
   @@index([organizationId, vendorId])
 }
 
+// type is TEXT | SELECT | CHECKBOX (plain-string convention — see
+// MobileMoneyAccount.provider). options is a comma-joined string, SELECT only
+// — no separate option-row model: like TicketType, this data has no
+// independent lifecycle of its own, so a child table is pure indirection.
+// Never deleted server-side once referenced — mirrors handleEditEvent's
+// ticketTypes sub-pattern exactly: removing a question from the organizer's
+// form just stops sending it, it isn't explicitly dropped.
+model RegistrationQuestion {
+  id        String   @id @default(cuid())
+  clientId  String?  @unique
+  label     String
+  type      String   // TEXT | SELECT | CHECKBOX
+  options   String?  // comma-joined, SELECT only, e.g. "Small,Medium,Large"
+  required  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  answers RegistrationAnswer[]
+}
+
+// One row per question per order — not a JSON blob. This schema has zero
+// Json-typed columns anywhere; Order already decomposes into one-row-per-item
+// children (OrderItem, Ticket) rather than a blob, so this keeps the same
+// shape discipline.
+model RegistrationAnswer {
+  id        String   @id @default(cuid())
+  value     String
+  createdAt DateTime @default(now())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  questionId String
+  question   RegistrationQuestion @relation(fields: [questionId], references: [id])
+
+  @@index([orderId])
+}
+
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see
 // MobileMoneyAccount.provider). @@unique([userId]), not
 // @@unique([organizationId, userId]) — that's the v1 "one org per user"
@@ -311,19 +353,24 @@ model Event {
   // 0 means no fee — vendors can still apply/be added, just with feeStatus NONE.
   vendorApplicationsOpen Boolean @default(false)
   vendorStallFeeCents    Int     @default(0)
+  // null = no waiver required for this event. Live, organizer-editable copy —
+  // Order.waiverText snapshots the exact text a given buyer saw/agreed to at
+  // purchase time, same reasoning Order.currency snapshots Event.currency.
+  waiverText  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  ticketTypes TicketType[]
-  orders      Order[]
-  tickets     Ticket[]
-  vendors     Vendor[]
-  sponsors    Sponsor[]
-  wallets     Wallet[]
-  broadcasts  Broadcast[]
+  ticketTypes           TicketType[]
+  orders                Order[]
+  tickets               Ticket[]
+  vendors               Vendor[]
+  sponsors              Sponsor[]
+  wallets               Wallet[]
+  broadcasts            Broadcast[]
+  registrationQuestions RegistrationQuestion[]
 }
 
 model TicketType {
@@ -352,6 +399,12 @@ model Order {
   // Snapshot of the event's currency at purchase time (events can't change
   // currency once they have sales — see handleEditEvent).
   currency   String   @default("TZS")
+  // Snapshot of Event.waiverText at purchase time — same "don't let a later
+  // event edit change what a past buyer is shown as having agreed to"
+  // discipline as currency/Vendor.stallFeeCents snapshotting Event fields.
+  // null when the event had no waiver at purchase time.
+  waiverText       String?
+  waiverAcceptedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -361,9 +414,10 @@ model Order {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id])
 
-  items           OrderItem[]
-  tickets         Ticket[]
-  settlementItems SettlementItem[]
+  items               OrderItem[]
+  tickets             Ticket[]
+  settlementItems     SettlementItem[]
+  registrationAnswers RegistrationAnswer[]
 }
 
 model OrderItem {
