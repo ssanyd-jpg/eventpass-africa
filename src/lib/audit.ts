@@ -16,7 +16,8 @@ export type AuditAction =
   | "MEMBER_REMOVED"
   | "DEVICE_REVOKED"
   | "DEVICE_REACTIVATED"
-  | "BROADCAST_SENT";
+  | "BROADCAST_SENT"
+  | "CREDENTIAL_REPLACED";
 
 interface LogAuditInput {
   organizationId: string;

@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCents, formatDateTime } from "@/lib/format";
 import { getCustomerDetailData } from "@/lib/analytics-data";
-import { addNote } from "../actions";
+import { addNote, replaceTicketCode, replaceWalletCode } from "../actions";
 
 const STATUS_STYLE: Record<string, string> = {
   PAID: "border-ok/40 bg-ok/10 text-ok",
@@ -21,7 +21,7 @@ export default async function CustomerDetailPage({ params }: { params: { userId:
     redirect("/dashboard");
   }
 
-  const { customer, orders } = await getCustomerDetailData(session.user.organizationId, params.userId);
+  const { customer, orders, wallets } = await getCustomerDetailData(session.user.organizationId, params.userId);
 
   if (!customer) {
     return (
@@ -46,17 +46,65 @@ export default async function CustomerDetailPage({ params }: { params: { userId:
       <h2 className="mb-3 font-semibold">Order history</h2>
       <div className="card mb-8 divide-y divide-border">
         {orders.map((o) => (
-          <div key={o.id} className="flex items-center justify-between gap-3 p-4 text-sm">
-            <div>
-              <p className="font-medium">{o.event.title}</p>
-              <p className="text-xs text-muted">{formatDateTime(o.createdAt)}</p>
+          <div key={o.id} className="space-y-3 p-4 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">{o.event.title}</p>
+                <p className="text-xs text-muted">{formatDateTime(o.createdAt)}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-medium">{formatCents(o.totalCents, o.currency)}</span>
+                <span className={`pill ${STATUS_STYLE[o.status] ?? ""}`}>{o.status}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="font-medium">{formatCents(o.totalCents, o.currency)}</span>
-              <span className={`pill ${STATUS_STYLE[o.status] ?? ""}`}>{o.status}</span>
-            </div>
+            {o.tickets.length > 0 && (
+              <div className="space-y-2 border-t border-border pt-3">
+                {o.tickets.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="font-mono">{t.code}</span>
+                      <span className="ml-2 text-muted">{t.checkedIn ? "Checked in" : "Not checked in"}</span>
+                    </div>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await replaceTicketCode(t.id);
+                      }}
+                    >
+                      <button type="submit" className="font-medium text-danger hover:underline">
+                        Mark lost & issue new code
+                      </button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
+        {orders.length === 0 && <p className="p-6 text-center text-muted">No orders yet.</p>}
+      </div>
+
+      <h2 className="mb-3 font-semibold">Wallets</h2>
+      <div className="card mb-8 divide-y divide-border">
+        {wallets.map((w) => (
+          <div key={w.id} className="flex items-center justify-between gap-3 p-4 text-sm">
+            <div>
+              <p className="font-mono font-medium">{w.code}</p>
+              <p className="text-xs text-muted">{w.event.title} · {formatCents(w.balanceCents, w.currency)}</p>
+            </div>
+            <form
+              action={async () => {
+                "use server";
+                await replaceWalletCode(w.id);
+              }}
+            >
+              <button type="submit" className="text-xs font-medium text-danger hover:underline">
+                Mark lost & issue new code
+              </button>
+            </form>
+          </div>
+        ))}
+        {wallets.length === 0 && <p className="p-6 text-center text-sm text-muted">No wallets yet.</p>}
       </div>
 
       <h2 className="mb-3 font-semibold">Notes</h2>

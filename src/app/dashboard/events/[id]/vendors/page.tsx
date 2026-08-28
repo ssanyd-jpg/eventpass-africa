@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalVendor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { generateTicketCode, formatCents } from "@/lib/format";
+import { replaceVendorBadgeCode } from "./actions";
 
 const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
 
@@ -75,6 +76,22 @@ export default function ManageVendorsPage() {
         boothNumber: boothNumber || undefined,
         badgeCode,
       });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Only meaningful for a vendor whose id is already the real server id
+  // (syncStatus "synced") — a still-pending offline-created vendor has no
+  // server row yet to regenerate a badge for.
+  async function regenerateBadge(vendor: LocalVendor) {
+    if (!confirm(`Mark ${vendor.name}'s badge as lost and issue a new code?`)) return;
+    setBusyId(vendor.id);
+    try {
+      const updated = await replaceVendorBadgeCode(vendor.id);
+      await db.vendors.put({ ...vendor, badgeCode: updated.badgeCode, updatedAt: updated.updatedAt.toISOString(), syncStatus: "synced" });
+    } catch {
+      alert("Couldn't replace the badge code. Try again.");
     } finally {
       setBusyId(null);
     }
@@ -235,9 +252,20 @@ export default function ManageVendorsPage() {
                   {v.category}{v.boothNumber ? ` · Booth ${v.boothNumber}` : ""} · badge {v.badgeCode}
                 </p>
               </div>
-              <span className={`pill ${v.checkedIn ? "border-ok/40 bg-ok/10 text-ok" : "border-border text-muted"}`}>
-                {v.checkedIn ? "Checked in" : "Not checked in"}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className={`pill ${v.checkedIn ? "border-ok/40 bg-ok/10 text-ok" : "border-border text-muted"}`}>
+                  {v.checkedIn ? "Checked in" : "Not checked in"}
+                </span>
+                {v.syncStatus === "synced" && (
+                  <button
+                    className="text-xs font-medium text-danger hover:underline disabled:opacity-50"
+                    disabled={busyId === v.id}
+                    onClick={() => regenerateBadge(v)}
+                  >
+                    Mark lost & issue new code
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

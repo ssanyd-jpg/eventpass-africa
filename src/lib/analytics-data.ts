@@ -174,26 +174,47 @@ export interface CustomerDetailOrder {
   currency: string;
   createdAt: Date;
   event: { title: string };
+  tickets: { id: string; code: string; checkedIn: boolean }[];
+}
+
+export interface CustomerDetailWallet {
+  id: string;
+  code: string;
+  balanceCents: number;
+  currency: string;
+  event: { title: string };
 }
 
 export interface CustomerDetailData {
   customer: { userId: string; name: string; email: string } | null;
   orders: CustomerDetailOrder[];
+  wallets: CustomerDetailWallet[];
 }
 
 // No status filter — order history shows REFUNDED too (badged), same as the
 // existing Attendees list at dashboard/events/[id]/page.tsx. customer: null
 // when there are zero in-org orders for this userId IS the cross-org guard
-// — the caller should 404 rather than leak a stranger's history.
+// — the caller should 404 rather than leak a stranger's history. Wallets are
+// fetched separately (a customer may have a wallet with zero orders, e.g. a
+// top-up-only attendee) but use the identical Wallet.eventId->Event.organizationId
+// scoping chain as everything else.
 export async function getCustomerDetailData(organizationId: string, userId: string): Promise<CustomerDetailData> {
   const myEvents = await prisma.event.findMany({ where: { organizationId }, select: { id: true } });
   const eventIds = myEvents.map((e) => e.id);
   const orders = await prisma.order.findMany({
     where: { eventId: { in: eventIds }, userId },
     orderBy: { createdAt: "desc" },
-    include: { event: { select: { title: true } }, user: { select: { name: true, email: true } } },
+    include: {
+      event: { select: { title: true } },
+      user: { select: { name: true, email: true } },
+      tickets: { select: { id: true, code: true, checkedIn: true } },
+    },
   });
-  if (orders.length === 0) return { customer: null, orders: [] };
-  const { name, email } = orders[0].user;
-  return { customer: { userId, name, email }, orders };
+  const wallets = await prisma.wallet.findMany({
+    where: { ownerUserId: userId, eventId: { in: eventIds } },
+    include: { event: { select: { title: true } } },
+  });
+  if (orders.length === 0 && wallets.length === 0) return { customer: null, orders: [], wallets: [] };
+  const user = orders[0]?.user ?? (await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } }));
+  return { customer: { userId, name: user?.name ?? "Unknown", email: user?.email ?? "" }, orders, wallets };
 }

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { addCustomerNoteById } from "@/lib/crm-handlers";
+import { logAudit } from "@/lib/audit";
+import { replaceTicketCode as replaceTicketCodeById, replaceWalletCode as replaceWalletCodeById } from "@/lib/credential-handlers";
 
 // OWNER or STAFF, not GATE_CREW — matches this page's own view gate
 // (routine day-to-day work, same as analytics/events, not a team-structure/
@@ -32,4 +34,32 @@ export async function addNote(customerUserId: string, formData: FormData) {
     body.trim()
   );
   revalidatePath(`/dashboard/customers/${customerUserId}`);
+}
+
+export async function replaceTicketCode(ticketId: string) {
+  const session = await requireViewer();
+  const actorName = session.user.name ?? session.user.email ?? "Unknown";
+  const ticket = await replaceTicketCodeById(session.user.organizationId, ticketId, session.user.id, actorName);
+  await logAudit({
+    organizationId: session.user.organizationId,
+    actorUserId: session.user.id,
+    actorName,
+    action: "CREDENTIAL_REPLACED",
+    summary: `Replaced ticket code for "${ticket.eventTitle}"`,
+  });
+  revalidatePath("/dashboard/customers/[userId]", "page");
+}
+
+export async function replaceWalletCode(walletId: string) {
+  const session = await requireViewer();
+  const actorName = session.user.name ?? session.user.email ?? "Unknown";
+  const wallet = await replaceWalletCodeById(session.user.organizationId, walletId, session.user.id, actorName);
+  await logAudit({
+    organizationId: session.user.organizationId,
+    actorUserId: session.user.id,
+    actorName,
+    action: "CREDENTIAL_REPLACED",
+    summary: `Replaced wallet code for "${wallet.eventTitle}"`,
+  });
+  revalidatePath("/dashboard/customers/[userId]", "page");
 }

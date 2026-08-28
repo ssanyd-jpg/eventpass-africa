@@ -49,6 +49,7 @@ model Organization {
   devices             Device[]
   customerNotes       CustomerNote[]
   broadcasts          Broadcast[]
+  credentials         Credential[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -142,6 +143,47 @@ model Broadcast {
   sentByName   String
 
   @@index([organizationId, createdAt])
+}
+
+// Pure audit/history trail for Ticket.code / Wallet.code / Vendor.badgeCode
+// replacement — NEVER read in the hot scan/charge lookup path (handleCheckIn/
+// handleCheckInVendor/handleChargeWallet/handleSponsorTap keep doing
+// findUnique({where:{code}}) against Ticket/Wallet/Vendor directly, unchanged).
+// Exactly one of ticketId/walletId/vendorId is set per row — same nullable-
+// triple convention as WalletTransaction.vendorId/sponsorId, extended by one.
+// No backfill: an entity with zero Credential rows simply means "still on its
+// original code, never replaced" — same reasoning as Device/CustomerNote.
+// status is ACTIVE | SUPERSEDED (plain-string convention) — not a separate
+// terminal LOST state: marking something lost is atomic with issuing the
+// replacement, so a row transitions ACTIVE -> SUPERSEDED at the same moment a
+// new ACTIVE row is created. No self-relation pointer needed —
+// Credential.findMany({where:{ticketId}, orderBy:{createdAt:"asc"}}) gives the
+// full ordered chain without one.
+model Credential {
+  id                 String    @id @default(cuid())
+  code               String
+  status             String    @default("ACTIVE")
+  createdAt          DateTime  @default(now())
+  createdByUserId    String
+  createdByName      String
+  supersededAt       DateTime?
+  supersededByUserId String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  ticketId String?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  walletId String?
+  wallet   Wallet? @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ticketId])
+  @@index([organizationId, walletId])
+  @@index([organizationId, vendorId])
 }
 
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see
@@ -374,6 +416,8 @@ model Ticket {
 
   ticketTypeId String
   ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  credentials Credential[]
 }
 
 // status is PENDING | APPROVED | REJECTED. feeStatus is NONE | PAID | REFUNDED
@@ -406,6 +450,7 @@ model Vendor {
   owner       User?   @relation(fields: [ownerUserId], references: [id])
 
   walletSales WalletTransaction[]
+  credentials Credential[]
 }
 
 // Organizer-managed sponsor entity — same shape as Vendor, simplified: no
@@ -455,6 +500,7 @@ model Wallet {
   owner       User   @relation(fields: [ownerUserId], references: [id])
 
   transactions WalletTransaction[]
+  credentials  Credential[]
 
   @@unique([eventId, ownerUserId])
 }
