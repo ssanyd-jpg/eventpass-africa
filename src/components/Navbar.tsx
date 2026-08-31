@@ -66,6 +66,7 @@ export default function Navbar() {
           {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
           {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
           {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
+          {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
           {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
@@ -105,6 +106,7 @@ export default function Navbar() {
       <div className="flex gap-5 border-t border-border px-4 py-2 md:hidden">
         <NavLink href="/">{t("nav.browse")}</NavLink>
         {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
+        {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
         {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
         {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
         {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}

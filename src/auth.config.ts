@@ -17,12 +17,17 @@ export const authConfig: NextAuthConfig = {
           organizationId?: string;
           organizationRole?: string;
           organizationName?: string;
+          sessionId?: string;
         };
         token.id = user.id;
         token.role = u.role ?? "USER";
         token.organizationId = u.organizationId;
         token.organizationRole = u.organizationRole;
         token.organizationName = u.organizationName;
+        token.sessionId = u.sessionId;
+        // Just created — skip an immediate revocation re-check on the very
+        // next request (see auth.ts's periodic-recheck block).
+        token.sessionRevocationCheckedAt = Date.now();
       }
       return token;
     },
@@ -33,6 +38,9 @@ export const authConfig: NextAuthConfig = {
         session.user.organizationId = token.organizationId as string;
         session.user.organizationRole = token.organizationRole as string;
         session.user.organizationName = token.organizationName as string;
+      }
+      if (typeof token.sessionId === "string") {
+        session.sessionId = token.sessionId;
       }
       return session;
     },

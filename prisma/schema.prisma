@@ -27,6 +27,7 @@ model User {
   passwordResetTokens    PasswordResetToken[]
   vendorApplications     Vendor[]
   wallets                Wallet[]
+  userSessions           UserSession[]
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -277,6 +278,26 @@ model PasswordResetToken {
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Tracks one row per successful credential login. Deliberately unrelated to
+// Device (see below) — Device is a per-org-per-browser install that survives
+// logout and is shared by whoever's signed in; UserSession is per-login and
+// ends at logout/revocation. id is echoed into the JWT as token.sessionId
+// once, at initial sign-in (see auth.ts authorize()), and is the only thing
+// a self-service revoke may target.
+model UserSession {
+  id              String    @id @default(cuid())
+  label           String
+  createdAt       DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // provider is one of: MPESA_TZ | TIGO_PESA | AIRTEL_MONEY | HALOPESA
