@@ -35,6 +35,20 @@ export default function ManageSponsorsPage() {
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [event?.id]);
 
+  // Lead count per sponsor, computed client-side from the same
+  // walletTransactions table the organizer analytics page already reads
+  // (populated by payload.myWalletTransactions on every pull) — avoids a
+  // second server round-trip just to show a number next to each sponsor.
+  const leadCounts = useLiveQuery(async () => {
+    if (!sponsors || sponsors.length === 0) return {};
+    const taps = await db.walletTransactions.where("type").equals("SPONSOR_TAP").toArray();
+    const counts: Record<string, number> = {};
+    for (const t of taps) {
+      if (t.sponsorId) counts[t.sponsorId] = (counts[t.sponsorId] ?? 0) + 1;
+    }
+    return counts;
+  }, [sponsors]);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [addName, setAddName] = useState("");
   const [addTier, setAddTier] = useState(SPONSOR_TIERS[0]);
@@ -164,6 +178,17 @@ export default function ManageSponsorsPage() {
                   {s.feeCents > 0 && ` · ${formatCents(s.feeCents, s.currency)} (${s.feeStatus === "PAID" ? "paid" : s.feeStatus})`}
                 </p>
               </div>
+              {/* Leads only exist once a sponsor has a real server id — a
+                  still-pending-sync sponsor (local temp id) has no rows to
+                  show yet. */}
+              {!s.syncStatus || s.syncStatus === "synced" ? (
+                <Link
+                  href={`/dashboard/events/${event.id}/sponsors/${s.id}/leads`}
+                  className="text-sm font-medium text-accent-hover"
+                >
+                  Leads ({leadCounts?.[s.id] ?? 0}) →
+                </Link>
+              ) : null}
             </div>
           ))}
         </div>

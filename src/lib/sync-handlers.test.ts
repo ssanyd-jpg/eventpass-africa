@@ -7,6 +7,8 @@ import {
   addMembership,
   createTestRegistrationQuestion,
   createTestDiscountCode,
+  createTestSponsor,
+  createTestWallet,
 } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
@@ -19,6 +21,8 @@ import {
   handleRejectVendor,
   handleCheckInVendor,
   handleEditEvent,
+  handleSponsorTap,
+  payloadSchemas,
 } from "@/lib/sync-handlers";
 
 // Every "organizer" in these tests needs a real Organization + OWNER
@@ -847,6 +851,97 @@ describe("handleAddSponsor", () => {
     await handleAddSponsor(organizer.id, organizationId, payload);
     await handleAddSponsor(organizer.id, organizationId, payload);
     expect(await prisma.sponsor.count({ where: { clientId: "sponsor-replay" } })).toBe(1);
+  });
+});
+
+describe("handleSponsorTap", () => {
+  async function sponsorAndWallet() {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id, { name: "Acme Corp" });
+    const wallet = await createTestWallet(event.id, attendee.id);
+    return { organizer, organizationId, attendee, event, sponsor, wallet };
+  }
+
+  it("persists a non-empty note", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+
+    const result = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-with-note",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      note: "  interested in the Series A demo  ",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).transaction.note).toBe("interested in the Series A demo");
+    const stored = await prisma.walletTransaction.findUniqueOrThrow({ where: { clientId: "tap-with-note" } });
+    expect(stored.note).toBe("interested in the Series A demo");
+  });
+
+  it("collapses an omitted, blank, or whitespace-only note to null", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+
+    const omitted = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-omitted",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+    });
+    expect((omitted as any).transaction.note).toBeNull();
+
+    const blank = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-blank",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      note: "   ",
+    });
+    expect((blank as any).transaction.note).toBeNull();
+    const stored = await prisma.walletTransaction.findUniqueOrThrow({ where: { clientId: "tap-blank" } });
+    expect(stored.note).toBeNull(); // never an empty string
+  });
+
+  it("is idempotent — replaying the same clientId doesn't duplicate the row or drop the note", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const payload = {
+      clientId: "tap-replay",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      note: "call back next week",
+    };
+
+    await handleSponsorTap(organizer.id, organizationId, payload);
+    const second = await handleSponsorTap(organizer.id, organizationId, payload);
+
+    expect(await prisma.walletTransaction.count({ where: { clientId: "tap-replay" } })).toBe(1);
+    expect((second as any).transaction.note).toBe("call back next week");
+  });
+
+  it("payloadSchemas.SPONSOR_TAP rejects a note over 500 chars", () => {
+    const parsed = payloadSchemas.SPONSOR_TAP.safeParse({
+      clientId: "x",
+      walletCode: "CODE",
+      sponsorId: "sponsor-1",
+      eventId: "event-1",
+      note: "a".repeat(501),
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("payloadSchemas.SPONSOR_TAP accepts a payload with no note key at all", () => {
+    // Back-compat: an already-offline-queued tap from before this field
+    // existed has no `note` key at all and must still parse.
+    const parsed = payloadSchemas.SPONSOR_TAP.safeParse({
+      clientId: "x",
+      walletCode: "CODE",
+      sponsorId: "sponsor-1",
+      eventId: "event-1",
+    });
+    expect(parsed.success).toBe(true);
   });
 });
 

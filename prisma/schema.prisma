@@ -673,6 +673,15 @@ model WalletTransaction {
   providerReference String?  // aggregator's merchant order id, for reconciliation
   providerMessage   String?
   phoneNumber       String?  // TOPUP only
+  // Freeform note a staff member can type at SPONSOR_TAP scan time (e.g.
+  // "interested in the Series A demo") — always null for TOPUP/SALE. No
+  // attendee-facing consent step: a tap already silently links to the
+  // attendee's account for analytics today (see sponsorTapsBySponsor in
+  // src/lib/analytics.ts); this field just makes that existing link
+  // visible/exportable to the organizer, deliberately matching that same
+  // posture rather than adding new linkage — a considered choice, not an
+  // oversight (see the Sponsors lead-capture plan).
+  note              String?  // SPONSOR_TAP only
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -684,4 +693,6 @@ model WalletTransaction {
 
   sponsorId String? // SPONSOR_TAP only
   sponsor   Sponsor? @relation(fields: [sponsorId], references: [id])
+
+  @@index([sponsorId, type, createdAt])
 }

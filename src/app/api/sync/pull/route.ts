@@ -251,6 +251,7 @@ export async function GET(request: Request) {
       providerReference: t.providerReference,
       providerMessage: t.providerMessage,
       phoneNumber: t.phoneNumber,
+      note: t.note ?? null,
       vendorId: t.vendorId,
       vendorName: t.vendor?.name ?? null,
       sponsorId: t.sponsorId,

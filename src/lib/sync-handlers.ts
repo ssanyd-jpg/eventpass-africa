@@ -230,6 +230,9 @@ export const payloadSchemas = {
     eventId: z.string().min(1),
     eventClientId: z.string().nullable().optional(),
     scannedAt: z.string().optional(),
+    // nullable AND optional — an already-offline-queued tap from before
+    // this field existed has no `note` key at all and must still parse.
+    note: z.string().trim().max(500).nullable().optional(),
   }),
 } as const;
 
@@ -1200,6 +1203,7 @@ export function shapeWalletTransaction(t: any) {
     providerReference: t.providerReference,
     providerMessage: t.providerMessage,
     phoneNumber: t.phoneNumber,
+    note: t.note ?? null,
     vendorId: t.vendorId,
     vendorName: t.vendor?.name ?? null,
     sponsorId: t.sponsorId,
@@ -1543,6 +1547,9 @@ export async function handleSponsorTap(userId: string, organizationId: string, p
       currency: wallet.currency,
       walletId: wallet.id,
       sponsorId: sponsor.id,
+      // Blank/whitespace-only collapses to null, so every downstream read
+      // only ever checks truthy/falsy, never "" vs null.
+      note: payload.note ? String(payload.note).trim() || null : null,
     },
     include: walletTxInclude,
   });

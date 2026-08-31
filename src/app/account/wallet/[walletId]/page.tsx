@@ -132,6 +132,7 @@ export default function WalletDetailPage() {
       providerReference: null,
       providerMessage: "Test checkout — no real payment is processed.",
       phoneNumber: phone.trim() || null,
+      note: null,
       vendorId: null,
       vendorName: null,
       sponsorId: null,

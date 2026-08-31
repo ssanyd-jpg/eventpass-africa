@@ -37,6 +37,8 @@ export default function WalletChargeTerminalPage() {
   const [amountMajor, setAmountMajor] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [sponsorId, setSponsorId] = useState("");
+  const [note, setNote] = useState("");
+  const [showNoteField, setShowNoteField] = useState(false);
   const [result, setResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +71,8 @@ export default function WalletChargeTerminalPage() {
   amountMajorRef.current = amountMajor;
   const sponsorIdRef = useRef(sponsorId);
   sponsorIdRef.current = sponsorId;
+  const noteRef = useRef(note);
+  noteRef.current = note;
   const onlineRef = useRef(online);
   onlineRef.current = online;
 
@@ -142,9 +146,15 @@ export default function WalletChargeTerminalPage() {
       sponsorId,
       eventId: event.id,
       eventClientId: event.clientId,
+      note: noteRef.current.trim() || undefined,
     });
 
     setResult({ kind: "recorded", message: "Tap recorded.", code: normalized });
+    // Reset for the next attendee — same discipline as the code input reset
+    // in onSubmit below, applied here too since scanner-triggered taps
+    // (CameraScanner/NFCScanner) bypass onSubmit entirely.
+    setNote("");
+    setShowNoteField(false);
   }, []);
 
   const activeHandler = mode === "sale" ? chargeWallet : recordTap;
@@ -221,14 +231,37 @@ export default function WalletChargeTerminalPage() {
           </div>
         </div>
       ) : (
-        <div className="card mt-5 p-5">
-          <label className="label" htmlFor="sponsor">Sponsor</label>
-          <select id="sponsor" className="input" value={sponsorId} onChange={(e) => setSponsorId(e.target.value)}>
-            <option value="">Select a sponsor…</option>
-            {(sponsors ?? []).map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.tier})</option>
-            ))}
-          </select>
+        <div className="card mt-5 space-y-3 p-5">
+          <div>
+            <label className="label" htmlFor="sponsor">Sponsor</label>
+            <select id="sponsor" className="input" value={sponsorId} onChange={(e) => setSponsorId(e.target.value)}>
+              <option value="">Select a sponsor…</option>
+              {(sponsors ?? []).map((s) => (
+                <option key={s.id} value={s.id}>{s.name} ({s.tier})</option>
+              ))}
+            </select>
+          </div>
+          {showNoteField ? (
+            <div>
+              <label className="label" htmlFor="tapNote">Note (optional)</label>
+              <textarea
+                id="tapNote"
+                className="input min-h-16"
+                placeholder="e.g. interested in the Series A demo"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={500}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover"
+              onClick={() => setShowNoteField(true)}
+            >
+              + Add a note
+            </button>
+          )}
         </div>
       )}
 

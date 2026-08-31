@@ -235,6 +235,9 @@ export interface LocalWalletTransaction {
   providerReference: string | null;
   providerMessage: string | null;
   phoneNumber: string | null;
+  // SPONSOR_TAP only — a staff-entered lead note, see WalletTransaction.note
+  // in prisma/schema.prisma.
+  note: string | null;
   vendorId: string | null;
   vendorName: string | null;
   sponsorId: string | null;
