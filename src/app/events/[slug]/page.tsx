@@ -22,6 +22,7 @@ export default function EventDetailPage() {
   const [placedOrder, setPlacedOrder] = useState<LocalOrder | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
 
   const selection = useMemo(() => {
     if (!event) return [];
@@ -110,6 +111,11 @@ export default function EventDetailPage() {
         questionLabel: q.label,
         value: answers[q.id] ?? "",
       })),
+      // Discounts can't be pre-validated offline (codes deliberately don't
+      // ride in the public event pull) — the optimistic local echo keeps
+      // the full list-price total; applySellTicketsResult overwrites this
+      // whole order with the server-authoritative, correctly discounted one
+      // once sync succeeds.
       syncStatus: "pending",
     };
 
@@ -139,6 +145,7 @@ export default function EventDetailPage() {
       })),
       answers: registrationQuestions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? "" })),
       waiverAccepted,
+      discountCode: discountCode.trim() || undefined,
     });
 
     // Update the address bar without a client-side route transition — a
@@ -365,8 +372,22 @@ export default function EventDetailPage() {
                 ))}
                 <div className="flex justify-between border-t border-border pt-2 font-semibold">
                   <span>Total</span>
-                  <span>{formatCents(totalCents)}</span>
+                  <span>{formatCents(totalCents, event.currency)}</span>
                 </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="label" htmlFor="discountCode">Discount code (optional)</label>
+                <input
+                  id="discountCode"
+                  className="input"
+                  placeholder="e.g. EARLYBIRD"
+                  value={discountCode}
+                  onChange={(e) => setDiscountCode(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-muted">
+                  Applied at checkout — total may adjust once confirmed.
+                </p>
               </div>
 
               <div className="mt-4 rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">

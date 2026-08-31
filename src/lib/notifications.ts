@@ -6,7 +6,8 @@ export type NotificationType =
   | "EVENT_CANCELLED"
   | "REFUND_ISSUED"
   | "ORGANIZATION_INVITE"
-  | "ORGANIZER_BROADCAST";
+  | "ORGANIZER_BROADCAST"
+  | "TICKET_TRANSFER";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 

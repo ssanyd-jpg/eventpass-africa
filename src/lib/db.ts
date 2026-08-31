@@ -72,6 +72,10 @@ export interface LocalTicket {
   ticketTypeName: string;
   checkedIn: boolean;
   checkedInAt: string | null;
+  // null = held by the order's own buyer (order.userId). Set once a
+  // TicketTransfer to this ticket is accepted — see currentHolderUserId in
+  // prisma/schema.prisma.
+  currentHolderUserId?: string | null;
 }
 
 export type OrderSyncStatus = "synced" | "pending" | "conflict";
@@ -98,8 +102,43 @@ export interface LocalOrder {
   waiverText: string | null;
   waiverAcceptedAt: string | null;
   answers: LocalRegistrationAnswer[];
+  // Set server-side by handleSellTickets once the discount code (if any)
+  // was validated against the matching ticket type — see
+  // DiscountCode/Order.discountCents in prisma/schema.prisma. Absent on the
+  // optimistic local echo written before sync; filled in once
+  // applySellTicketsResult replaces it with the server-authoritative order.
+  discountCents?: number;
+  discountCode?: string | null;
+  discountTicketTypeName?: string | null;
+  // Informational only, never affects syncStatus — set only transiently on
+  // the sync-push response when a typed code couldn't be applied (unknown/
+  // expired/inactive/max-redeemed/wrong-ticket-type), so the buyer can see
+  // why they were still charged in full.
+  discountRejectReason?: string | null;
   syncStatus: OrderSyncStatus;
   syncError?: string | null;
+}
+
+// Organizer-only — never ships in the public `events` pull field (unlike
+// ticketTypes), so an anonymous browser can't enumerate an event's promo
+// codes out of IndexedDB. Populated only from payload.myDiscountCodes,
+// scoped server-side to the caller's own organization — see pull/route.ts.
+export interface LocalDiscountCode {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  code: string;
+  type: "PERCENT_OFF" | "FIXED_AMOUNT_OFF";
+  percentOff: number | null;
+  amountOffCents: number | null;
+  ticketTypeId: string;
+  ticketTypeName: string;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  expiresAt: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LocalMobileMoneyAccount {
@@ -252,6 +291,7 @@ class EventPassAfricaDB extends Dexie {
   sponsors!: Table<LocalSponsor, string>;
   wallets!: Table<LocalWallet, string>;
   walletTransactions!: Table<LocalWalletTransaction, string>;
+  discountCodes!: Table<LocalDiscountCode, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -314,6 +354,21 @@ class EventPassAfricaDB extends Dexie {
       wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
       walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
       sponsors: "id, clientId, eventId, syncStatus",
+    });
+    // New organizer-only discountCodes table (see LocalDiscountCode above).
+    // No .upgrade() transform, same reasoning as version(4)/version(5).
+    this.version(6).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
     });
   }
 }

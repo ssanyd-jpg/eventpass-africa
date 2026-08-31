@@ -22,6 +22,7 @@ const ticketTypeInputSchema = z.object({
 export const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"] as const;
 export const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"] as const;
 export const REGISTRATION_QUESTION_TYPES = ["TEXT", "SELECT", "CHECKBOX"] as const;
+export const DISCOUNT_TYPES = ["PERCENT_OFF", "FIXED_AMOUNT_OFF"] as const;
 
 const registrationQuestionInputSchema = z.object({
   id: z.string().optional(),
@@ -31,6 +32,23 @@ const registrationQuestionInputSchema = z.object({
   options: z.string().max(1000).optional(),
   required: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+});
+
+// ticketTypeId may reference a real, already-persisted TicketType.id, OR
+// (when a code is created in the same save as the ticket type it applies
+// to) that ticket type's clientId — handleEditEvent resolves this after its
+// ticketTypes upsert loop runs. See the cross-reference-resolution note there.
+const discountCodeInputSchema = z.object({
+  id: z.string().optional(),
+  clientId: z.string().min(1),
+  code: z.string().min(3).max(20),
+  type: z.enum(DISCOUNT_TYPES),
+  ticketTypeId: z.string().min(1),
+  percentOff: z.number().int().min(1).max(100).optional(),
+  amountOffCents: z.number().int().min(1).optional(),
+  maxRedemptions: z.number().int().min(1).optional(),
+  expiresAt: z.string().optional(),
+  active: z.boolean().optional(),
 });
 
 export const payloadSchemas = {
@@ -61,6 +79,12 @@ export const payloadSchemas = {
       .min(1),
     answers: z.array(z.object({ questionId: z.string().min(1), value: z.string().max(2000) })).optional(),
     waiverAccepted: z.boolean().optional(),
+    // Never trusted for the actual discount math — the client can't
+    // pre-validate a code offline (codes don't ride in the public event
+    // pull), so this is re-looked-up and re-validated server-side inside
+    // handleSellTickets. An invalid/inapplicable code never blocks the
+    // sale — see the soft-fail discount block below.
+    discountCode: z.string().max(40).optional(),
   }),
   CHECK_IN: z.object({
     clientId: z.string().min(1),
@@ -101,6 +125,7 @@ export const payloadSchemas = {
     vendorStallFeeCents: z.number().int().min(0).optional(),
     waiverText: z.string().max(8000).nullable().optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
+    discountCodes: z.array(discountCodeInputSchema).optional(),
   }),
   CANCEL_EVENT: z.object({
     eventId: z.string().min(1),
@@ -353,6 +378,7 @@ export function shapeOrder(o: any) {
       ticketTypeName: t.ticketType.name,
       checkedIn: t.checkedIn,
       checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
+      currentHolderUserId: t.currentHolderUserId ?? null,
     })),
     waiverText: o.waiverText ?? null,
     waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
@@ -361,6 +387,14 @@ export function shapeOrder(o: any) {
       questionLabel: a.question.label,
       value: a.value,
     })),
+    discountCents: o.discountCents ?? 0,
+    discountCode: o.discountCodeText ?? null,
+    discountTicketTypeName: o.discountTicketTypeName ?? null,
+    // Set only transiently on the return value of handleSellTickets itself
+    // (never persisted) — informs the buyer why a typed code didn't apply.
+    // Absent on every other shapeOrder call site (pull/replay/refund),
+    // which is correct: those don't have this context and shouldn't invent one.
+    discountRejectReason: o.discountRejectReason ?? null,
   };
 }
 
@@ -397,7 +431,7 @@ export async function handleSellTickets(userId: string, payload: any) {
   let totalCents = 0;
   const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
 
-  const order = await prisma.$transaction(async (tx) => {
+  const { order, discountRejectReason } = await prisma.$transaction(async (tx) => {
     const orderItemsData: any[] = [];
     const ticketsData: any[] = [];
 
@@ -444,14 +478,67 @@ export async function handleSellTickets(userId: string, payload: any) {
       .filter((a) => validQuestionIds.has(a.questionId))
       .map((a) => ({ questionId: a.questionId, value: String(a.value) }));
 
+    // Discount codes are re-looked-up and re-validated entirely server-side
+    // — the client can't pre-validate offline (codes deliberately don't
+    // ride in the public event pull, so a browser can't enumerate an
+    // organizer's promo codes). Never a hard reject: like the oversell
+    // check above, an invalid/expired/exhausted/inapplicable code doesn't
+    // block the sale, it just doesn't apply — the order still completes at
+    // full price with a reason reported back for the buyer to see.
+    const rawCode = payload.discountCode ? String(payload.discountCode).trim().toUpperCase() : null;
+    let discountCents = 0;
+    let discountRejectReason: string | null = null;
+    let appliedDiscount: { id: string; code: string; ticketTypeName: string } | null = null;
+
+    if (rawCode) {
+      const dc = await tx.discountCode.findUnique({
+        where: { eventId_code: { eventId: event.id, code: rawCode } },
+        include: { ticketType: true },
+      });
+      const matchingItem = dc ? items.find((it) => it.ticketTypeId === dc.ticketTypeId) : undefined;
+
+      if (!dc) discountRejectReason = "DISCOUNT_NOT_FOUND";
+      else if (!dc.active) discountRejectReason = "DISCOUNT_INACTIVE";
+      else if (dc.expiresAt && dc.expiresAt < new Date()) discountRejectReason = "DISCOUNT_EXPIRED";
+      else if (dc.maxRedemptions != null && dc.redemptionCount >= dc.maxRedemptions) discountRejectReason = "DISCOUNT_MAX_REDEEMED";
+      else if (!matchingItem) discountRejectReason = "DISCOUNT_NOT_APPLICABLE";
+      else {
+        // CAS on redemptionCount — same discipline as handleChargeWallet's
+        // balanceCents updateMany, so two buyers racing the last redemption
+        // slot can't both win.
+        const res = await tx.discountCode.updateMany({
+          where: {
+            id: dc.id,
+            active: true,
+            OR: [{ maxRedemptions: null }, { redemptionCount: { lt: dc.maxRedemptions ?? 0 } }],
+          },
+          data: { redemptionCount: { increment: 1 } },
+        });
+        if (res.count === 1) {
+          const lineTotalCents = dc.ticketType.priceCents * matchingItem.quantity;
+          discountCents = dc.type === "PERCENT_OFF"
+            ? Math.round(lineTotalCents * ((dc.percentOff ?? 0) / 100))
+            : Math.min(dc.amountOffCents ?? 0, lineTotalCents);
+          appliedDiscount = { id: dc.id, code: rawCode, ticketTypeName: dc.ticketType.name };
+        } else {
+          discountRejectReason = "DISCOUNT_MAX_REDEEMED"; // lost the race
+        }
+      }
+    }
+    const finalTotalCents = Math.max(0, totalCents - discountCents);
+
     const created = await tx.order.create({
       data: {
         clientId,
         status: oversold ? "NEEDS_REVIEW" : "PAID",
-        totalCents,
+        totalCents: finalTotalCents,
         currency: event.currency,
         waiverText: event.waiverText ?? null,
         waiverAcceptedAt: payload.waiverAccepted ? new Date() : null,
+        discountCodeId: appliedDiscount?.id ?? null,
+        discountCodeText: appliedDiscount?.code ?? null,
+        discountTicketTypeName: appliedDiscount?.ticketTypeName ?? null,
+        discountCents,
         userId,
         eventId: event.id,
         items: { create: orderItemsData },
@@ -466,7 +553,7 @@ export async function handleSellTickets(userId: string, payload: any) {
       },
     });
 
-    return created;
+    return { order: created, discountRejectReason };
     // Neon's pooled connection needs `pgbouncer=true` for interactive
     // transactions to commit correctly at all (see DEPLOYMENT.md) — that
     // makes Prisma hold one connection for the whole transaction, which
@@ -477,16 +564,23 @@ export async function handleSellTickets(userId: string, payload: any) {
   const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
   if (buyer) {
     const waiverLine = order.waiverAcceptedAt ? " You accepted the event waiver at checkout." : "";
+    const discountLine = order.discountCents > 0
+      ? ` A discount of ${formatCents(order.discountCents, event.currency)} (code ${order.discountCodeText}) was applied.`
+      : "";
     await sendNotification({
       type: "ORDER_CONFIRMATION",
       channel: "EMAIL",
       recipient: buyer.email,
       subject: `Your tickets for ${event.title}`,
-      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${formatCents(totalCents, event.currency)}. Ticket code(s): ${order.tickets.map((t) => t.code).join(", ")}.${waiverLine}`,
+      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${formatCents(order.totalCents, event.currency)}. Ticket code(s): ${order.tickets.map((t) => t.code).join(", ")}.${discountLine}${waiverLine}`,
     });
   }
 
-  return { ok: true, order: shapeOrder(order), oversold, ticketTypeUpdates };
+  // discountRejectReason is transient buyer-facing feedback, not persisted
+  // — attached onto the shaped order here rather than threaded as a new
+  // shapeOrder parameter, since every other call site (pull/idempotent
+  // replay/refund) has no such context and must not fabricate one.
+  return { ok: true, order: { ...shapeOrder(order), discountRejectReason }, oversold, ticketTypeUpdates };
 }
 
 const ticketInclude = { event: { select: { id: true, organizationId: true } } } as const;
@@ -588,6 +682,11 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
     data.currency = String(payload.currency);
   }
 
+  // Populated as ticketTypes are upserted below, so a discountCode in the
+  // SAME payload can target a ticket type that only gets its real id right
+  // here (e.g. an organizer creating "VIP" and a VIP-only code in one save).
+  const ticketTypeIdByClientId = new Map<string, string>();
+
   if (Array.isArray(payload.ticketTypes)) {
     for (const tt of payload.ticketTypes as any[]) {
       if (tt.id) {
@@ -605,10 +704,11 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
             quantityTotal: Number(tt.quantityTotal),
           },
         });
+        if (tt.clientId) ticketTypeIdByClientId.set(String(tt.clientId), tt.id);
       } else {
         const existingByClientId = await prisma.ticketType.findUnique({ where: { clientId: String(tt.clientId) } });
         if (!existingByClientId) {
-          await prisma.ticketType.create({
+          const createdTt = await prisma.ticketType.create({
             data: {
               clientId: String(tt.clientId),
               eventId: event.id,
@@ -618,6 +718,9 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
               quantityTotal: Number(tt.quantityTotal),
             },
           });
+          ticketTypeIdByClientId.set(String(tt.clientId), createdTt.id);
+        } else {
+          ticketTypeIdByClientId.set(String(tt.clientId), existingByClientId.id);
         }
       }
     }
@@ -654,6 +757,58 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
               required: Boolean(q.required ?? false),
               sortOrder: Number(q.sortOrder ?? 0),
             },
+          });
+        }
+      }
+    }
+  }
+
+  // Same upsert-by-id-or-clientId shape as ticketTypes/registrationQuestions
+  // above — never deleted server-side, "deactivate" flips active: false.
+  // ticketTypeId may be a real id or a ticketTypes[].clientId from this same
+  // payload — see ticketTypeIdByClientId above.
+  if (Array.isArray(payload.discountCodes)) {
+    for (const dc of payload.discountCodes as any[]) {
+      const resolvedTicketTypeId = ticketTypeIdByClientId.get(String(dc.ticketTypeId)) ?? String(dc.ticketTypeId);
+      const ticketType = await prisma.ticketType.findUnique({ where: { id: resolvedTicketTypeId } });
+      if (!ticketType || ticketType.eventId !== event.id) continue; // can't resolve — skip, don't abort the whole save
+
+      const isValidAmount =
+        (dc.type === "PERCENT_OFF" && dc.percentOff != null && dc.amountOffCents == null) ||
+        (dc.type === "FIXED_AMOUNT_OFF" && dc.amountOffCents != null && dc.percentOff == null);
+      if (!isValidAmount) {
+        return { ok: false, reason: "INVALID_DISCOUNT_CODE" };
+      }
+
+      const code = String(dc.code).trim().toUpperCase();
+      const codeData = {
+        code,
+        type: String(dc.type),
+        percentOff: dc.percentOff != null ? Number(dc.percentOff) : null,
+        amountOffCents: dc.amountOffCents != null ? Number(dc.amountOffCents) : null,
+        maxRedemptions: dc.maxRedemptions != null ? Number(dc.maxRedemptions) : null,
+        expiresAt: dc.expiresAt ? new Date(dc.expiresAt) : null,
+        active: dc.active ?? true,
+        ticketTypeId: ticketType.id,
+      };
+
+      if (dc.id) {
+        const current = await prisma.discountCode.findUnique({ where: { id: dc.id } });
+        if (!current || current.eventId !== event.id) continue;
+        const clash = await prisma.discountCode.findUnique({ where: { eventId_code: { eventId: event.id, code } } });
+        if (clash && clash.id !== dc.id) {
+          return { ok: false, reason: "DISCOUNT_CODE_TAKEN" };
+        }
+        await prisma.discountCode.update({ where: { id: dc.id }, data: codeData });
+      } else {
+        const existingByClientId = await prisma.discountCode.findUnique({ where: { clientId: String(dc.clientId) } });
+        if (!existingByClientId) {
+          const clash = await prisma.discountCode.findUnique({ where: { eventId_code: { eventId: event.id, code } } });
+          if (clash) {
+            return { ok: false, reason: "DISCOUNT_CODE_TAKEN" };
+          }
+          await prisma.discountCode.create({
+            data: { clientId: String(dc.clientId), eventId: event.id, ...codeData },
           });
         }
       }

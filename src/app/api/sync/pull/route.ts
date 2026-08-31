@@ -84,7 +84,12 @@ export async function GET(request: Request) {
 
     const myOrders = await prisma.order.findMany({
       where: {
-        OR: [{ userId }, { event: { organizationId } }],
+        // Third arm: an order the caller doesn't own or organize, but holds
+        // at least one ticket in via an ACCEPTED TicketTransfer — see
+        // Ticket.currentHolderUserId. Pulls the WHOLE parent order (all its
+        // tickets/total), not just the transferred ticket — an accepted v1
+        // simplification, same as OrderConfirmation's rendering.
+        OR: [{ userId }, { event: { organizationId } }, { tickets: { some: { currentHolderUserId: userId } } }],
       },
       include: {
         items: { include: { ticketType: true } },
@@ -120,6 +125,7 @@ export async function GET(request: Request) {
         ticketTypeName: t.ticketType.name,
         checkedIn: t.checkedIn,
         checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
+        currentHolderUserId: t.currentHolderUserId ?? null,
       })),
       waiverText: o.waiverText ?? null,
       waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
@@ -128,6 +134,9 @@ export async function GET(request: Request) {
         questionLabel: a.question.label,
         value: a.value,
       })),
+      discountCents: o.discountCents ?? 0,
+      discountCode: o.discountCodeText ?? null,
+      discountTicketTypeName: o.discountTicketTypeName ?? null,
     }));
 
     const myVendors = await prisma.vendor.findMany({
@@ -178,6 +187,34 @@ export async function GET(request: Request) {
       feeStatus: s.feeStatus,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
+    }));
+
+    // Organizer-only, unlike ticketTypes: discount codes deliberately do NOT
+    // ride in the public `events` field above — anyone browsing an event
+    // could otherwise enumerate its promo codes straight out of an
+    // anonymous browser's IndexedDB. Scoped to the organizing org only,
+    // same as mySponsors.
+    const myDiscountCodes = await prisma.discountCode.findMany({
+      where: { event: { organizationId } },
+      include: { ticketType: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myDiscountCodes = myDiscountCodes.map((dc) => ({
+      id: dc.id,
+      clientId: dc.clientId,
+      eventId: dc.eventId,
+      code: dc.code,
+      type: dc.type,
+      percentOff: dc.percentOff,
+      amountOffCents: dc.amountOffCents,
+      ticketTypeId: dc.ticketTypeId,
+      ticketTypeName: dc.ticketType.name,
+      maxRedemptions: dc.maxRedemptions,
+      redemptionCount: dc.redemptionCount,
+      expiresAt: dc.expiresAt ? dc.expiresAt.toISOString() : null,
+      active: dc.active,
+      createdAt: dc.createdAt.toISOString(),
+      updatedAt: dc.updatedAt.toISOString(),
     }));
 
     const myWallets = await prisma.wallet.findMany({

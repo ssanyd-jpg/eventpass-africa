@@ -81,6 +81,36 @@ export async function createTestRegistrationQuestion(
   });
 }
 
+export async function createTestDiscountCode(
+  eventId: string,
+  ticketTypeId: string,
+  overrides: Partial<{
+    code: string;
+    type: string;
+    percentOff: number;
+    amountOffCents: number;
+    maxRedemptions: number;
+    redemptionCount: number;
+    expiresAt: Date;
+    active: boolean;
+  }> = {}
+) {
+  return prisma.discountCode.create({
+    data: {
+      eventId,
+      ticketTypeId,
+      code: overrides.code ?? unique("CODE").toUpperCase(),
+      type: overrides.type ?? "PERCENT_OFF",
+      percentOff: overrides.type === "FIXED_AMOUNT_OFF" ? undefined : overrides.percentOff ?? 10,
+      amountOffCents: overrides.type === "FIXED_AMOUNT_OFF" ? overrides.amountOffCents ?? 1000 : undefined,
+      maxRedemptions: overrides.maxRedemptions,
+      redemptionCount: overrides.redemptionCount ?? 0,
+      expiresAt: overrides.expiresAt,
+      active: overrides.active ?? true,
+    },
+  });
+}
+
 export async function createTestVendor(
   eventId: string,
   overrides: Partial<{ status: string; name: string; badgeCode: string }> = {}

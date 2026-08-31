@@ -28,6 +28,7 @@ model User {
   vendorApplications     Vendor[]
   wallets                Wallet[]
   userSessions           UserSession[]
+  ticketTransfersSent    TicketTransfer[]         @relation("TicketTransfersSent")
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -300,6 +301,63 @@ model UserSession {
   @@index([userId])
 }
 
+// type is PERCENT_OFF | FIXED_AMOUNT_OFF (plain-string convention). Exactly
+// one of percentOff/amountOffCents is set, matching type — enforced in
+// handleEditEvent, not the DB. Always scoped to exactly one ticket type
+// (never the whole order — a deliberate v1 scope decision). code is stored
+// uppercased/trimmed, unique per-event (not globally — organizers commonly
+// want e.g. "EARLYBIRD" available across many of their own events). Never
+// deleted server-side — same never-delete discipline as ticketTypes/
+// registrationQuestions; "deactivate" just flips active to false.
+model DiscountCode {
+  id              String    @id @default(cuid())
+  clientId        String?   @unique
+  code            String
+  type            String    // PERCENT_OFF | FIXED_AMOUNT_OFF
+  percentOff      Int?
+  amountOffCents  Int?
+  maxRedemptions  Int?
+  redemptionCount Int       @default(0)
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  orders Order[]
+
+  @@unique([eventId, code])
+}
+
+// status is PENDING | ACCEPTED | EXPIRED | CANCELLED (plain-string
+// convention). Hashed-token + expiry shape mirrors OrganizationInvite.
+// Unlike OrganizationInvite, this supports cancellation — a buyer who
+// mistypes an email needs recourse in a way a rare org-teammate invite
+// doesn't (an uncancellable pending transfer would otherwise freeze that
+// ticket's "who holds this" state for 7 days with nobody notified anything
+// is wrong).
+model TicketTransfer {
+  id               String    @id @default(cuid())
+  tokenHash        String    @unique
+  toEmail          String
+  status           String    @default("PENDING")
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  createdAt        DateTime  @default(now())
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  fromUserId String
+  fromUser   User   @relation("TicketTransfersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+}
+
 // provider is one of: MPESA_TZ | TIGO_PESA | AIRTEL_MONEY | HALOPESA
 // (plain string rather than a Postgres enum, to keep adding a new provider
 // a data change instead of a migration)
@@ -392,6 +450,7 @@ model Event {
   wallets               Wallet[]
   broadcasts            Broadcast[]
   registrationQuestions RegistrationQuestion[]
+  discountCodes         DiscountCode[]
 }
 
 model TicketType {
@@ -407,9 +466,10 @@ model TicketType {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  orderItems OrderItem[]
-  tickets    Ticket[]
-  broadcasts Broadcast[]
+  orderItems    OrderItem[]
+  tickets       Ticket[]
+  broadcasts    Broadcast[]
+  discountCodes DiscountCode[]
 }
 
 model Order {
@@ -426,6 +486,17 @@ model Order {
   // null when the event had no waiver at purchase time.
   waiverText       String?
   waiverAcceptedAt DateTime?
+  // Snapshot discipline, same as currency/waiverText above: discountCodeText/
+  // discountTicketTypeName record what was actually applied at purchase
+  // time, so a later code edit/deactivation never changes a past receipt.
+  // discountCodeId is nullable and SET NULL on delete — but per the
+  // never-delete convention DiscountCode rows are never actually removed,
+  // so in practice this stays populated whenever a code was applied.
+  discountCodeId         String?
+  discountCode            DiscountCode? @relation(fields: [discountCodeId], references: [id])
+  discountCodeText        String?
+  discountTicketTypeName  String?
+  discountCents            Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -480,6 +551,13 @@ model Ticket {
   code        String    @unique
   checkedIn   Boolean   @default(false)
   checkedInAt DateTime?
+  // null = holder is the original buyer (order.userId). Set only by an
+  // ACCEPTED TicketTransfer. Does NOT gate check-in — handleCheckIn only
+  // ever checks ticket.code + scanning org; this field is purely about
+  // whose account the ticket shows up in, never an access-control change
+  // (anyone holding the code could already check in today regardless of
+  // transfer).
+  currentHolderUserId String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -493,6 +571,7 @@ model Ticket {
   ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
 
   credentials Credential[]
+  transfers   TicketTransfer[]
 }
 
 // status is PENDING | APPROVED | REJECTED. feeStatus is NONE | PAID | REFUNDED

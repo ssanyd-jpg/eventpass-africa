@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { db, newLocalId } from "@/lib/db";
+import { db, newLocalId, type LocalDiscountCode } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
@@ -29,6 +29,22 @@ interface DraftQuestion {
   required: boolean;
 }
 
+interface DraftDiscountCode {
+  key: string;
+  id?: string;
+  clientId: string;
+  code: string;
+  type: "PERCENT_OFF" | "FIXED_AMOUNT_OFF";
+  // References a ticketTypes[] draft row by its key — resolved to a real
+  // id-or-clientId at submit time, since the row it targets may be a brand
+  // new ticket type created in this very same save.
+  ticketTypeKey: string;
+  percentOffMajor: string; // "10" means 10%
+  amountOffMajor: string; // major-unit currency string, e.g. "5.00"
+  maxRedemptions: string;
+  active: boolean;
+}
+
 const CATEGORIES = ["Music", "Sports", "Comedy", "Conference", "Festival", "Other"];
 
 function isoToLocalInput(iso: string) {
@@ -48,6 +64,15 @@ export default function EditEventPage() {
     return byId ?? (await db.events.where("clientId").equals(id).first()) ?? null;
   }, [id]);
 
+  // Organizer-only, so it lives in its own Dexie table (populated from
+  // payload.myDiscountCodes) rather than nested on LocalEvent the way
+  // ticketTypes is — see the LocalDiscountCode comment in src/lib/db.ts for
+  // why discount codes must not ride in the public event pull.
+  const existingDiscountCodes = useLiveQuery(async () => {
+    if (!event) return undefined;
+    return db.discountCodes.where("eventId").equals(event.id).toArray();
+  }, [event?.id]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -59,6 +84,7 @@ export default function EditEventPage() {
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
   const [questions, setQuestions] = useState<DraftQuestion[]>([]);
+  const [discountCodes, setDiscountCodes] = useState<DraftDiscountCode[]>([]);
   const [waiverText, setWaiverText] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -97,7 +123,7 @@ export default function EditEventPage() {
   }, [status, user, router, id]);
 
   useEffect(() => {
-    if (event && !loaded) {
+    if (event && existingDiscountCodes !== undefined && !loaded) {
       setTitle(event.title);
       setDescription(event.description);
       setCategory(event.category);
@@ -119,20 +145,33 @@ export default function EditEventPage() {
           required: q.required,
         }))
       );
-      setTicketTypes(
-        event.ticketTypes.map((tt) => ({
-          key: tt.id,
-          id: tt.id,
-          clientId: tt.clientId ?? tt.id,
-          name: tt.name,
-          priceMajor: String(tt.priceCents / 100),
-          quantity: String(tt.quantityTotal),
-          quantitySold: tt.quantitySold,
+      const loadedTicketTypes = event.ticketTypes.map((tt) => ({
+        key: tt.id,
+        id: tt.id,
+        clientId: tt.clientId ?? tt.id,
+        name: tt.name,
+        priceMajor: String(tt.priceCents / 100),
+        quantity: String(tt.quantityTotal),
+        quantitySold: tt.quantitySold,
+      }));
+      setTicketTypes(loadedTicketTypes);
+      setDiscountCodes(
+        existingDiscountCodes.map((dc) => ({
+          key: dc.id,
+          id: dc.id,
+          clientId: dc.clientId ?? dc.id,
+          code: dc.code,
+          type: dc.type,
+          ticketTypeKey: loadedTicketTypes.find((t) => t.id === dc.ticketTypeId)?.key ?? dc.ticketTypeId,
+          percentOffMajor: dc.percentOff != null ? String(dc.percentOff) : "",
+          amountOffMajor: dc.amountOffCents != null ? String(dc.amountOffCents / 100) : "",
+          maxRedemptions: dc.maxRedemptions != null ? String(dc.maxRedemptions) : "",
+          active: dc.active,
         }))
       );
       setLoaded(true);
     }
-  }, [event, loaded]);
+  }, [event, existingDiscountCodes, loaded]);
 
   if (!user) return null;
 
@@ -168,6 +207,10 @@ export default function EditEventPage() {
     setQuestions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  function updateDiscountCode(key: string, patch: Partial<DraftDiscountCode>) {
+    setDiscountCodes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -186,6 +229,26 @@ export default function EditEventPage() {
     }
 
     const validQuestions = questions.filter((q) => q.label.trim());
+
+    const validDiscountCodes = discountCodes.filter((d) => d.code.trim());
+    for (const d of validDiscountCodes) {
+      if (d.code.trim().length < 3) {
+        setError(`Discount code "${d.code}" needs at least 3 characters.`);
+        return;
+      }
+      if (!ticketTypes.some((t) => t.key === d.ticketTypeKey)) {
+        setError(`Discount code "${d.code}" needs a ticket type selected.`);
+        return;
+      }
+      if (d.type === "PERCENT_OFF" && !d.percentOffMajor) {
+        setError(`Discount code "${d.code}" needs a percentage.`);
+        return;
+      }
+      if (d.type === "FIXED_AMOUNT_OFF" && !d.amountOffMajor) {
+        setError(`Discount code "${d.code}" needs an amount.`);
+        return;
+      }
+    }
 
     setSubmitting(true);
 
@@ -240,6 +303,54 @@ export default function EditEventPage() {
 
     const vendorStallFeeCents = Math.round(parseFloat(vendorStallFeeMajor || "0") * 100);
 
+    // ticketTypeKey references a ticketTypes[] draft row by its key — this
+    // resolves it to the id-or-clientId the server actually understands
+    // (handleEditEvent resolves a clientId reference to a real id after its
+    // own ticketTypes upsert, in the same save — see the cross-reference-
+    // resolution note in sync-handlers.ts).
+    const resolveTicketTypeId = (key: string) => {
+      const t = ticketTypes.find((tt) => tt.key === key);
+      return t ? t.id ?? t.clientId : key;
+    };
+
+    const localDiscountCodes: LocalDiscountCode[] = validDiscountCodes.map((d) => {
+      const tt = ticketTypes.find((t) => t.key === d.ticketTypeKey);
+      const existing = existingDiscountCodes?.find((e) => e.id === d.id);
+      return {
+        id: d.id ?? d.clientId,
+        clientId: d.clientId,
+        eventId: event.id,
+        code: d.code.trim().toUpperCase(),
+        type: d.type,
+        percentOff: d.type === "PERCENT_OFF" ? Math.round(parseFloat(d.percentOffMajor)) : null,
+        amountOffCents: d.type === "FIXED_AMOUNT_OFF" ? Math.round(parseFloat(d.amountOffMajor) * 100) : null,
+        ticketTypeId: resolveTicketTypeId(d.ticketTypeKey),
+        ticketTypeName: tt?.name.trim() || "",
+        maxRedemptions: d.maxRedemptions ? parseInt(d.maxRedemptions, 10) : null,
+        redemptionCount: existing?.redemptionCount ?? 0,
+        expiresAt: existing?.expiresAt ?? null,
+        active: d.active,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    const payloadDiscountCodes = validDiscountCodes.map((d) => ({
+      id: d.id,
+      clientId: d.clientId,
+      code: d.code.trim().toUpperCase(),
+      type: d.type,
+      ticketTypeId: resolveTicketTypeId(d.ticketTypeKey),
+      percentOff: d.type === "PERCENT_OFF" ? Math.round(parseFloat(d.percentOffMajor)) : undefined,
+      amountOffCents: d.type === "FIXED_AMOUNT_OFF" ? Math.round(parseFloat(d.amountOffMajor) * 100) : undefined,
+      maxRedemptions: d.maxRedemptions ? parseInt(d.maxRedemptions, 10) : undefined,
+      active: d.active,
+    }));
+
+    if (localDiscountCodes.length > 0) {
+      await db.discountCodes.bulkPut(localDiscountCodes);
+    }
+
     await db.events.put({
       ...event,
       title: title.trim(),
@@ -282,6 +393,7 @@ export default function EditEventPage() {
         quantityTotal: t.quantityTotal,
       })),
       registrationQuestions: payloadQuestions,
+      discountCodes: payloadDiscountCodes,
     });
 
     setSubmitting(false);
@@ -539,6 +651,127 @@ export default function EditEventPage() {
               </div>
             ))}
             {questions.length === 0 && <p className="text-sm text-muted">No questions yet.</p>}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <label className="label !mb-0">Discount codes</label>
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover disabled:opacity-40"
+              disabled={ticketTypes.length === 0}
+              onClick={() =>
+                setDiscountCodes((rows) => [
+                  ...rows,
+                  {
+                    key: crypto.randomUUID(),
+                    clientId: newLocalId(),
+                    code: "",
+                    type: "PERCENT_OFF",
+                    ticketTypeKey: ticketTypes[0]?.key ?? "",
+                    percentOffMajor: "",
+                    amountOffMajor: "",
+                    maxRedemptions: "",
+                    active: true,
+                  },
+                ])
+              }
+            >
+              + Add discount code
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-muted">
+            Each code discounts one specific ticket type only.
+          </p>
+          <div className="space-y-3">
+            {discountCodes.map((d) => (
+              <div key={d.key} className="space-y-2 rounded-lg border border-border p-3">
+                <div className="grid grid-cols-[1fr_1fr] gap-2">
+                  <input
+                    placeholder="Code (e.g. EARLYBIRD)"
+                    className="input uppercase"
+                    value={d.code}
+                    onChange={(e) => updateDiscountCode(d.key, { code: e.target.value })}
+                  />
+                  <select
+                    className="input"
+                    value={d.ticketTypeKey}
+                    onChange={(e) => updateDiscountCode(d.key, { ticketTypeKey: e.target.value })}
+                  >
+                    {ticketTypes.map((t) => (
+                      <option key={t.key} value={t.key}>{t.name || "Untitled ticket type"}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-[140px_1fr_1fr] gap-2">
+                  <select
+                    className="input"
+                    value={d.type}
+                    onChange={(e) => updateDiscountCode(d.key, { type: e.target.value as DraftDiscountCode["type"] })}
+                  >
+                    <option value="PERCENT_OFF">% off</option>
+                    <option value="FIXED_AMOUNT_OFF">Amount off</option>
+                  </select>
+                  {d.type === "PERCENT_OFF" ? (
+                    <input
+                      placeholder="e.g. 10"
+                      type="number"
+                      min="1"
+                      max="100"
+                      className="input"
+                      value={d.percentOffMajor}
+                      onChange={(e) => updateDiscountCode(d.key, { percentOffMajor: e.target.value })}
+                    />
+                  ) : (
+                    <input
+                      placeholder={`Amount (${currency})`}
+                      type="number"
+                      min="0"
+                      step="500"
+                      className="input"
+                      value={d.amountOffMajor}
+                      onChange={(e) => updateDiscountCode(d.key, { amountOffMajor: e.target.value })}
+                    />
+                  )}
+                  <input
+                    placeholder="Max uses (optional)"
+                    type="number"
+                    min="1"
+                    className="input"
+                    value={d.maxRedemptions}
+                    onChange={(e) => updateDiscountCode(d.key, { maxRedemptions: e.target.value })}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={d.active}
+                      onChange={(e) => updateDiscountCode(d.key, { active: e.target.checked })}
+                    />
+                    Active
+                  </label>
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-danger"
+                    onClick={() => setDiscountCodes((rows) => rows.filter((r) => r.key !== d.key))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {d.id && (
+                  <p className="text-xs text-muted">
+                    Removing this from the form won&apos;t delete or deactivate it — untick &quot;Active&quot; instead.
+                  </p>
+                )}
+              </div>
+            ))}
+            {discountCodes.length === 0 && (
+              <p className="text-sm text-muted">
+                {ticketTypes.length === 0 ? "Add a ticket type first." : "No discount codes yet."}
+              </p>
+            )}
           </div>
         </div>
 

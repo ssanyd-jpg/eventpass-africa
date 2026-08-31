@@ -11,6 +11,7 @@ import {
   type LocalSponsor,
   type LocalWallet,
   type LocalWalletTransaction,
+  type LocalDiscountCode,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -138,6 +139,10 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
         }
         await db.sponsors.put({ ...sponsor, syncStatus: "synced" });
       }
+    }
+
+    if (Array.isArray(data.myDiscountCodes)) {
+      await db.discountCodes.bulkPut(data.myDiscountCodes as LocalDiscountCode[]);
     }
 
     if (Array.isArray(data.myWallets)) {

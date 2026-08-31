@@ -6,6 +6,7 @@ import {
   createTestOrganization,
   addMembership,
   createTestRegistrationQuestion,
+  createTestDiscountCode,
 } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
@@ -195,6 +196,250 @@ describe("handleSellTickets", () => {
     expect(result.ok).toBe(true);
     expect(result.order.waiverText).toBe("I agree to the terms.");
     expect(result.order.waiverAcceptedAt).not.toBeNull();
+  });
+});
+
+describe("handleSellTickets — discount codes", () => {
+  it("applies a PERCENT_OFF code to the matching ticket type's line only", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    const code = await createTestDiscountCode(event.id, tt.id, { code: "TENOFF", type: "PERCENT_OFF", percentOff: 10 });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-percent",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 2, codes: ["DP-1", "DP-2"] }],
+      discountCode: "tenoff", // lowercase — server normalizes to uppercase
+    });
+
+    expect(result.ok).toBe(true);
+    // 2 * 100000 = 200000 list price, 10% off = 20000 discount
+    expect(result.order.discountCents).toBe(20000);
+    expect(result.order.totalCents).toBe(180000);
+    expect(result.order.discountCode).toBe("TENOFF");
+    expect(result.order.discountTicketTypeName).toBe(tt.name);
+    expect(result.order.discountRejectReason).toBeNull();
+
+    const updatedCode = await prisma.discountCode.findUniqueOrThrow({ where: { id: code.id } });
+    expect(updatedCode.redemptionCount).toBe(1);
+  });
+
+  it("applies a FIXED_AMOUNT_OFF code, clamped so totalCents never goes negative", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 5000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    await createTestDiscountCode(event.id, tt.id, { code: "BIGOFF", type: "FIXED_AMOUNT_OFF", amountOffCents: 999999 });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-fixed",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DF-1"] }],
+      discountCode: "BIGOFF",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.discountCents).toBe(5000); // clamped to the line total
+    expect(result.order.totalCents).toBe(0);
+  });
+
+  it("soft-fails when the code targets a ticket type not present in the order — sale still completes at full price", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [
+      { priceCents: 100000, quantityTotal: 10 },
+      { priceCents: 200000, quantityTotal: 10 },
+    ]);
+    const [general, vip] = event.ticketTypes;
+    await createTestDiscountCode(event.id, vip.id, { code: "VIPONLY" });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-wrong-type",
+      eventId: event.id,
+      items: [{ ticketTypeId: general.id, quantity: 1, codes: ["DW-1"] }],
+      discountCode: "VIPONLY",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.discountCents).toBe(0);
+    expect(result.order.totalCents).toBe(100000);
+    expect(result.order.discountRejectReason).toBe("DISCOUNT_NOT_APPLICABLE");
+  });
+
+  it("soft-fails an unknown code", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-unknown",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DU-1"] }],
+      discountCode: "NOPE",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.totalCents).toBe(100000);
+    expect(result.order.discountRejectReason).toBe("DISCOUNT_NOT_FOUND");
+  });
+
+  it("soft-fails an inactive code", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    await createTestDiscountCode(event.id, tt.id, { code: "OFFCODE", active: false });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-inactive",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DI-1"] }],
+      discountCode: "OFFCODE",
+    });
+
+    expect(result.order.discountRejectReason).toBe("DISCOUNT_INACTIVE");
+    expect(result.order.totalCents).toBe(100000);
+  });
+
+  it("soft-fails an expired code", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    await createTestDiscountCode(event.id, tt.id, { code: "EXPIRED", expiresAt: new Date(Date.now() - 1000) });
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "client-discount-expired",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DE-1"] }],
+      discountCode: "EXPIRED",
+    });
+
+    expect(result.order.discountRejectReason).toBe("DISCOUNT_EXPIRED");
+    expect(result.order.totalCents).toBe(100000);
+  });
+
+  it("soft-fails once maxRedemptions is reached, and a concurrent race lets exactly one buyer win the last slot", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyerA = await createTestUser();
+    const buyerB = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    await createTestDiscountCode(event.id, tt.id, { code: "LIMITED", maxRedemptions: 1 });
+
+    const [resultA, resultB] = await Promise.all([
+      handleSellTickets(buyerA.id, {
+        clientId: "client-discount-race-a",
+        eventId: event.id,
+        items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DR-A"] }],
+        discountCode: "LIMITED",
+      }),
+      handleSellTickets(buyerB.id, {
+        clientId: "client-discount-race-b",
+        eventId: event.id,
+        items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DR-B"] }],
+        discountCode: "LIMITED",
+      }),
+    ]);
+
+    const outcomes = [resultA, resultB].map((r) => ({
+      discounted: r.order.discountCents > 0,
+      reason: r.order.discountRejectReason,
+    }));
+    expect(outcomes.filter((o) => o.discounted)).toHaveLength(1);
+    expect(outcomes.filter((o) => o.reason === "DISCOUNT_MAX_REDEEMED")).toHaveLength(1);
+
+    // A third attempt after both above always sees it exhausted.
+    const third = await handleSellTickets(buyerA.id, {
+      clientId: "client-discount-race-c",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DR-C"] }],
+      discountCode: "LIMITED",
+    });
+    expect(third.order.discountRejectReason).toBe("DISCOUNT_MAX_REDEEMED");
+  });
+});
+
+describe("handleEditEvent — discount codes", () => {
+  it("creates a discount code referencing a ticket type by its real id", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      discountCodes: [{ clientId: "dc-1", code: "SAVE10", type: "PERCENT_OFF", ticketTypeId: tt.id, percentOff: 10 }],
+    });
+
+    expect(result.ok).toBe(true);
+    const stored = await prisma.discountCode.findMany({ where: { eventId: event.id } });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].code).toBe("SAVE10");
+    expect(stored[0].ticketTypeId).toBe(tt.id);
+  });
+
+  it("resolves a discountCode's ticketTypeId when it references a brand-new ticket type's clientId in the same save", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      ticketTypes: [{ clientId: "tt-new", name: "VIP", priceCents: 500000, quantityTotal: 5 }],
+      discountCodes: [{ clientId: "dc-new", code: "VIPCODE", type: "PERCENT_OFF", ticketTypeId: "tt-new", percentOff: 15 }],
+    });
+
+    expect(result.ok).toBe(true);
+    const newTt = await prisma.ticketType.findUniqueOrThrow({ where: { clientId: "tt-new" } });
+    const stored = await prisma.discountCode.findUniqueOrThrow({ where: { eventId_code: { eventId: event.id, code: "VIPCODE" } } });
+    expect(stored.ticketTypeId).toBe(newTt.id);
+  });
+
+  it("rejects a duplicate (eventId, code) pair", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    await createTestDiscountCode(event.id, tt.id, { code: "DUPE" });
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      discountCodes: [{ clientId: "dc-dupe", code: "DUPE", type: "PERCENT_OFF", ticketTypeId: tt.id, percentOff: 5 }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("DISCOUNT_CODE_TAKEN");
+  });
+
+  it("rejects mismatched type/amount fields", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      discountCodes: [{ clientId: "dc-bad", code: "BADCODE", type: "PERCENT_OFF", ticketTypeId: tt.id, amountOffCents: 500 }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("INVALID_DISCOUNT_CODE");
+  });
+
+  it("never deletes a discount code omitted from a later payload", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const code = await createTestDiscountCode(event.id, tt.id, { code: "KEEPME" });
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      discountCodes: [],
+    });
+
+    expect(result.ok).toBe(true);
+    const stillThere = await prisma.discountCode.findUnique({ where: { id: code.id } });
+    expect(stillThere).not.toBeNull();
   });
 });
 

@@ -26,8 +26,15 @@ export default function MyTicketsPage() {
 
   const orders = useLiveQuery(async () => {
     if (!user) return [];
-    const all = await db.orders.where("userId").equals(user.id).toArray();
-    return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    // Own orders, plus any order that isn't the caller's own but where at
+    // least one ticket was transferred to them (Ticket.currentHolderUserId)
+    // — a real filter, not just db.orders.where("userId"), since a
+    // transferred-in order belongs to someone else's userId.
+    const all = await db.orders.toArray();
+    const mine = all.filter(
+      (o) => o.userId === user.id || o.tickets.some((t) => t.currentHolderUserId === user.id)
+    );
+    return mine.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [user?.id]);
 
   useEffect(() => {
