@@ -94,6 +94,11 @@ export interface LocalOrder {
   currency: string;
   createdAt: string;
   userId: string;
+  // The buyer's account age at pull time — organizer-visible only (this
+  // field only ever gets populated for orders on events the caller
+  // organizes, via myOrders in pull/route.ts), used for the "brand-new
+  // account, large order" anomaly/risk signal (see anomaly.ts/risk.ts).
+  userCreatedAt?: string;
   eventId: string;
   eventClientId?: string | null;
   eventTitle: string;
@@ -167,6 +172,17 @@ export interface LocalPendingSurvey {
   eventClientId?: string | null;
   eventTitle: string;
   questions: LocalRegistrationQuestion[];
+}
+
+// Same-category recommendations for the signed-in buyer — deterministic,
+// not Claude-backed (see recommendations.ts). Only ids: the full LocalEvent
+// shape for each id already lives in the `events` table (every LIVE event
+// rides in the unconditional public `events` pull field), so this table is
+// just a pointer list. Full-replace on every pull (clear+bulkPut), same
+// reasoning as pendingSurveys — this list must change as purchase history
+// and live events change.
+export interface LocalRecommendedEvent {
+  id: string; // = eventId
 }
 
 export interface LocalMobileMoneyAccount {
@@ -356,6 +372,7 @@ class EventPassAfricaDB extends Dexie {
   surveyQuestions!: Table<LocalSurveyQuestion, string>;
   pendingSurveys!: Table<LocalPendingSurvey, string>;
   sponsorCampaigns!: Table<LocalSponsorCampaign, string>;
+  recommendedEvents!: Table<LocalRecommendedEvent, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -473,6 +490,26 @@ class EventPassAfricaDB extends Dexie {
       surveyQuestions: "id, clientId, eventId",
       pendingSurveys: "eventId",
       sponsorCampaigns: "id, clientId, sponsorId, code",
+    });
+    // New recommendedEvents table (see LocalRecommendedEvent above) — a
+    // pointer list of event ids, full-replaced on every pull. No .upgrade()
+    // transform, same reasoning as every prior version bump in this file.
+    this.version(9).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
     });
   }
 }

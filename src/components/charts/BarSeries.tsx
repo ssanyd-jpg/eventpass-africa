@@ -13,6 +13,12 @@ export interface BarSeriesPoint {
   label: string;
   value: number;
   displayValue: string;
+  // Optional — renders this bar at lower opacity in the dense (day-trend)
+  // branch, distinguishing a forecasted/projected value from an actual
+  // historical one (see src/lib/forecast.ts). Every existing caller's
+  // points have no `projected` field, which is falsy, so this is additive
+  // and every other chart on this codebase renders unchanged.
+  projected?: boolean;
 }
 
 export default function BarSeries({
@@ -37,9 +43,13 @@ export default function BarSeries({
         {data.map((d, i) => (
           <div
             key={i}
-            className="min-w-[2px] flex-1 rounded-t bg-accent/80 transition hover:bg-accent"
+            className={
+              d.projected
+                ? "min-w-[2px] flex-1 rounded-t bg-accent/30"
+                : "min-w-[2px] flex-1 rounded-t bg-accent/80 transition hover:bg-accent"
+            }
             style={{ height: `${Math.max((d.value / max) * 100, d.value > 0 ? 4 : 1)}%` }}
-            title={`${d.label}: ${d.displayValue}`}
+            title={`${d.label}: ${d.displayValue}${d.projected ? " (projected)" : ""}`}
           />
         ))}
       </div>

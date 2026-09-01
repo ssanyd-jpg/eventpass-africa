@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId, type LocalDiscountCode } from "@/lib/db";
-import { queueOp } from "@/lib/sync-engine";
+import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 
@@ -99,6 +99,49 @@ export default function EditEventPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
+
+  // Not queueOp'd — needs a live, synchronous round-trip (a draft is
+  // useless offline; it only populates a text field the organizer still
+  // explicitly submits via the existing EDIT_EVENT queueOp flow below).
+  // Same direct-fetch pattern as onPhotoSelected just above.
+  async function draftDescription() {
+    setDraftError(null);
+    if (!title.trim() || !venue.trim() || !city.trim()) {
+      setDraftError("Fill in the title, venue, and city first.");
+      return;
+    }
+    setDrafting(true);
+    try {
+      const res = await fetch("/api/ai/event-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          category,
+          venue: venue.trim(),
+          city: city.trim(),
+          startsAt: startsAt ? new Date(startsAt).toISOString() : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setDraftError(
+          data?.reason === "AI_NOT_CONFIGURED"
+            ? "AI assist isn't set up on this deployment yet."
+            : "Couldn't draft a description — try again."
+        );
+        return;
+      }
+      setDescription(data.description);
+    } catch {
+      setDraftError("Couldn't reach the server — check your connection.");
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   async function onPhotoSelected(file: File | undefined) {
     if (!file || !event) return;
@@ -490,13 +533,25 @@ export default function EditEventPage() {
         </div>
 
         <div>
-          <label className="label" htmlFor="description">Description</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="label !mb-0" htmlFor="description">Description</label>
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover disabled:opacity-50"
+              onClick={draftDescription}
+              disabled={drafting || !isOnline}
+              title={!isOnline ? "Needs a connection" : undefined}
+            >
+              {drafting ? "Drafting…" : "Draft with AI"}
+            </button>
+          </div>
           <textarea
             id="description"
             className="input min-h-24"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+          {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-4">

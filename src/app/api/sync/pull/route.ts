@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { checkAndTrackDevice } from "@/lib/device-handlers";
 import { getPendingSurveysForBuyer } from "@/lib/survey-handlers";
+import { getRecommendedEventIdsForBuyer } from "@/lib/recommendations";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -97,6 +98,7 @@ export async function GET(request: Request) {
         tickets: { include: { ticketType: true } },
         event: { select: { id: true, clientId: true, title: true } },
         registrationAnswers: { include: { question: true } },
+        user: { select: { createdAt: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -109,6 +111,7 @@ export async function GET(request: Request) {
       currency: o.currency,
       createdAt: o.createdAt.toISOString(),
       userId: o.userId,
+      userCreatedAt: o.user.createdAt.toISOString(),
       eventId: o.eventId,
       eventClientId: o.event.clientId,
       eventTitle: o.event.title,
@@ -263,6 +266,11 @@ export async function GET(request: Request) {
     // direct testability. See getPendingSurveysForBuyer's own comment for
     // why this piggybacks on the pull poll instead of a real scheduler.
     payload.pendingSurveys = await getPendingSurveysForBuyer(userId);
+
+    // Deterministic same-category recommendations — see recommendations.ts's
+    // own header comment for why only ids ride here (full event shapes
+    // already ride in the unconditional `events` field above).
+    payload.recommendedEventIds = await getRecommendedEventIdsForBuyer(userId);
 
     const myWallets = await prisma.wallet.findMany({
       where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },

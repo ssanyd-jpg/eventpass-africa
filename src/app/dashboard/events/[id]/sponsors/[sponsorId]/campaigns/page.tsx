@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalSponsorCampaign } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatDate } from "@/lib/format";
+import { detectCampaignRedemptionAnomalies } from "@/lib/anomaly";
 
 // A client component, unlike the read-only leads page — campaign creation
 // is a queueOp mutation exactly like ADD_SPONSOR, so this mirrors
@@ -38,6 +39,30 @@ export default function SponsorCampaignsPage() {
     const all = await db.sponsorCampaigns.where("sponsorId").equals(sponsor.id).toArray();
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [sponsor?.id]);
+
+  // Deterministic, not Claude-backed — see anomaly.ts's header comment.
+  // Flags a coordinated multi-wallet redemption burst on a campaign; the
+  // existing @@unique([campaignId, walletId]) constraint already stops one
+  // wallet redeeming twice, so this catches what that constraint can't see.
+  const campaignAnomalies = useLiveQuery(async () => {
+    if (!campaigns || campaigns.length === 0) return new Map<string, string[]>();
+    const allTaps = await db.walletTransactions.toArray();
+    const redemptions = allTaps
+      .filter((t): t is typeof t & { campaignId: string } => t.type === "SPONSOR_TAP" && !!t.campaignId)
+      .map((t) => ({ id: t.id, campaignId: t.campaignId, walletId: t.walletId, createdAt: t.createdAt }));
+    const flags = detectCampaignRedemptionAnomalies(redemptions);
+    const byCampaignId = new Map<string, string[]>();
+    // relatedId on each flag is a WalletTransaction id — map it back to the
+    // campaign it belongs to so the badge can render next to the campaign
+    // row, not a specific tap.
+    const campaignIdByTapId = new Map(redemptions.map((r) => [r.id, r.campaignId]));
+    for (const flag of flags) {
+      const campaignId = campaignIdByTapId.get(flag.relatedId);
+      if (!campaignId) continue;
+      byCampaignId.set(campaignId, [...(byCampaignId.get(campaignId) ?? []), flag.message]);
+    }
+    return byCampaignId;
+  }, [campaigns]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [addName, setAddName] = useState("");
@@ -191,6 +216,14 @@ export default function SponsorCampaignsPage() {
                 <p className="font-medium">
                   {c.name}
                   {!c.active && <span className="ml-2 pill">Inactive</span>}
+                  {campaignAnomalies?.has(c.id) && (
+                    <span
+                      className="ml-2 pill border-warn/40 bg-warn/10 text-warn"
+                      title={campaignAnomalies.get(c.id)?.join("; ")}
+                    >
+                      Unusual activity
+                    </span>
+                  )}
                 </p>
                 <p className="text-sm text-muted">
                   Code {c.code} · {c.redemptionCount}{c.maxRedemptions != null ? `/${c.maxRedemptions}` : ""} redeemed

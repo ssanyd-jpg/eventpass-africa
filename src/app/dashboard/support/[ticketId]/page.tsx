@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { formatDateTime } from "@/lib/format";
 import { getSupportTicketDetailForOrg } from "@/lib/support-handlers";
 import { replyAsOrganizer, markResolved } from "../actions";
+import ReplyForm from "./ReplyForm";
+import CategorizeButton from "./CategorizeButton";
 
 export default async function OrgSupportTicketDetailPage({ params }: { params: { ticketId: string } }) {
   const session = await auth();
@@ -43,9 +45,17 @@ export default async function OrgSupportTicketDetailPage({ params }: { params: {
           </form>
         )}
       </div>
-      <p className="mb-6 mt-1 text-sm text-muted">
+      <p className="mb-3 mt-1 text-sm text-muted">
         {eventTitle ?? "General"} · {ticket.status === "OPEN" ? "Open" : "Resolved"}
       </p>
+
+      <div className="mb-6">
+        {ticket.aiCategory ? (
+          <span className="pill">Suggested: {ticket.aiCategory} · {ticket.aiPriority?.toLowerCase()} priority</span>
+        ) : (
+          <CategorizeButton ticketId={ticket.id} />
+        )}
+      </div>
 
       <div className="card mb-6 divide-y divide-border">
         <div className="p-4 text-sm">
@@ -62,16 +72,7 @@ export default async function OrgSupportTicketDetailPage({ params }: { params: {
         ))}
       </div>
 
-      <form
-        action={async (formData) => {
-          "use server";
-          await replyAsOrganizer(ticket.id, formData);
-        }}
-        className="card space-y-3 p-4"
-      >
-        <textarea name="body" className="input min-h-20" placeholder="Write a reply…" required />
-        <button type="submit" className="btn-primary text-sm">Send reply</button>
-      </form>
+      <ReplyForm ticketId={ticket.id} replyAction={replyAsOrganizer} />
     </div>
   );
 }

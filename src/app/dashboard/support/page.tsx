@@ -55,9 +55,14 @@ export default async function SupportTicketsPage({
                   {t.event?.title ?? "General"} · {formatDateTime(t.updatedAt)}
                 </p>
               </div>
-              <span className={`pill ${STATUS_STYLE[t.status] ?? ""}`}>
-                {t.status === "OPEN" ? "Open" : "Resolved"}
-              </span>
+              <div className="flex items-center gap-2">
+                {t.aiPriority === "HIGH" && (
+                  <span className="pill border-danger/40 bg-danger/10 text-danger">High priority</span>
+                )}
+                <span className={`pill ${STATUS_STYLE[t.status] ?? ""}`}>
+                  {t.status === "OPEN" ? "Open" : "Resolved"}
+                </span>
+              </div>
             </Link>
           ))}
         </div>

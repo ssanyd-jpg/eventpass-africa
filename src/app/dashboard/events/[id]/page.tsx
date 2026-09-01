@@ -7,7 +7,29 @@ import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
-import { formatCents, formatDateTime } from "@/lib/format";
+import { formatCents, formatDateTime, formatDate } from "@/lib/format";
+import { predictSellOut, forecastEventRevenue, type SellOutStatus } from "@/lib/forecast";
+import { detectOrderAnomalies } from "@/lib/anomaly";
+import { scoreOrderRisk, type RiskBand } from "@/lib/risk";
+import BarSeries from "@/components/charts/BarSeries";
+
+// Deterministic, not Claude-backed — see forecast.ts's header comment.
+const SELL_OUT_PILL: Record<SellOutStatus, string> = {
+  SOLD_OUT: "",
+  LIKELY: "pill border-warn/40 bg-warn/10 text-warn",
+  ON_TRACK: "pill border-ok/40 bg-ok/10 text-ok",
+  SLOW: "",
+  INSUFFICIENT_DATA: "",
+};
+
+// Deterministic, not Claude-backed — see anomaly.ts/risk.ts. LOW renders no
+// badge at all, matching this codebase's "only show a pill when something's
+// notable" convention (e.g. the pending-sync badge only appears when true).
+const RISK_STYLE: Record<RiskBand, string> = {
+  LOW: "",
+  MEDIUM: "pill border-warn/40 bg-warn/10 text-warn",
+  HIGH: "pill border-danger/40 bg-danger/10 text-danger",
+};
 
 export default function ManageEventPage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -58,6 +80,48 @@ export default function ManageEventPage() {
   const activeOrders = (orders ?? []).filter((o) => o.status !== "REFUNDED");
   const tickets = activeOrders.flatMap((o) => o.tickets);
   const checkedInCount = tickets.filter((t) => t.checkedIn).length;
+
+  // Sell-out predictions and revenue forecast — deterministic heuristics
+  // computed client-side from the already-synced orders/ticket types this
+  // page loads anyway (no new fetch). See forecast.ts.
+  const sellOutPredictions = event
+    ? event.ticketTypes.map((tt) => {
+        const items = activeOrders.flatMap((o) =>
+          o.items.filter((i) => i.ticketTypeId === tt.id).map((i) => ({ createdAt: new Date(o.createdAt), quantity: i.quantity }))
+        );
+        return predictSellOut(tt, items, new Date(event.startsAt));
+      })
+    : [];
+
+  const revenueForecast = event
+    ? forecastEventRevenue(
+        activeOrders.map((o) => ({ createdAt: new Date(o.createdAt), totalCents: o.totalCents })),
+        new Date(event.startsAt),
+        new Date(),
+        (cents) => formatCents(cents, event.currency)
+      )
+    : [];
+
+  // Anomaly flags + risk scores — deterministic, computed over EVERY order
+  // for this event including REFUNDED ones (refund-rate is one of the
+  // signals, so filtering those out first would blind that signal
+  // entirely). See anomaly.ts/risk.ts.
+  const anomalyRows = (orders ?? []).map((o) => ({
+    id: o.id,
+    userId: o.userId,
+    userCreatedAt: o.userCreatedAt,
+    status: o.status,
+    discountCode: o.discountCode ?? null,
+    createdAt: o.createdAt,
+    ticketCount: o.tickets.length,
+    eventId: event?.id ?? "",
+  }));
+  const orderAnomalies = detectOrderAnomalies(anomalyRows);
+  const anomaliesByOrderId = new Map<string, string[]>();
+  for (const flag of orderAnomalies) {
+    anomaliesByOrderId.set(flag.relatedId, [...(anomaliesByOrderId.get(flag.relatedId) ?? []), flag.message]);
+  }
+  const riskByOrderId = new Map(anomalyRows.map((row) => [row.id, scoreOrderRisk(row, { allOrders: anomalyRows })]));
 
   async function refundOrder(order: NonNullable<typeof orders>[number]) {
     setRefundError(null);
@@ -146,22 +210,44 @@ export default function ManageEventPage() {
 
       <h2 className="mb-3 mt-8 font-semibold">Ticket types</h2>
       <div className="card divide-y divide-border">
-        {event.ticketTypes.map((tt) => (
-          <div key={tt.id} className="flex items-center justify-between p-4">
-            <div>
-              <p className="font-medium">{tt.name}</p>
-              <p className="text-sm text-muted">{formatCents(tt.priceCents, event.currency)} each</p>
+        {event.ticketTypes.map((tt) => {
+          const prediction = sellOutPredictions.find((p) => p.ticketTypeId === tt.id);
+          return (
+            <div key={tt.id} className="flex items-center justify-between p-4">
+              <div>
+                <p className="font-medium">{tt.name}</p>
+                <p className="text-sm text-muted">{formatCents(tt.priceCents, event.currency)} each</p>
+              </div>
+              <div className="text-right text-sm">
+                <p>
+                  <span className="font-semibold">{tt.quantitySold}</span>
+                  <span className="text-muted"> / {tt.quantityTotal} sold</span>
+                  {tt.quantitySold > tt.quantityTotal && (
+                    <span className="ml-2 pill border-danger/40 bg-danger/10 text-danger">Oversold</span>
+                  )}
+                </p>
+                {prediction?.status === "LIKELY" && prediction.predictedSoldOutDate && (
+                  <p className="mt-1">
+                    <span className={SELL_OUT_PILL.LIKELY}>Likely to sell out {formatDate(prediction.predictedSoldOutDate)}</span>
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-sm">
-              <span className="font-semibold">{tt.quantitySold}</span>
-              <span className="text-muted"> / {tt.quantityTotal} sold</span>
-              {tt.quantitySold > tt.quantityTotal && (
-                <span className="ml-2 pill border-danger/40 bg-danger/10 text-danger">Oversold</span>
-              )}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {revenueForecast.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 font-semibold">Revenue trend</h2>
+          <div className="card p-5">
+            <BarSeries data={revenueForecast} emptyLabel="No sales yet." />
+            {revenueForecast.some((p) => p.projected) && (
+              <p className="mt-3 text-xs text-muted">Lighter bars are a projection based on recent sales pace, not actual revenue.</p>
+            )}
+          </div>
+        </>
+      )}
 
       <h2 className="mb-3 mt-8 font-semibold">Attendees</h2>
       {refundError && <p className="mb-3 text-sm text-danger">{refundError}</p>}
@@ -186,6 +272,15 @@ export default function ManageEventPage() {
                   {order.status === "REFUNDED" && (
                     <span className="pill border-danger/40 bg-danger/10 text-danger">Refunded</span>
                   )}
+                  {(() => {
+                    const risk = riskByOrderId.get(order.id);
+                    if (!risk || risk.band === "LOW") return null;
+                    return (
+                      <span className={RISK_STYLE[risk.band]} title={(anomaliesByOrderId.get(order.id) ?? risk.reasons).join("; ")}>
+                        Risk: {risk.band.toLowerCase()}
+                      </span>
+                    );
+                  })()}
                 </div>
                 {order.status !== "REFUNDED" && (
                   <button

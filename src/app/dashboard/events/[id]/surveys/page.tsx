@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { getSurveyEvent, getSurveyResults } from "@/lib/survey-handlers";
+import SurveySummary from "./SurveySummary";
 
 export default async function SurveyResultsPage({ params }: { params: { id: string } }) {
   const session = await auth();
@@ -52,11 +53,14 @@ export default async function SurveyResultsPage({ params }: { params: { id: stri
               {r.values.length === 0 ? (
                 <p className="text-sm text-muted">No responses yet.</p>
               ) : r.type === "TEXT" ? (
-                <ul className="space-y-2 text-sm">
-                  {r.values.map((v, i) => (
-                    <li key={i} className="rounded-lg bg-surface2 p-2">{v}</li>
-                  ))}
-                </ul>
+                <>
+                  <SurveySummary eventId={event.id} questionId={r.questionId} />
+                  <ul className="space-y-2 text-sm">
+                    {r.values.map((v, i) => (
+                      <li key={i} className="rounded-lg bg-surface2 p-2">{v}</li>
+                    ))}
+                  </ul>
+                </>
               ) : (
                 <ul className="space-y-1 text-sm">
                   {Object.entries(r.tally).map(([option, count]) => (

@@ -9,6 +9,16 @@ import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { generateTicketCode, formatCents } from "@/lib/format";
 import { replaceVendorBadgeCode } from "./actions";
+import { detectVendorAnomalies } from "@/lib/anomaly";
+import { scoreVendorRisk, type RiskBand } from "@/lib/risk";
+
+// Deterministic, not Claude-backed — see anomaly.ts/risk.ts. Same
+// LOW-renders-nothing convention as the order risk badge.
+const RISK_STYLE: Record<RiskBand, string> = {
+  LOW: "",
+  MEDIUM: "pill border-warn/40 bg-warn/10 text-warn",
+  HIGH: "pill border-danger/40 bg-danger/10 text-danger",
+};
 
 const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
 
@@ -35,6 +45,13 @@ export default function ManageVendorsPage() {
     const all = await db.vendors.where("eventId").equals(event.id).toArray();
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [event?.id]);
+
+  // Cross-event, org-wide — every vendor row synced to this device already
+  // belongs to the caller's own organization (or is the buyer's own
+  // application), so this is the right scope for the contact-duplication/
+  // application-velocity anomaly and risk signals (see anomaly.ts/risk.ts's
+  // header comments on why event-scoped-only would miss cross-event abuse).
+  const allOrgVendors = useLiveQuery(() => db.vendors.toArray(), [], []);
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -166,6 +183,28 @@ export default function ManageVendorsPage() {
   const approved = (vendors ?? []).filter((v) => v.status === "APPROVED");
   const rejected = (vendors ?? []).filter((v) => v.status === "REJECTED");
 
+  const anomalyRows = (allOrgVendors ?? []).map((v) => ({
+    id: v.id,
+    contactEmail: v.contactEmail,
+    contactPhone: v.contactPhone,
+    ownerUserId: v.ownerUserId,
+    createdAt: v.createdAt,
+  }));
+  const vendorAnomalies = detectVendorAnomalies(anomalyRows);
+  const anomaliesByVendorId = new Map<string, string[]>();
+  for (const flag of vendorAnomalies) {
+    anomaliesByVendorId.set(flag.relatedId, [...(anomaliesByVendorId.get(flag.relatedId) ?? []), flag.message]);
+  }
+  const riskRows = (allOrgVendors ?? []).map((v) => ({
+    id: v.id,
+    contactEmail: v.contactEmail,
+    contactPhone: v.contactPhone,
+    description: v.description,
+    ownerUserId: v.ownerUserId,
+    createdAt: v.createdAt,
+  }));
+  const riskByVendorId = new Map(riskRows.map((row) => [row.id, scoreVendorRisk(row, { allVendors: riskRows })]));
+
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-8 sm:px-6">
       <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
@@ -212,7 +251,21 @@ export default function ManageVendorsPage() {
           {pending.map((v) => (
             <div key={v.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div>
-                <p className="font-medium">{v.name}</p>
+                <p className="font-medium">
+                  {v.name}
+                  {(() => {
+                    const risk = riskByVendorId.get(v.id);
+                    if (!risk || risk.band === "LOW") return null;
+                    return (
+                      <span
+                        className={`ml-2 ${RISK_STYLE[risk.band]}`}
+                        title={(anomaliesByVendorId.get(v.id) ?? risk.reasons).join("; ")}
+                      >
+                        Risk: {risk.band.toLowerCase()}
+                      </span>
+                    );
+                  })()}
+                </p>
                 <p className="text-sm text-muted">
                   {v.category} · {v.contactEmail} · {v.contactPhone}
                   {v.stallFeeCents > 0 && ` · ${formatCents(v.stallFeeCents, v.currency)} (${v.feeStatus === "PAID" ? "paid" : v.feeStatus})`}

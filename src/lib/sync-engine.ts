@@ -164,6 +164,14 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
       await db.pendingSurveys.bulkPut(data.pendingSurveys as LocalPendingSurvey[]);
     }
 
+    // Full-replace, same reasoning as pendingSurveys — this pointer list
+    // must change (grow, shrink, or reorder) as purchase history and live
+    // events change, not just accumulate.
+    if (Array.isArray(data.recommendedEventIds)) {
+      await db.recommendedEvents.clear();
+      await db.recommendedEvents.bulkPut((data.recommendedEventIds as string[]).map((id) => ({ id })));
+    }
+
     if (Array.isArray(data.myWallets)) {
       await db.wallets.bulkPut(
         data.myWallets.map((w: LocalWallet): LocalWallet => ({ ...w, syncStatus: "synced" }))

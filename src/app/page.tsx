@@ -18,6 +18,17 @@ export default function HomePage() {
 
   const events = useLiveQuery(() => db.events.orderBy("startsAt").toArray(), [], undefined);
 
+  // Deterministic same-category recommendations (see recommendations.ts) —
+  // only ids ride over the wire, so look each one up against the
+  // already-synced events table. Empty for signed-out visitors and buyers
+  // with no purchase history — no cold-start guessing.
+  const recommendedIds = useLiveQuery(() => db.recommendedEvents.toArray(), [], []);
+  const recommendedEvents = useLiveQuery(async () => {
+    if (!recommendedIds || recommendedIds.length === 0) return [];
+    const rows = await Promise.all(recommendedIds.map((r) => db.events.get(r.id)));
+    return rows.filter((e): e is NonNullable<typeof e> => !!e);
+  }, [recommendedIds]);
+
   const filtered = useMemo(() => {
     if (!events) return undefined;
     const q = query.trim().toLowerCase();
@@ -50,6 +61,17 @@ export default function HomePage() {
           </p>
         )}
       </section>
+
+      {recommendedEvents && recommendedEvents.length > 0 && (
+        <section className="mb-10">
+          <h2 className="mb-4 text-xl font-bold">Events you might like</h2>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendedEvents.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { db, newLocalId, type LocalEvent } from "@/lib/db";
-import { queueOp } from "@/lib/sync-engine";
+import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { slugify } from "@/lib/format";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
@@ -36,6 +36,9 @@ export default function NewEventPage() {
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([newDraftTicketType()]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push("/login?callbackUrl=/dashboard/events/new");
@@ -45,6 +48,47 @@ export default function NewEventPage() {
 
   function updateTicketType(key: string, patch: Partial<DraftTicketType>) {
     setTicketTypes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  // Not queueOp'd — this needs a live, synchronous round-trip (a draft is
+  // useless offline, and there's nothing to sync; it only populates a text
+  // field the organizer still explicitly submits via the existing
+  // CREATE_EVENT queueOp flow below). Same direct-fetch pattern as photo
+  // upload in edit/page.tsx's onPhotoSelected.
+  async function draftDescription() {
+    setDraftError(null);
+    if (!title.trim() || !venue.trim() || !city.trim()) {
+      setDraftError("Fill in the title, venue, and city first.");
+      return;
+    }
+    setDrafting(true);
+    try {
+      const res = await fetch("/api/ai/event-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          category,
+          venue: venue.trim(),
+          city: city.trim(),
+          startsAt: startsAt ? new Date(startsAt).toISOString() : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setDraftError(
+          data?.reason === "AI_NOT_CONFIGURED"
+            ? "AI assist isn't set up on this deployment yet."
+            : "Couldn't draft a description — try again."
+        );
+        return;
+      }
+      setDescription(data.description);
+    } catch {
+      setDraftError("Couldn't reach the server — check your connection.");
+    } finally {
+      setDrafting(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -141,13 +185,25 @@ export default function NewEventPage() {
         </div>
 
         <div>
-          <label className="label" htmlFor="description">Description</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="label !mb-0" htmlFor="description">Description</label>
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover disabled:opacity-50"
+              onClick={draftDescription}
+              disabled={drafting || !isOnline}
+              title={!isOnline ? "Needs a connection" : undefined}
+            >
+              {drafting ? "Drafting…" : "Draft with AI"}
+            </button>
+          </div>
           <textarea
             id="description"
             className="input min-h-24"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+          {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
