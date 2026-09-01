@@ -62,6 +62,9 @@ export default async function SponsorLeadsPage({
                 <p className="text-xs text-muted">{formatDateTime(l.createdAt.toISOString())}</p>
               </div>
               <p className="text-muted">{l.wallet.owner.email}</p>
+              {l.campaign && (
+                <p className="mt-1 text-xs font-medium text-accent-hover">Redeemed: {l.campaign.name}</p>
+              )}
               {l.note && <p className="mt-1 rounded-lg bg-surface2 p-2 text-xs">{l.note}</p>}
             </div>
           ))}

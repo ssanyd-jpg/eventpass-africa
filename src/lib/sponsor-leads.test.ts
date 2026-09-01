@@ -83,7 +83,7 @@ describe("buildSponsorLeadsCsv", () => {
     const csv = buildSponsorLeadsCsv(sponsor.name, leads);
 
     expect(csv).toContain("Sponsor leads — Acme Corp");
-    expect(csv).toContain("Name,Email,Note,Scanned At");
+    expect(csv).toContain("Name,Email,Note,Campaign,Scanned At");
     expect(csv).toContain("carol@test.local");
     // The note's internal quotes/comma/newline force the whole field to be
     // quoted, with internal quotes doubled — matches csvEscape's contract.

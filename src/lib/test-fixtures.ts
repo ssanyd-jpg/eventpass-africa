@@ -111,6 +111,30 @@ export async function createTestDiscountCode(
   });
 }
 
+export async function createTestSponsorCampaign(
+  sponsorId: string,
+  overrides: Partial<{
+    name: string;
+    code: string;
+    maxRedemptions: number;
+    redemptionCount: number;
+    expiresAt: Date;
+    active: boolean;
+  }> = {}
+) {
+  return prisma.sponsorCampaign.create({
+    data: {
+      sponsorId,
+      name: overrides.name ?? "Test Campaign",
+      code: overrides.code ?? unique("CAMPAIGN").toUpperCase(),
+      maxRedemptions: overrides.maxRedemptions,
+      redemptionCount: overrides.redemptionCount ?? 0,
+      expiresAt: overrides.expiresAt,
+      active: overrides.active ?? true,
+    },
+  });
+}
+
 export async function createTestVendor(
   eventId: string,
   overrides: Partial<{ status: string; name: string; badgeCode: string }> = {}

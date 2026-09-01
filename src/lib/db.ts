@@ -270,10 +270,38 @@ export interface LocalWalletTransaction {
   vendorName: string | null;
   sponsorId: string | null;
   sponsorName: string | null;
+  // SPONSOR_TAP only — set iff this tap redeemed a SponsorCampaign, see
+  // WalletTransaction.campaignId in prisma/schema.prisma.
+  campaignId: string | null;
+  campaignName: string | null;
+  // Informational only, never persisted server-side — same discipline as
+  // LocalOrder.discountRejectReason. Set only transiently on the
+  // sync-push response when a selected campaign couldn't be redeemed
+  // (unknown/inactive/expired/already-redeemed/max-redeemed), so the scan
+  // terminal can tell staff why, without ever blocking the tap itself.
+  campaignRejectReason?: string | null;
   createdAt: string;
   updatedAt: string;
   syncStatus: "synced" | "pending" | "conflict";
   syncError?: string | null;
+}
+
+// Organizer-only, same reasoning as LocalDiscountCode — a sponsor's
+// coupon/campaign codes never ride in the public `events` field, so an
+// anonymous browser can't enumerate them. Populated from
+// payload.myCampaigns, scoped server-side to the caller's own organization.
+export interface LocalSponsorCampaign {
+  id: string;
+  clientId?: string | null;
+  sponsorId: string;
+  name: string;
+  code: string;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  expiresAt: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type OutboxOpType =
@@ -294,7 +322,9 @@ export type OutboxOpType =
   | "TOPUP_WALLET"
   | "CHECK_TOPUP_STATUS"
   | "CHARGE_WALLET"
-  | "SPONSOR_TAP";
+  | "SPONSOR_TAP"
+  | "ADD_SPONSOR_CAMPAIGN"
+  | "DEACTIVATE_SPONSOR_CAMPAIGN";
 
 export interface OutboxEntry {
   id?: number;
@@ -325,6 +355,7 @@ class EventPassAfricaDB extends Dexie {
   discountCodes!: Table<LocalDiscountCode, string>;
   surveyQuestions!: Table<LocalSurveyQuestion, string>;
   pendingSurveys!: Table<LocalPendingSurvey, string>;
+  sponsorCampaigns!: Table<LocalSponsorCampaign, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -421,6 +452,27 @@ class EventPassAfricaDB extends Dexie {
       discountCodes: "id, clientId, eventId, ticketTypeId, code",
       surveyQuestions: "id, clientId, eventId",
       pendingSurveys: "eventId",
+    });
+    // New organizer-only sponsorCampaigns table (mirrors discountCodes),
+    // plus campaignId/campaignName on walletTransactions (still indexed
+    // the same way — campaignId isn't queried by itself client-side, only
+    // filtered in-memory by sponsorId). No .upgrade() transform, same
+    // reasoning as every prior version bump in this file.
+    this.version(8).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
     });
   }
 }

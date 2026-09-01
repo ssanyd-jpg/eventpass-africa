@@ -14,6 +14,7 @@ import {
   type LocalDiscountCode,
   type LocalSurveyQuestion,
   type LocalPendingSurvey,
+  type LocalSponsorCampaign,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -141,6 +142,10 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
         }
         await db.sponsors.put({ ...sponsor, syncStatus: "synced" });
       }
+    }
+
+    if (Array.isArray(data.myCampaigns)) {
+      await db.sponsorCampaigns.bulkPut(data.myCampaigns as LocalSponsorCampaign[]);
     }
 
     if (Array.isArray(data.myDiscountCodes)) {
@@ -358,7 +363,24 @@ async function applyChargeWalletResult(payload: any, result: any) {
 async function applySponsorTapResult(payload: any, result: any) {
   const localId = payload.clientId as string;
   await db.walletTransactions.delete(localId);
-  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  await db.walletTransactions.put({
+    ...result.transaction,
+    campaignRejectReason: result.campaignRejectReason ?? null,
+    syncStatus: "synced",
+  });
+}
+
+// Same delete-local-then-put-server shape as applyCreateSponsorResult.
+async function applyAddSponsorCampaignResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.sponsorCampaigns.delete(localId);
+  await db.sponsorCampaigns.put(result.campaign);
+}
+
+// Acts on an already-synced campaign id — no local-temp-id to remap, just
+// an upsert-by-real-id (same discipline as applyVendorStatusResult).
+async function applyDeactivateSponsorCampaignResult(_payload: any, result: any) {
+  await db.sponsorCampaigns.put(result.campaign);
 }
 
 export async function flushOutbox(): Promise<{ flushed: number; failed: number }> {
@@ -447,6 +469,12 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "SPONSOR_TAP":
           await applySponsorTapResult(entry.payload, result);
+          break;
+        case "ADD_SPONSOR_CAMPAIGN":
+          await applyAddSponsorCampaignResult(entry.payload, result);
+          break;
+        case "DEACTIVATE_SPONSOR_CAMPAIGN":
+          await applyDeactivateSponsorCampaignResult(entry.payload, result);
           break;
       }
 

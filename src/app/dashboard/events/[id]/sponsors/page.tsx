@@ -49,6 +49,15 @@ export default function ManageSponsorsPage() {
     return counts;
   }, [sponsors]);
 
+  // Same client-computed-count pattern as leadCounts above.
+  const campaignCounts = useLiveQuery(async () => {
+    if (!sponsors || sponsors.length === 0) return {};
+    const all = await db.sponsorCampaigns.toArray();
+    const counts: Record<string, number> = {};
+    for (const c of all) counts[c.sponsorId] = (counts[c.sponsorId] ?? 0) + 1;
+    return counts;
+  }, [sponsors]);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [addName, setAddName] = useState("");
   const [addTier, setAddTier] = useState(SPONSOR_TIERS[0]);
@@ -182,12 +191,20 @@ export default function ManageSponsorsPage() {
                   still-pending-sync sponsor (local temp id) has no rows to
                   show yet. */}
               {!s.syncStatus || s.syncStatus === "synced" ? (
-                <Link
-                  href={`/dashboard/events/${event.id}/sponsors/${s.id}/leads`}
-                  className="text-sm font-medium text-accent-hover"
-                >
-                  Leads ({leadCounts?.[s.id] ?? 0}) →
-                </Link>
+                <div className="flex gap-4">
+                  <Link
+                    href={`/dashboard/events/${event.id}/sponsors/${s.id}/leads`}
+                    className="text-sm font-medium text-accent-hover"
+                  >
+                    Leads ({leadCounts?.[s.id] ?? 0}) →
+                  </Link>
+                  <Link
+                    href={`/dashboard/events/${event.id}/sponsors/${s.id}/campaigns`}
+                    className="text-sm font-medium text-accent-hover"
+                  >
+                    Campaigns ({campaignCounts?.[s.id] ?? 0}) →
+                  </Link>
+                </div>
               ) : null}
             </div>
           ))}

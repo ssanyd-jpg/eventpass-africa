@@ -137,6 +137,8 @@ export default function WalletDetailPage() {
       vendorName: null,
       sponsorId: null,
       sponsorName: null,
+      campaignId: null,
+      campaignName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",

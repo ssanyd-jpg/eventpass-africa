@@ -19,21 +19,29 @@ export async function getSponsorLeads(sponsorId: string) {
   return prisma.walletTransaction.findMany({
     where: { sponsorId, type: "SPONSOR_TAP" },
     orderBy: { createdAt: "desc" },
-    include: { wallet: { include: { owner: { select: { name: true, email: true } } } } },
+    include: {
+      wallet: { include: { owner: { select: { name: true, email: true } } } },
+      campaign: { select: { name: true } },
+    },
   });
 }
 
 export type SponsorLead = Awaited<ReturnType<typeof getSponsorLeads>>[number];
 
+// Doubles as the de facto campaign-redemptions report — a non-blank
+// Campaign column marks a redemption, not just a plain lead-capture tap.
+// No separate export/report route for v1; the data already lives on the
+// same rows this CSV already reads.
 export function buildSponsorLeadsCsv(sponsorName: string, leads: SponsorLead[]): string {
   return buildCsvDocument([
     {
       title: `Sponsor leads — ${sponsorName}`,
-      headers: ["Name", "Email", "Note", "Scanned At"],
+      headers: ["Name", "Email", "Note", "Campaign", "Scanned At"],
       rows: leads.map((l) => [
         l.wallet.owner.name,
         l.wallet.owner.email,
         l.note ?? "",
+        l.campaign?.name ?? "",
         l.createdAt.toISOString(),
       ]),
     },

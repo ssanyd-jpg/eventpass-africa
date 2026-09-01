@@ -20,6 +20,8 @@ import {
   handleCheckTopupStatus,
   handleChargeWallet,
   handleSponsorTap,
+  handleAddSponsorCampaign,
+  handleDeactivateSponsorCampaign,
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
 import { logAudit, buildSyncAuditEntry } from "@/lib/audit";
@@ -125,6 +127,12 @@ export async function POST(request: Request) {
         break;
       case "SPONSOR_TAP":
         result = await handleSponsorTap(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "ADD_SPONSOR_CAMPAIGN":
+        result = await handleAddSponsorCampaign(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "DEACTIVATE_SPONSOR_CAMPAIGN":
+        result = await handleDeactivateSponsorCampaign(session.user.id, session.user.organizationId, body.payload);
         break;
       default:
         return NextResponse.json({ ok: false, reason: "UNKNOWN_OP" }, { status: 400 });

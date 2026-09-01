@@ -237,6 +237,25 @@ export const payloadSchemas = {
     // nullable AND optional — an already-offline-queued tap from before
     // this field existed has no `note` key at all and must still parse.
     note: z.string().trim().max(500).nullable().optional(),
+    // A real SponsorCampaign id (or its clientId, for one created in the
+    // same offline session) — never a typed code; the scan terminal offers
+    // a dropdown of that sponsor's offline-cached campaigns.
+    campaignId: z.string().nullable().optional(),
+    campaignClientId: z.string().nullable().optional(),
+  }),
+  ADD_SPONSOR_CAMPAIGN: z.object({
+    clientId: z.string().min(1),
+    sponsorId: z.string().min(1),
+    sponsorClientId: z.string().nullable().optional(),
+    name: z.string().min(1).max(120),
+    code: z.string().min(2).max(30),
+    maxRedemptions: z.number().int().min(1).optional(),
+    expiresAt: z.string().nullable().optional(),
+  }),
+  DEACTIVATE_SPONSOR_CAMPAIGN: z.object({
+    clientId: z.string().min(1),
+    campaignId: z.string().min(1),
+    campaignClientId: z.string().nullable().optional(),
   }),
 } as const;
 
@@ -1135,6 +1154,90 @@ export async function handleAddSponsor(userId: string, organizationId: string, p
   return { ok: true, sponsor: shapeSponsor(created) };
 }
 
+export function shapeSponsorCampaign(c: any) {
+  return {
+    id: c.id,
+    clientId: c.clientId,
+    sponsorId: c.sponsorId,
+    name: c.name,
+    code: c.code,
+    maxRedemptions: c.maxRedemptions,
+    redemptionCount: c.redemptionCount,
+    expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
+    active: c.active,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  };
+}
+
+async function resolveSponsor(sponsorId: string, sponsorClientId?: string | null) {
+  return (
+    (await prisma.sponsor.findUnique({ where: { id: sponsorId }, include: sponsorInclude })) ??
+    (sponsorClientId
+      ? await prisma.sponsor.findUnique({ where: { clientId: sponsorClientId }, include: sponsorInclude })
+      : null)
+  );
+}
+
+export async function handleAddSponsorCampaign(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.sponsorCampaign.findUnique({ where: { clientId } });
+  if (existing) {
+    return { ok: true, campaign: shapeSponsorCampaign(existing) };
+  }
+
+  const sponsor = await resolveSponsor(String(payload.sponsorId), payload.sponsorClientId);
+  if (!sponsor) {
+    return { ok: false, retry: true, reason: "SPONSOR_NOT_SYNCED_YET" };
+  }
+  if (sponsor.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const code = String(payload.code).trim().toUpperCase();
+  const clash = await prisma.sponsorCampaign.findUnique({ where: { sponsorId_code: { sponsorId: sponsor.id, code } } });
+  if (clash) {
+    return { ok: false, reason: "CAMPAIGN_CODE_TAKEN" };
+  }
+
+  const created = await prisma.sponsorCampaign.create({
+    data: {
+      clientId,
+      sponsorId: sponsor.id,
+      name: String(payload.name),
+      code,
+      maxRedemptions: payload.maxRedemptions != null ? Number(payload.maxRedemptions) : null,
+      expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
+    },
+  });
+
+  return { ok: true, campaign: shapeSponsorCampaign(created) };
+}
+
+// Never a real delete, matching DiscountCode's own dashboard (no
+// reactivate affordance either) — a deactivated campaign just stops
+// showing up as redeemable in the scan terminal's dropdown.
+export async function handleDeactivateSponsorCampaign(userId: string, organizationId: string, payload: any) {
+  const campaign =
+    (await prisma.sponsorCampaign.findUnique({ where: { id: String(payload.campaignId) }, include: { sponsor: { include: sponsorInclude } } })) ??
+    (payload.campaignClientId
+      ? await prisma.sponsorCampaign.findUnique({ where: { clientId: String(payload.campaignClientId) }, include: { sponsor: { include: sponsorInclude } } })
+      : null);
+  if (!campaign) {
+    return { ok: false, retry: true, reason: "CAMPAIGN_NOT_SYNCED_YET" };
+  }
+  if (campaign.sponsor.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (!campaign.active) {
+    return { ok: true, campaign: shapeSponsorCampaign(campaign) }; // idempotent
+  }
+
+  const updated = await prisma.sponsorCampaign.update({ where: { id: campaign.id }, data: { active: false } });
+  return { ok: true, campaign: shapeSponsorCampaign(updated) };
+}
+
 async function resolveVendor(vendorId: string, vendorClientId?: string | null) {
   return (
     (await prisma.vendor.findUnique({ where: { id: vendorId }, include: vendorInclude })) ??
@@ -1250,13 +1353,19 @@ export function shapeWalletTransaction(t: any) {
     vendorName: t.vendor?.name ?? null,
     sponsorId: t.sponsorId,
     sponsorName: t.sponsor?.name ?? null,
+    campaignId: t.campaignId,
+    campaignName: t.campaign?.name ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
 }
 
 const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } } } as const;
-const walletTxInclude = { vendor: { select: { name: true } }, sponsor: { select: { name: true } } } as const;
+const walletTxInclude = {
+  vendor: { select: { name: true } },
+  sponsor: { select: { name: true } },
+  campaign: { select: { name: true } },
+} as const;
 
 async function resolveWallet(walletId: string, walletClientId?: string | null) {
   return (
@@ -1581,20 +1690,78 @@ export async function handleSponsorTap(userId: string, organizationId: string, p
     return { ok: false, reason: "SPONSOR_EVENT_MISMATCH" };
   }
 
-  const transaction = await prisma.walletTransaction.create({
-    data: {
-      clientId,
-      type: "SPONSOR_TAP",
-      status: "COMPLETED",
-      currency: wallet.currency,
-      walletId: wallet.id,
-      sponsorId: sponsor.id,
-      // Blank/whitespace-only collapses to null, so every downstream read
-      // only ever checks truthy/falsy, never "" vs null.
-      note: payload.note ? String(payload.note).trim() || null : null,
-    },
-    include: walletTxInclude,
-  });
+  // Wrapped in a transaction (unlike before campaigns existed) so the
+  // redemption-cap increment and the tap row commit atomically — same
+  // discipline as handleChargeWallet's balance CAS.
+  const result = await prisma.$transaction(async (tx) => {
+    let campaignId: string | null = null;
+    let campaignRejectReason: string | null = null;
 
-  return { ok: true, transaction: shapeWalletTransaction(transaction) };
+    const rawCampaignId = payload.campaignId ? String(payload.campaignId) : null;
+    if (rawCampaignId || payload.campaignClientId) {
+      const campaign =
+        (rawCampaignId ? await tx.sponsorCampaign.findUnique({ where: { id: rawCampaignId } }) : null) ??
+        (payload.campaignClientId
+          ? await tx.sponsorCampaign.findUnique({ where: { clientId: String(payload.campaignClientId) } })
+          : null);
+
+      // Never blocks the tap itself — an invalid/inapplicable campaign
+      // just means no redemption, same soft-fail philosophy as
+      // DiscountCode in handleSellTickets.
+      if (!campaign) campaignRejectReason = "CAMPAIGN_NOT_FOUND";
+      else if (campaign.sponsorId !== sponsor.id) campaignRejectReason = "CAMPAIGN_SPONSOR_MISMATCH";
+      else if (!campaign.active) campaignRejectReason = "CAMPAIGN_INACTIVE";
+      else if (campaign.expiresAt && campaign.expiresAt < new Date()) campaignRejectReason = "CAMPAIGN_EXPIRED";
+      else {
+        const already = await tx.walletTransaction.findFirst({
+          where: { campaignId: campaign.id, walletId: wallet.id },
+        });
+        if (already) {
+          campaignRejectReason = "CAMPAIGN_ALREADY_REDEEMED";
+        } else {
+          // CAS on redemptionCount — same discipline as DiscountCode's
+          // redemption in handleSellTickets, so two staff racing the last
+          // redemption slot for two different attendees can't both win.
+          const res = await tx.sponsorCampaign.updateMany({
+            where: {
+              id: campaign.id,
+              active: true,
+              OR: [{ maxRedemptions: null }, { redemptionCount: { lt: campaign.maxRedemptions ?? 0 } }],
+            },
+            data: { redemptionCount: { increment: 1 } },
+          });
+          if (res.count === 1) {
+            campaignId = campaign.id;
+          } else {
+            campaignRejectReason = "CAMPAIGN_MAX_REDEEMED"; // lost the race
+          }
+        }
+      }
+    }
+
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        clientId,
+        type: "SPONSOR_TAP",
+        status: "COMPLETED",
+        currency: wallet.currency,
+        walletId: wallet.id,
+        sponsorId: sponsor.id,
+        campaignId,
+        // Blank/whitespace-only collapses to null, so every downstream read
+        // only ever checks truthy/falsy, never "" vs null.
+        note: payload.note ? String(payload.note).trim() || null : null,
+      },
+      include: walletTxInclude,
+    });
+
+    return { transaction, campaignRedeemed: campaignId !== null, campaignRejectReason };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  return {
+    ok: true,
+    transaction: shapeWalletTransaction(result.transaction),
+    campaignRedeemed: result.campaignRedeemed,
+    campaignRejectReason: result.campaignRejectReason,
+  };
 }

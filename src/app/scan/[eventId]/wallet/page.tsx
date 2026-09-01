@@ -15,6 +15,11 @@ type TerminalResult = {
   kind: "valid" | "declined" | "invalid" | "offline" | "recorded";
   message: string;
   code: string;
+  // Set only for a tap that selected a campaign — lets the reactive
+  // banner-upgrade effect confirm the currently-displayed banner is still
+  // THIS tap before overwriting it (staff may have already moved on to a
+  // different attendee by the time the sync result arrives).
+  tapClientId?: string;
 };
 
 export default function WalletChargeTerminalPage() {
@@ -37,10 +42,16 @@ export default function WalletChargeTerminalPage() {
   const [amountMajor, setAmountMajor] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [sponsorId, setSponsorId] = useState("");
+  const [campaignId, setCampaignId] = useState("");
   const [note, setNote] = useState("");
   const [showNoteField, setShowNoteField] = useState(false);
   const [result, setResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // Tracks the most recent tap that redeemed a campaign, so the result
+  // banner can reactively upgrade from "Tap recorded." to the actual
+  // redemption outcome once the outbox flushes and the server's answer
+  // syncs back — never blocks entering the next attendee in the meantime.
+  const [pendingTapClientId, setPendingTapClientId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const event = useLiveQuery(async () => {
@@ -60,6 +71,57 @@ export default function WalletChargeTerminalPage() {
     return db.sponsors.where("eventId").equals(event.id).toArray();
   }, [event?.id]);
 
+  const sponsorCampaigns = useLiveQuery(async () => {
+    if (!sponsorId) return [];
+    return db.sponsorCampaigns.where("sponsorId").equals(sponsorId).toArray();
+  }, [sponsorId]);
+  const redeemableCampaigns = useMemo(() => {
+    const now = new Date();
+    return (sponsorCampaigns ?? []).filter(
+      (c) =>
+        c.active &&
+        (!c.expiresAt || new Date(c.expiresAt) > now) &&
+        (c.maxRedemptions == null || c.redemptionCount < c.maxRedemptions)
+    );
+  }, [sponsorCampaigns]);
+
+  // A campaign belongs to one sponsor — switching sponsors invalidates
+  // whatever was selected.
+  useEffect(() => {
+    setCampaignId("");
+  }, [sponsorId]);
+
+  // Reactively upgrades the result banner once this tap's server-
+  // authoritative row has synced back — see pendingTapClientId above.
+  // Looked up by the clientId INDEX, not .get() by primary key: once the
+  // outbox flushes, applySponsorTapResult deletes the optimistic
+  // temp-id-keyed row and re-puts it under the server's real id, so a
+  // primary-key .get(pendingTapClientId) would find nothing post-sync and
+  // this banner would never upgrade.
+  const pendingTapTx = useLiveQuery(async () => {
+    if (!pendingTapClientId) return undefined;
+    return db.walletTransactions.where("clientId").equals(pendingTapClientId).first();
+  }, [pendingTapClientId]);
+  useEffect(() => {
+    if (!pendingTapTx || pendingTapTx.syncStatus !== "synced") return;
+    const message = pendingTapTx.campaignId
+      ? "Tap recorded. Coupon redeemed."
+      : pendingTapTx.campaignRejectReason === "CAMPAIGN_ALREADY_REDEEMED"
+      ? "Tap recorded. Coupon already used by this attendee."
+      : pendingTapTx.campaignRejectReason === "CAMPAIGN_MAX_REDEEMED"
+      ? "Tap recorded. Coupon fully redeemed."
+      : pendingTapTx.campaignRejectReason === "CAMPAIGN_EXPIRED" || pendingTapTx.campaignRejectReason === "CAMPAIGN_INACTIVE"
+      ? "Tap recorded. Coupon expired or inactive."
+      : null;
+    if (message) {
+      // Only overwrite the banner if it's still showing THIS tap — staff
+      // may have already scanned a different attendee by the time this
+      // sync result lands, and that newer banner must never be clobbered.
+      setResult((r) => (r && r.tapClientId === pendingTapTx.clientId ? { ...r, message } : r));
+    }
+    setPendingTapClientId(null);
+  }, [pendingTapTx]);
+
   // Refs so the scan handlers' identity stays stable across renders —
   // CameraScanner restarts its stream whenever onDetect changes, same
   // reasoning as the gate scanner's ref-stabilization.
@@ -71,6 +133,8 @@ export default function WalletChargeTerminalPage() {
   amountMajorRef.current = amountMajor;
   const sponsorIdRef = useRef(sponsorId);
   sponsorIdRef.current = sponsorId;
+  const campaignIdRef = useRef(campaignId);
+  campaignIdRef.current = campaignId;
   const noteRef = useRef(note);
   noteRef.current = note;
   const onlineRef = useRef(online);
@@ -140,6 +204,7 @@ export default function WalletChargeTerminalPage() {
     }
 
     const clientId = newLocalId();
+    const campaignId = campaignIdRef.current;
     await queueOp("SPONSOR_TAP", {
       clientId,
       walletCode: normalized,
@@ -147,14 +212,17 @@ export default function WalletChargeTerminalPage() {
       eventId: event.id,
       eventClientId: event.clientId,
       note: noteRef.current.trim() || undefined,
+      campaignId: campaignId || undefined,
     });
 
-    setResult({ kind: "recorded", message: "Tap recorded.", code: normalized });
+    setResult({ kind: "recorded", message: "Tap recorded.", code: normalized, tapClientId: campaignId ? clientId : undefined });
+    if (campaignId) setPendingTapClientId(clientId);
     // Reset for the next attendee — same discipline as the code input reset
     // in onSubmit below, applied here too since scanner-triggered taps
     // (CameraScanner/NFCScanner) bypass onSubmit entirely.
     setNote("");
     setShowNoteField(false);
+    setCampaignId("");
   }, []);
 
   const activeHandler = mode === "sale" ? chargeWallet : recordTap;
@@ -241,6 +309,17 @@ export default function WalletChargeTerminalPage() {
               ))}
             </select>
           </div>
+          {sponsorId && (
+            <div>
+              <label className="label" htmlFor="campaign">Coupon</label>
+              <select id="campaign" className="input" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+                <option value="">No campaign — just a tap</option>
+                {redeemableCampaigns.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                ))}
+              </select>
+            </div>
+          )}
           {showNoteField ? (
             <div>
               <label className="label" htmlFor="tapNote">Note (optional)</label>

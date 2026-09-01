@@ -190,6 +190,27 @@ export async function GET(request: Request) {
       updatedAt: s.updatedAt.toISOString(),
     }));
 
+    // Organizer-only, same reasoning as myDiscountCodes below — a
+    // sponsor's coupon/campaign codes never ride in the public `events`
+    // field, so an anonymous browser can't enumerate them.
+    const myCampaigns = await prisma.sponsorCampaign.findMany({
+      where: { sponsor: { event: { organizationId } } },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myCampaigns = myCampaigns.map((c) => ({
+      id: c.id,
+      clientId: c.clientId,
+      sponsorId: c.sponsorId,
+      name: c.name,
+      code: c.code,
+      maxRedemptions: c.maxRedemptions,
+      redemptionCount: c.redemptionCount,
+      expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
+      active: c.active,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    }));
+
     // Organizer-only, unlike ticketTypes: discount codes deliberately do NOT
     // ride in the public `events` field above — anyone browsing an event
     // could otherwise enumerate its promo codes straight out of an
@@ -263,7 +284,11 @@ export async function GET(request: Request) {
 
     const myWalletTransactions = await prisma.walletTransaction.findMany({
       where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] } },
-      include: { vendor: { select: { name: true } }, sponsor: { select: { name: true } } },
+      include: {
+        vendor: { select: { name: true } },
+        sponsor: { select: { name: true } },
+        campaign: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
     payload.myWalletTransactions = myWalletTransactions.map((t) => ({
@@ -282,6 +307,8 @@ export async function GET(request: Request) {
       vendorName: t.vendor?.name ?? null,
       sponsorId: t.sponsorId,
       sponsorName: t.sponsor?.name ?? null,
+      campaignId: t.campaignId,
+      campaignName: t.campaign?.name ?? null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     }));

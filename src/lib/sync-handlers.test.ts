@@ -9,6 +9,7 @@ import {
   createTestDiscountCode,
   createTestSponsor,
   createTestWallet,
+  createTestSponsorCampaign,
 } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
@@ -22,6 +23,8 @@ import {
   handleCheckInVendor,
   handleEditEvent,
   handleSponsorTap,
+  handleAddSponsorCampaign,
+  handleDeactivateSponsorCampaign,
   payloadSchemas,
 } from "@/lib/sync-handlers";
 
@@ -982,6 +985,260 @@ describe("handleSponsorTap", () => {
       eventId: "event-1",
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("redemption succeeds and increments the campaign's redemptionCount", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const campaign = await createTestSponsorCampaign(sponsor.id, { name: "Free Sample" });
+
+    const result = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-redeem",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: campaign.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).campaignRedeemed).toBe(true);
+    expect((result as any).campaignRejectReason).toBeNull();
+    expect((result as any).transaction.campaignId).toBe(campaign.id);
+    const stored = await prisma.sponsorCampaign.findUniqueOrThrow({ where: { id: campaign.id } });
+    expect(stored.redemptionCount).toBe(1);
+  });
+
+  it("soft-fails for an unknown, inactive, or expired campaign — tap still recorded", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const inactive = await createTestSponsorCampaign(sponsor.id, { active: false });
+    const expired = await createTestSponsorCampaign(sponsor.id, { expiresAt: new Date(Date.now() - 1000) });
+
+    const unknown = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-unknown-campaign",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: "does-not-exist",
+    });
+    expect(unknown.ok).toBe(true);
+    expect((unknown as any).campaignRedeemed).toBe(false);
+    expect((unknown as any).campaignRejectReason).toBe("CAMPAIGN_NOT_FOUND");
+
+    const inactiveResult = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-inactive-campaign",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: inactive.id,
+    });
+    expect((inactiveResult as any).campaignRejectReason).toBe("CAMPAIGN_INACTIVE");
+
+    const expiredResult = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-expired-campaign",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: expired.id,
+    });
+    expect((expiredResult as any).campaignRejectReason).toBe("CAMPAIGN_EXPIRED");
+
+    // All three still recorded a tap despite the campaign soft-failing.
+    expect(await prisma.walletTransaction.count({ where: { clientId: { in: ["tap-unknown-campaign", "tap-inactive-campaign", "tap-expired-campaign"] } } })).toBe(3);
+  });
+
+  it("soft-fails once a campaign's max redemptions is reached", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const campaign = await createTestSponsorCampaign(sponsor.id, { maxRedemptions: 1 });
+
+    await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-maxed-1",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: campaign.id,
+    });
+
+    const otherAttendee = await createTestUser();
+    const otherWallet = await createTestWallet(wallet.eventId, otherAttendee.id);
+    const second = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-maxed-2",
+      walletCode: otherWallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: campaign.id,
+    });
+
+    expect((second as any).campaignRedeemed).toBe(false);
+    expect((second as any).campaignRejectReason).toBe("CAMPAIGN_MAX_REDEEMED");
+  });
+
+  it("soft-fails when the same wallet redeems the same campaign twice", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const campaign = await createTestSponsorCampaign(sponsor.id);
+
+    await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-first-redemption",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: campaign.id,
+    });
+
+    const second = await handleSponsorTap(organizer.id, organizationId, {
+      clientId: "tap-second-redemption",
+      walletCode: wallet.code,
+      sponsorId: sponsor.id,
+      eventId: wallet.eventId,
+      campaignId: campaign.id,
+    });
+
+    expect(second.ok).toBe(true); // tap still recorded
+    expect((second as any).campaignRedeemed).toBe(false);
+    expect((second as any).campaignRejectReason).toBe("CAMPAIGN_ALREADY_REDEEMED");
+    expect(await prisma.walletTransaction.count({ where: { clientId: "tap-second-redemption" } })).toBe(1);
+    const stored = await prisma.sponsorCampaign.findUniqueOrThrow({ where: { id: campaign.id } });
+    expect(stored.redemptionCount).toBe(1); // not incremented twice
+  });
+
+  it("a concurrency race on the last redemption slot lets exactly one attendee win", async () => {
+    const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    const campaign = await createTestSponsorCampaign(sponsor.id, { maxRedemptions: 1 });
+    const otherAttendee = await createTestUser();
+    const otherWallet = await createTestWallet(wallet.eventId, otherAttendee.id);
+
+    const [a, b] = await Promise.all([
+      handleSponsorTap(organizer.id, organizationId, {
+        clientId: "tap-race-a",
+        walletCode: wallet.code,
+        sponsorId: sponsor.id,
+        eventId: wallet.eventId,
+        campaignId: campaign.id,
+      }),
+      handleSponsorTap(organizer.id, organizationId, {
+        clientId: "tap-race-b",
+        walletCode: otherWallet.code,
+        sponsorId: sponsor.id,
+        eventId: wallet.eventId,
+        campaignId: campaign.id,
+      }),
+    ]);
+
+    const outcomes = [a, b].map((r) => (r as any).campaignRedeemed);
+    expect(outcomes.filter(Boolean)).toHaveLength(1);
+    const stored = await prisma.sponsorCampaign.findUniqueOrThrow({ where: { id: campaign.id } });
+    expect(stored.redemptionCount).toBe(1);
+  });
+});
+
+describe("handleAddSponsorCampaign", () => {
+  it("creates a campaign directly with an uppercased, trimmed code", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+
+    const result = await handleAddSponsorCampaign(organizer.id, organizationId, {
+      clientId: "campaign-1",
+      sponsorId: sponsor.id,
+      name: "Free Sample",
+      code: " free ",
+      maxRedemptions: 100,
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).campaign.code).toBe("FREE");
+    expect((result as any).campaign.name).toBe("Free Sample");
+  });
+
+  it("refuses to add a campaign to a sponsor owned by a different organization", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    const { user: someoneElse, organizationId: someoneElseOrgId } = await newOrganizer();
+
+    const result = await handleAddSponsorCampaign(someoneElse.id, someoneElseOrgId, {
+      clientId: "campaign-forbidden",
+      sponsorId: sponsor.id,
+      name: "Interloper",
+      code: "NOPE",
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — replaying the same clientId doesn't create a duplicate", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    const payload = { clientId: "campaign-replay", sponsorId: sponsor.id, name: "Replay Campaign", code: "REPLAY" };
+
+    await handleAddSponsorCampaign(organizer.id, organizationId, payload);
+    await handleAddSponsorCampaign(organizer.id, organizationId, payload);
+    expect(await prisma.sponsorCampaign.count({ where: { clientId: "campaign-replay" } })).toBe(1);
+  });
+
+  it("rejects a duplicate (sponsorId, code) pair", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    await createTestSponsorCampaign(sponsor.id, { code: "DUPE" });
+
+    const result = await handleAddSponsorCampaign(organizer.id, organizationId, {
+      clientId: "campaign-dupe",
+      sponsorId: sponsor.id,
+      name: "Another",
+      code: "DUPE",
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("CAMPAIGN_CODE_TAKEN");
+  });
+});
+
+describe("handleDeactivateSponsorCampaign", () => {
+  it("sets active to false", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    const campaign = await createTestSponsorCampaign(sponsor.id);
+
+    const result = await handleDeactivateSponsorCampaign(organizer.id, organizationId, {
+      clientId: "deactivate-1",
+      campaignId: campaign.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).campaign.active).toBe(false);
+  });
+
+  it("is cross-org guarded", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    const campaign = await createTestSponsorCampaign(sponsor.id);
+    const { organizationId: otherOrgId } = await newOrganizer();
+
+    const result = await handleDeactivateSponsorCampaign("irrelevant", otherOrgId, {
+      clientId: "deactivate-forbidden",
+      campaignId: campaign.id,
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent on an already-inactive campaign", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const sponsor = await createTestSponsor(event.id);
+    const campaign = await createTestSponsorCampaign(sponsor.id, { active: false });
+
+    const result = await handleDeactivateSponsorCampaign(organizer.id, organizationId, {
+      clientId: "deactivate-idempotent",
+      campaignId: campaign.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).campaign.active).toBe(false);
   });
 });
 

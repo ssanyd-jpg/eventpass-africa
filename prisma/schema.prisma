@@ -723,7 +723,35 @@ model Sponsor {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  sponsorTaps WalletTransaction[]
+  sponsorTaps      WalletTransaction[]
+  sponsorCampaigns SponsorCampaign[]
+}
+
+// A sponsor-booth coupon/giveaway — NOT a ticket-price discount (see
+// DiscountCode). Redeeming one gets an attendee something off-platform: a
+// sample, a raffle entry, a prize — no monetary amount to apply, so no
+// percentOff/amountOffCents. Scoped to one sponsor, not the whole event:
+// code is unique per-sponsor, not per-event, since two independent
+// sponsors may each want "FREE" or "SAMPLE". Never deleted server-side —
+// same discipline as DiscountCode; "deactivate" flips active to false.
+model SponsorCampaign {
+  id              String    @id @default(cuid())
+  clientId        String?   @unique
+  name            String
+  code            String
+  maxRedemptions  Int?
+  redemptionCount Int       @default(0)
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sponsorId String
+  sponsor   Sponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+
+  redemptions WalletTransaction[]
+
+  @@unique([sponsorId, code])
 }
 
 // One wallet per user per event (v1 scope cut — no multi-wristband/family
@@ -785,5 +813,14 @@ model WalletTransaction {
   sponsorId String? // SPONSOR_TAP only
   sponsor   Sponsor? @relation(fields: [sponsorId], references: [id])
 
+  // SPONSOR_TAP only — set iff this tap redeemed a SponsorCampaign; null
+  // means a plain lead-capture tap. Postgres treats NULL as distinct in a
+  // unique index, so @@unique([campaignId, walletId]) only binds rows that
+  // share a real (campaignId, walletId) pair — every existing/plain tap is
+  // untouched by this constraint.
+  campaignId String?
+  campaign   SponsorCampaign? @relation(fields: [campaignId], references: [id])
+
   @@index([sponsorId, type, createdAt])
+  @@unique([campaignId, walletId])
 }
