@@ -397,11 +397,17 @@ describe("handleSponsorTap", () => {
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const sponsor = await createTestSponsor(event.id, { name: "MTN Booth" });
-    const payload = { clientId: "tap-replay", walletCode: wallet.code, sponsorId: sponsor.id, eventId: event.id };
+    // Unique per run, not a bare literal — this exact literal used to
+    // collide with an identically-named clientId in sync-handlers.test.ts's
+    // own handleSponsorTap idempotent-replay test (WalletTransaction.clientId
+    // is globally unique and both files share one test DB within a single
+    // `npm test` run) — see that test's comment for the full story.
+    const clientId = `tap-replay-${Date.now()}-${Math.random()}`;
+    const payload = { clientId, walletCode: wallet.code, sponsorId: sponsor.id, eventId: event.id };
 
     await handleSponsorTap(organizer.id, organization.id, payload);
     await handleSponsorTap(organizer.id, organization.id, payload);
-    expect(await prisma.walletTransaction.count({ where: { clientId: "tap-replay" } })).toBe(1);
+    expect(await prisma.walletTransaction.count({ where: { clientId } })).toBe(1);
   });
 
   it("rejects a tap against a wallet belonging to a different organization", async () => {

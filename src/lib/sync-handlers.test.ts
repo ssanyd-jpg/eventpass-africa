@@ -949,8 +949,22 @@ describe("handleSponsorTap", () => {
 
   it("is idempotent — replaying the same clientId doesn't duplicate the row or drop the note", async () => {
     const { organizer, organizationId, sponsor, wallet } = await sponsorAndWallet();
+    // Unique per run, not a bare literal — this exact literal ("tap-replay")
+    // used to collide with an identically-named clientId in a completely
+    // different file (wallet-handlers.test.ts), which also has its own
+    // handleSponsorTap idempotent-replay test. Since WalletTransaction.clientId
+    // is globally unique and the two tests run in the same shared DB within
+    // one `npm test` invocation, whichever file's test ran second would find
+    // the first file's row (a different organization) and hit the
+    // cross-org-mismatch FORBIDDEN branch instead of actually exercising
+    // idempotent replay — surfacing here as `second.transaction` being
+    // undefined. Neither test's assertion was a raw-count check sensitive
+    // enough to catch it except this one's `.transaction.note` check. Fixed
+    // by making the clientId collision-proof instead of chasing file load
+    // order.
+    const clientId = `tap-replay-${Date.now()}-${Math.random()}`;
     const payload = {
-      clientId: "tap-replay",
+      clientId,
       walletCode: wallet.code,
       sponsorId: sponsor.id,
       eventId: wallet.eventId,
@@ -960,7 +974,7 @@ describe("handleSponsorTap", () => {
     await handleSponsorTap(organizer.id, organizationId, payload);
     const second = await handleSponsorTap(organizer.id, organizationId, payload);
 
-    expect(await prisma.walletTransaction.count({ where: { clientId: "tap-replay" } })).toBe(1);
+    expect(await prisma.walletTransaction.count({ where: { clientId } })).toBe(1);
     expect((second as any).transaction.note).toBe("call back next week");
   });
 
