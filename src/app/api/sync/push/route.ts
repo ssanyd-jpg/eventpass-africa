@@ -19,6 +19,9 @@ import {
   handleTopupWallet,
   handleCheckTopupStatus,
   handleChargeWallet,
+  handleWithdrawWallet,
+  handleApproveWithdrawal,
+  handleRejectWithdrawal,
   handleSponsorTap,
   handleAddSponsorCampaign,
   handleDeactivateSponsorCampaign,
@@ -124,6 +127,15 @@ export async function POST(request: Request) {
         break;
       case "CHARGE_WALLET":
         result = await handleChargeWallet(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "WITHDRAW_WALLET":
+        result = await handleWithdrawWallet(session.user.id, body.payload);
+        break;
+      case "APPROVE_WITHDRAWAL":
+        result = await handleApproveWithdrawal(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "REJECT_WITHDRAWAL":
+        result = await handleRejectWithdrawal(session.user.id, session.user.organizationId, body.payload);
         break;
       case "SPONSOR_TAP":
         result = await handleSponsorTap(session.user.id, session.user.organizationId, body.payload);

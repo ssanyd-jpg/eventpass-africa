@@ -10,6 +10,7 @@ const GATE_CREW_ALLOWED = [
   "CREATE_WALLET",
   "TOPUP_WALLET",
   "CHECK_TOPUP_STATUS",
+  "WITHDRAW_WALLET",
 ] as const;
 
 describe("isOpAllowedForRole", () => {
@@ -19,7 +20,7 @@ describe("isOpAllowedForRole", () => {
   });
 
   it("allows GATE_CREW the personal/self-scoped ops", () => {
-    for (const op of ["SELL_TICKETS", "APPLY_VENDOR", "CREATE_WALLET", "TOPUP_WALLET", "CHECK_TOPUP_STATUS"] as const) {
+    for (const op of ["SELL_TICKETS", "APPLY_VENDOR", "CREATE_WALLET", "TOPUP_WALLET", "CHECK_TOPUP_STATUS", "WITHDRAW_WALLET"] as const) {
       expect(isOpAllowedForRole("GATE_CREW", op)).toBe(true);
     }
   });
@@ -36,6 +37,8 @@ describe("isOpAllowedForRole", () => {
       "REJECT_VENDOR",
       "CHARGE_WALLET",
       "SPONSOR_TAP",
+      "APPROVE_WITHDRAWAL",
+      "REJECT_WITHDRAWAL",
     ] as const) {
       expect(isOpAllowedForRole("GATE_CREW", op)).toBe(false);
     }

@@ -801,7 +801,13 @@ model WalletTransaction {
   currency          String   @default("TZS")
   providerReference String?  // aggregator's merchant order id, for reconciliation
   providerMessage   String?
-  phoneNumber       String?  // TOPUP only
+  phoneNumber       String?  // TOPUP and WITHDRAWAL
+  // WITHDRAWAL only — no real disbursement API exists, so the organizer
+  // pays the buyer out manually (mobile money/cash) after approving the
+  // request; they need to know which network to use. TOPUP's payload has
+  // long accepted a mobileNetwork too but never persisted it — out of
+  // scope here to retrofit that.
+  mobileNetwork     String?
   // Freeform note a staff member can type at SPONSOR_TAP scan time (e.g.
   // "interested in the Series A demo") — always null for TOPUP/SALE. No
   // attendee-facing consent step: a tap already silently links to the

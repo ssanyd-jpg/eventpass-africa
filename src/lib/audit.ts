@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { formatCents } from "@/lib/format";
 
 export type AuditAction =
   | "EVENT_CREATED"
@@ -18,7 +19,9 @@ export type AuditAction =
   | "DEVICE_REVOKED"
   | "DEVICE_REACTIVATED"
   | "BROADCAST_SENT"
-  | "CREDENTIAL_REPLACED";
+  | "CREDENTIAL_REPLACED"
+  | "WITHDRAWAL_APPROVED"
+  | "WITHDRAWAL_REJECTED";
 
 interface LogAuditInput {
   organizationId: string;
@@ -65,6 +68,13 @@ export function buildSyncAuditEntry(
       return { action: "SPONSOR_CAMPAIGN_ADDED", summary: `Added campaign "${result.campaign.name}"` };
     case "ADD_MOBILE_MONEY_ACCOUNT":
       return { action: "PAYOUT_ACCOUNT_ADDED", summary: `Linked a ${result.account.provider} payout account` };
+    case "APPROVE_WITHDRAWAL":
+      return { action: "WITHDRAWAL_APPROVED", summary: `Approved a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
+    case "REJECT_WITHDRAWAL":
+      return { action: "WITHDRAWAL_REJECTED", summary: `Rejected a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
+    // WITHDRAW_WALLET itself gets no case — buyer self-action, matches the
+    // "attendee/vendor-applicant self-actions excluded" convention this
+    // model's own doc comment already states.
     default:
       return null;
   }

@@ -368,6 +368,40 @@ async function applyChargeWalletResult(payload: any, result: any) {
   }
 }
 
+// WITHDRAW_WALLET creates a genuine new local-id transaction row, same
+// remap shape as applyTopupWalletResult. "declined" here means the balance
+// was insufficient (soft-decline, mirrors applyChargeWalletResult) — never
+// a PENDING-awaiting-server-confirmation case like top-up, since the
+// server resolves this synchronously (CAS-decrement, not an async provider
+// callback).
+async function applyWithdrawWalletResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({
+    ...result.transaction,
+    syncStatus: result.declined ? "conflict" : "synced",
+    syncError: result.declined ? "Insufficient balance — declined." : null,
+  });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
+// APPROVE_WITHDRAWAL acts on an already-synced transaction id — no
+// local-temp-id to remap, same shape as applyCheckTopupStatusResult.
+async function applyApproveWithdrawalResult(_payload: any, result: any) {
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+}
+
+// REJECT_WITHDRAWAL also patches the wallet balance the reject refunded —
+// mirrors applyChargeWalletResult's wallet-patch-if-present.
+async function applyRejectWithdrawalResult(_payload: any, result: any) {
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
 async function applySponsorTapResult(payload: any, result: any) {
   const localId = payload.clientId as string;
   await db.walletTransactions.delete(localId);
@@ -474,6 +508,15 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CHARGE_WALLET":
           await applyChargeWalletResult(entry.payload, result);
+          break;
+        case "WITHDRAW_WALLET":
+          await applyWithdrawWalletResult(entry.payload, result);
+          break;
+        case "APPROVE_WITHDRAWAL":
+          await applyApproveWithdrawalResult(entry.payload, result);
+          break;
+        case "REJECT_WITHDRAWAL":
+          await applyRejectWithdrawalResult(entry.payload, result);
           break;
         case "SPONSOR_TAP":
           await applySponsorTapResult(entry.payload, result);

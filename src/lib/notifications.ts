@@ -8,7 +8,9 @@ export type NotificationType =
   | "ORGANIZATION_INVITE"
   | "ORGANIZER_BROADCAST"
   | "TICKET_TRANSFER"
-  | "SUPPORT_TICKET_CREATED";
+  | "SUPPORT_TICKET_CREATED"
+  | "WITHDRAWAL_REQUESTED"
+  | "WITHDRAWAL_DECIDED";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 

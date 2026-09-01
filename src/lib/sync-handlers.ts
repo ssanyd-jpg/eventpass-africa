@@ -213,6 +213,28 @@ export const payloadSchemas = {
     walletTransactionId: z.string().min(1),
     walletTransactionClientId: z.string().nullable().optional(),
   }),
+  // Unlike TOPUP_WALLET, phoneNumber/mobileNetwork are required — no real
+  // disbursement API exists, so the organizer pays the buyer out manually
+  // once approved, and can't do that without knowing where to send it.
+  WITHDRAW_WALLET: z.object({
+    clientId: z.string().min(1),
+    walletId: z.string().min(1),
+    walletClientId: z.string().nullable().optional(),
+    amountCents: z.number().int().min(100).max(50000000),
+    phoneNumber: z.string().min(6).max(20),
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]),
+  }),
+  APPROVE_WITHDRAWAL: z.object({
+    clientId: z.string().min(1),
+    walletTransactionId: z.string().min(1),
+    walletTransactionClientId: z.string().nullable().optional(),
+  }),
+  REJECT_WITHDRAWAL: z.object({
+    clientId: z.string().min(1),
+    walletTransactionId: z.string().min(1),
+    walletTransactionClientId: z.string().nullable().optional(),
+    reason: z.string().max(500).optional(),
+  }),
   // Deliberately excludes anything currency/fee-derived — the server
   // re-derives currency from the wallet, same discipline SELL_TICKETS uses
   // for totalCents and APPLY_VENDOR uses for feeStatus.
@@ -1329,6 +1351,11 @@ export function shapeWallet(w: any) {
     eventId: w.eventId,
     eventClientId: w.event?.clientId ?? null,
     ownerUserId: w.ownerUserId,
+    // Organizer-visible only in practice (a buyer's own wallet trivially
+    // includes their own name/email) — surfaced so the withdrawal review
+    // queue can show organizers who to pay.
+    ownerName: w.owner?.name ?? null,
+    ownerEmail: w.owner?.email ?? null,
     balanceCents: w.balanceCents,
     currency: w.currency,
     createdAt: w.createdAt.toISOString(),
@@ -1348,6 +1375,7 @@ export function shapeWalletTransaction(t: any) {
     providerReference: t.providerReference,
     providerMessage: t.providerMessage,
     phoneNumber: t.phoneNumber,
+    mobileNetwork: t.mobileNetwork ?? null,
     note: t.note ?? null,
     vendorId: t.vendorId,
     vendorName: t.vendor?.name ?? null,
@@ -1360,7 +1388,10 @@ export function shapeWalletTransaction(t: any) {
   };
 }
 
-const walletInclude = { event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } } } as const;
+const walletInclude = {
+  event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } },
+  owner: { select: { name: true, email: true } },
+} as const;
 const walletTxInclude = {
   vendor: { select: { name: true } },
   sponsor: { select: { name: true } },
@@ -1655,6 +1686,213 @@ export async function handleChargeWallet(userId: string, organizationId: string,
   }
 
   return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };
+}
+
+// Buyer-initiated cash-out of a leftover wallet balance. No real
+// disbursement API exists anywhere in this codebase (not even organizer
+// settlements call one — see runSettlement's SIM- reference), so this is
+// deliberately a request → organizer-review → paid workflow, not an
+// automated payout: the balance is reserved (CAS-decremented) immediately
+// so it can't be double-spent or double-withdrawn, and the resulting
+// PENDING transaction sits until an organizer approves (asserting they've
+// paid the buyer out manually) or rejects (refunding the balance) it — see
+// handleApproveWithdrawal/handleRejectWithdrawal below. Deliberately no
+// EVENT_NOT_LIVE gate, unlike handleTopupWallet — cashing out is exactly
+// what a buyer needs to do once an event has ended, or even if cancelled.
+export async function handleWithdrawWallet(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingTx = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
+  if (existingTx) {
+    return { ok: true, transaction: shapeWalletTransaction(existingTx), wallet: null };
+  }
+
+  const wallet = await resolveWallet(String(payload.walletId), payload.walletClientId);
+  if (!wallet) {
+    return { ok: false, retry: true, reason: "WALLET_NOT_SYNCED_YET" };
+  }
+  if (wallet.ownerUserId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const amountCents = Number(payload.amountCents);
+  const phoneNumber = String(payload.phoneNumber);
+  const mobileNetwork = String(payload.mobileNetwork);
+
+  // Same CAS discipline as handleChargeWallet — the WHERE clause on the
+  // updateMany is the balance floor guard, so at most one concurrent
+  // withdraw/charge against the same wallet can succeed.
+  const result = await prisma.$transaction(async (tx) => {
+    const res = await tx.wallet.updateMany({
+      where: { id: wallet.id, balanceCents: { gte: amountCents } },
+      data: { balanceCents: { decrement: amountCents } },
+    });
+
+    if (res.count === 0) {
+      const declinedTx = await tx.walletTransaction.create({
+        data: {
+          clientId, type: "WITHDRAWAL", status: "FAILED",
+          amountCents, currency: wallet.currency, walletId: wallet.id,
+          phoneNumber, mobileNetwork,
+          providerMessage: "Insufficient balance",
+        },
+        include: walletTxInclude,
+      });
+      return { declined: true as const, transaction: declinedTx, wallet: null };
+    }
+
+    const updatedWallet = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id }, include: walletInclude });
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        clientId, type: "WITHDRAWAL", status: "PENDING",
+        amountCents, currency: wallet.currency, walletId: wallet.id,
+        phoneNumber, mobileNetwork,
+      },
+      include: walletTxInclude,
+    });
+    return { declined: false as const, transaction, wallet: updatedWallet };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (result.declined) {
+    return {
+      ok: true,
+      transaction: shapeWalletTransaction(result.transaction),
+      wallet: shapeWallet(wallet),
+      declined: true,
+      reason: "INSUFFICIENT_BALANCE",
+    };
+  }
+
+  // Notify the org's OWNER a request is waiting — after commit, mirroring
+  // createSupportTicket's pattern in support-handlers.ts.
+  const owner = await prisma.organizationMembership.findFirst({
+    where: { organizationId: wallet.event.organizationId, role: "OWNER" },
+    include: { user: { select: { email: true, name: true } } },
+  });
+  if (owner) {
+    await sendNotification({
+      type: "WITHDRAWAL_REQUESTED",
+      channel: "EMAIL",
+      recipient: owner.user.email,
+      subject: `New wallet withdrawal request — ${formatCents(amountCents, wallet.currency)}`,
+      body: `Hi ${owner.user.name}, a buyer requested to withdraw ${formatCents(amountCents, wallet.currency)} from their wallet (${wallet.code}). Review and pay them out from your dashboard.`,
+    });
+  }
+
+  return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };
+}
+
+async function resolveWithdrawalTransaction(walletTransactionId: string, walletTransactionClientId?: string | null) {
+  return (
+    (await prisma.walletTransaction.findUnique({
+      where: { id: walletTransactionId },
+      include: { ...walletTxInclude, wallet: { include: walletInclude } },
+    })) ??
+    (walletTransactionClientId
+      ? await prisma.walletTransaction.findUnique({
+          where: { clientId: walletTransactionClientId },
+          include: { ...walletTxInclude, wallet: { include: walletInclude } },
+        })
+      : null)
+  );
+}
+
+// Organizer marks a pending withdrawal as paid — this is their assertion
+// that they've sent the buyer the money themselves (mobile money/cash),
+// outside the platform, since no automated disbursement API exists (see
+// handleWithdrawWallet's header comment). No balance change here — it was
+// already reserved when the withdrawal was requested.
+export async function handleApproveWithdrawal(userId: string, organizationId: string, payload: any) {
+  const tx = await resolveWithdrawalTransaction(String(payload.walletTransactionId), payload.walletTransactionClientId);
+  if (!tx) {
+    return { ok: false, retry: true, reason: "TRANSACTION_NOT_SYNCED_YET" };
+  }
+  if (tx.type !== "WITHDRAWAL") {
+    return { ok: false, reason: "NOT_A_WITHDRAWAL" };
+  }
+  if ((tx as any).wallet.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  // CAS on status so a replayed/racing approve can't double-fire the
+  // notification below — same discipline as handleCheckTopupStatus.
+  const res = await prisma.walletTransaction.updateMany({
+    where: { id: tx.id, status: "PENDING" },
+    data: { status: "COMPLETED" },
+  });
+  const fresh = await prisma.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
+
+  if (res.count === 0) {
+    // Already resolved (replay/race) — idempotent no-op.
+    return { ok: true, transaction: shapeWalletTransaction(fresh) };
+  }
+
+  const walletOwner = await prisma.wallet.findUniqueOrThrow({
+    where: { id: fresh.walletId },
+    include: { owner: { select: { email: true, name: true } }, event: { select: { title: true } } },
+  });
+  await sendNotification({
+    type: "WITHDRAWAL_DECIDED",
+    channel: "EMAIL",
+    recipient: walletOwner.owner.email,
+    subject: "Your withdrawal request has been paid",
+    body: `Hi ${walletOwner.owner.name}, your withdrawal of ${formatCents(fresh.amountCents ?? 0, fresh.currency)} for ${walletOwner.event.title} has been approved and paid out via ${fresh.mobileNetwork ?? "mobile money"} to ${fresh.phoneNumber}.`,
+  });
+
+  return { ok: true, transaction: shapeWalletTransaction(fresh) };
+}
+
+// Organizer declines a pending withdrawal — CAS-refunds the reserved
+// balance back atomically with the status transition, so a replayed
+// reject can never double-refund (the updateMany's WHERE status:"PENDING"
+// is the single source of truth for "did this attempt actually win").
+export async function handleRejectWithdrawal(userId: string, organizationId: string, payload: any) {
+  const tx = await resolveWithdrawalTransaction(String(payload.walletTransactionId), payload.walletTransactionClientId);
+  if (!tx) {
+    return { ok: false, retry: true, reason: "TRANSACTION_NOT_SYNCED_YET" };
+  }
+  if (tx.type !== "WITHDRAWAL") {
+    return { ok: false, reason: "NOT_A_WITHDRAWAL" };
+  }
+  if ((tx as any).wallet.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const reason = payload.reason ? String(payload.reason) : null;
+
+  const result = await prisma.$transaction(async (dbTx) => {
+    const res = await dbTx.walletTransaction.updateMany({
+      where: { id: tx.id, status: "PENDING" },
+      data: { status: "FAILED", providerMessage: reason },
+    });
+    if (res.count === 0) return null; // already resolved — backstops double-refund
+    const updatedWallet = await dbTx.wallet.update({
+      where: { id: tx.walletId },
+      data: { balanceCents: { increment: tx.amountCents ?? 0 } },
+      include: walletInclude,
+    });
+    const updatedTx = await dbTx.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
+    return { updatedWallet, updatedTx };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (!result) {
+    const fresh = await prisma.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
+    return { ok: true, transaction: shapeWalletTransaction(fresh), wallet: null };
+  }
+
+  const walletOwner = await prisma.wallet.findUniqueOrThrow({
+    where: { id: tx.walletId },
+    include: { owner: { select: { email: true, name: true } }, event: { select: { title: true } } },
+  });
+  await sendNotification({
+    type: "WITHDRAWAL_DECIDED",
+    channel: "EMAIL",
+    recipient: walletOwner.owner.email,
+    subject: "Your withdrawal request was declined",
+    body: `Hi ${walletOwner.owner.name}, your withdrawal request for ${walletOwner.event.title} was declined${reason ? `: ${reason}.` : "."} The balance has been returned to your wallet.`,
+  });
+
+  return { ok: true, transaction: shapeWalletTransaction(result.updatedTx), wallet: shapeWallet(result.updatedWallet) };
 }
 
 export async function handleSponsorTap(userId: string, organizationId: string, payload: any) {

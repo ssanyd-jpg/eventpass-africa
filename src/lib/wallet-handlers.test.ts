@@ -14,6 +14,9 @@ import {
   handleTopupWallet,
   handleCheckTopupStatus,
   handleChargeWallet,
+  handleWithdrawWallet,
+  handleApproveWithdrawal,
+  handleRejectWithdrawal,
   handleSponsorTap,
 } from "@/lib/sync-handlers";
 
@@ -362,6 +365,245 @@ describe("handleChargeWallet", () => {
     const result = await handleChargeWallet(someoneElse.id, someoneElseOrg.id, payload);
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
+  });
+});
+
+describe("handleWithdrawWallet", () => {
+  it("decrements the balance and creates a PENDING withdrawal", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
+
+    const result = await handleWithdrawWallet(attendee.id, {
+      clientId: "withdraw-1",
+      walletId: wallet.id,
+      amountCents: 4000,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).transaction.type).toBe("WITHDRAWAL");
+    expect((result as any).transaction.status).toBe("PENDING");
+    expect((result as any).transaction.mobileNetwork).toBe("MPESA");
+    expect((result as any).wallet.balanceCents).toBe(6000);
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(6000);
+  });
+
+  it("declines (not errors) when the balance is insufficient, and leaves the balance unchanged", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 1000, currency: event.currency });
+
+    const result = await handleWithdrawWallet(attendee.id, {
+      clientId: "withdraw-insufficient",
+      walletId: wallet.id,
+      amountCents: 5000,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).declined).toBe(true);
+    expect((result as any).reason).toBe("INSUFFICIENT_BALANCE");
+    expect((result as any).transaction.status).toBe("FAILED");
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(1000);
+  });
+
+  it("is idempotent — replaying the same clientId doesn't double-decrement", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000, currency: event.currency });
+    const payload = { clientId: "withdraw-replay", walletId: wallet.id, amountCents: 2000, phoneNumber: "0712345678", mobileNetwork: "MPESA" };
+
+    await handleWithdrawWallet(attendee.id, payload);
+    await handleWithdrawWallet(attendee.id, payload);
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(8000);
+  });
+
+  it("rejects a withdrawal request for a wallet owned by someone else", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const someoneElse = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000 });
+
+    const result = await handleWithdrawWallet(someoneElse.id, {
+      clientId: "withdraw-not-owner",
+      walletId: wallet.id,
+      amountCents: 1000,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("notifies the org OWNER when a withdrawal is requested", async () => {
+    const organizer = await createTestUser({ email: `owner-${Date.now()}@test.local` });
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id, "OWNER");
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 10000 });
+
+    await handleWithdrawWallet(attendee.id, {
+      clientId: "withdraw-notify",
+      walletId: wallet.id,
+      amountCents: 1000,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+
+    const log = await prisma.notificationLog.findFirstOrThrow({
+      where: { type: "WITHDRAWAL_REQUESTED", recipient: organizer.email },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(log.subject).toContain("withdrawal request");
+  });
+});
+
+describe("handleApproveWithdrawal", () => {
+  async function requestedWithdrawal(balanceCents = 10000, amountCents = 4000) {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id, "OWNER");
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents, currency: event.currency });
+    const withdrawal = await handleWithdrawWallet(attendee.id, {
+      clientId: `withdraw-${Date.now()}-${Math.random()}`,
+      walletId: wallet.id,
+      amountCents,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+    return { organizer, organizationId: organization.id, attendee, event, wallet, withdrawal };
+  }
+
+  it("marks a PENDING withdrawal COMPLETED and notifies the buyer", async () => {
+    const { organizer, organizationId, attendee, withdrawal } = await requestedWithdrawal();
+
+    const result = await handleApproveWithdrawal(organizer.id, organizationId, {
+      clientId: "approve-1",
+      walletTransactionId: (withdrawal as any).transaction.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).transaction.status).toBe("COMPLETED");
+    const log = await prisma.notificationLog.findFirstOrThrow({
+      where: { type: "WITHDRAWAL_DECIDED", recipient: attendee.email },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(log.subject).toContain("paid");
+  });
+
+  it("rejects approval of a withdrawal belonging to a different organization", async () => {
+    const { withdrawal } = await requestedWithdrawal();
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleApproveWithdrawal(someoneElse.id, someoneElseOrg.id, {
+      clientId: "approve-cross-org",
+      walletTransactionId: (withdrawal as any).transaction.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — approving an already-COMPLETED withdrawal is a no-op", async () => {
+    const { organizer, organizationId, attendee, withdrawal } = await requestedWithdrawal();
+    const walletTransactionId = (withdrawal as any).transaction.id;
+
+    await handleApproveWithdrawal(organizer.id, organizationId, { clientId: "approve-a", walletTransactionId });
+    const second = await handleApproveWithdrawal(organizer.id, organizationId, { clientId: "approve-b", walletTransactionId });
+
+    expect(second.ok).toBe(true);
+    expect((second as any).transaction.status).toBe("COMPLETED");
+    // Scoped to this specific buyer, not a global count — the shared test
+    // DB accumulates WITHDRAWAL_DECIDED notifications from every other
+    // test in this file (including handleRejectWithdrawal's own tests),
+    // so an unscoped count would be flaky/order-dependent.
+    expect(await prisma.notificationLog.count({ where: { type: "WITHDRAWAL_DECIDED", recipient: attendee.email } })).toBe(1);
+  });
+});
+
+describe("handleRejectWithdrawal", () => {
+  async function requestedWithdrawal(balanceCents = 10000, amountCents = 4000) {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id, "OWNER");
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents, currency: event.currency });
+    const withdrawal = await handleWithdrawWallet(attendee.id, {
+      clientId: `withdraw-${Date.now()}-${Math.random()}`,
+      walletId: wallet.id,
+      amountCents,
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+    return { organizer, organizationId: organization.id, attendee, event, wallet, withdrawal };
+  }
+
+  it("marks a PENDING withdrawal FAILED, stores the reason, and refunds the balance", async () => {
+    const { organizer, organizationId, wallet, withdrawal } = await requestedWithdrawal(10000, 4000);
+
+    const result = await handleRejectWithdrawal(organizer.id, organizationId, {
+      clientId: "reject-1",
+      walletTransactionId: (withdrawal as any).transaction.id,
+      reason: "Phone number looked wrong",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result as any).transaction.status).toBe("FAILED");
+    expect((result as any).transaction.providerMessage).toBe("Phone number looked wrong");
+    expect((result as any).wallet.balanceCents).toBe(10000);
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(10000);
+  });
+
+  it("rejects rejection of a withdrawal belonging to a different organization", async () => {
+    const { withdrawal } = await requestedWithdrawal();
+    const someoneElse = await createTestUser();
+    const someoneElseOrg = await createTestOrganization();
+    await addMembership(someoneElseOrg.id, someoneElse.id);
+
+    const result = await handleRejectWithdrawal(someoneElse.id, someoneElseOrg.id, {
+      clientId: "reject-cross-org",
+      walletTransactionId: (withdrawal as any).transaction.id,
+    });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — rejecting an already-FAILED withdrawal does not double-refund", async () => {
+    const { organizer, organizationId, wallet, withdrawal } = await requestedWithdrawal(10000, 4000);
+    const walletTransactionId = (withdrawal as any).transaction.id;
+
+    await handleRejectWithdrawal(organizer.id, organizationId, { clientId: "reject-a", walletTransactionId });
+    await handleRejectWithdrawal(organizer.id, organizationId, { clientId: "reject-b", walletTransactionId });
+
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    // Balance started at 10000, withdrawal reserved 4000 (-> 6000), a single
+    // refund must bring it back to exactly 10000 — NOT 14000 from a double
+    // refund. This is the sharpest test in the whole feature.
+    expect(fresh.balanceCents).toBe(10000);
   });
 });
 

@@ -27,6 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
   TOPUP: "Top-up",
   SALE: "Purchase",
   SPONSOR_TAP: "Sponsor tap",
+  WITHDRAWAL: "Withdrawal",
 };
 
 interface NDEFWriterLike {
@@ -57,6 +58,12 @@ export default function WalletDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [nfcSupported, setNfcSupported] = useState(false);
   const [nfcStatus, setNfcStatus] = useState<string | null>(null);
+
+  const [wAmountMajor, setWAmountMajor] = useState("");
+  const [wPhone, setWPhone] = useState("");
+  const [wNetwork, setWNetwork] = useState(NETWORKS[0].value);
+  const [wSubmitting, setWSubmitting] = useState(false);
+  const [wError, setWError] = useState<string | null>(null);
 
   useEffect(() => {
     setNfcSupported(typeof window !== "undefined" && "NDEFWriter" in window);
@@ -132,6 +139,7 @@ export default function WalletDetailPage() {
       providerReference: null,
       providerMessage: "Test checkout — no real payment is processed.",
       phoneNumber: phone.trim() || null,
+      mobileNetwork: null,
       note: null,
       vendorId: null,
       vendorName: null,
@@ -155,6 +163,72 @@ export default function WalletDetailPage() {
 
     setAmountMajor("");
     setSubmitting(false);
+  }
+
+  // Unlike top-up's optimistic UI (which only writes the pending tx row and
+  // never touches the balance, since a real provider charge can genuinely
+  // still be pending), a withdrawal's balance change is certain the
+  // instant it's requested — the server does the same CAS-decrement
+  // synchronously (handleWithdrawWallet), not pending on an async provider
+  // callback — so the local balance is decremented optimistically here too,
+  // corrected by the server-authoritative row once synced.
+  async function withdraw(e: React.FormEvent) {
+    e.preventDefault();
+    setWError(null);
+    if (!wallet) return;
+    const amountCents = Math.round(parseFloat(wAmountMajor || "0") * 100);
+    if (!amountCents || amountCents < 100) {
+      setWError("Enter an amount of at least 1.00.");
+      return;
+    }
+    if (amountCents > wallet.balanceCents) {
+      setWError("You can't withdraw more than your balance.");
+      return;
+    }
+    if (!wPhone.trim()) {
+      setWError("Enter the phone number to receive the payout.");
+      return;
+    }
+    setWSubmitting(true);
+
+    const clientId = newLocalId();
+    await db.wallets.put({ ...wallet, balanceCents: wallet.balanceCents - amountCents, syncStatus: "pending" });
+    await db.walletTransactions.put({
+      id: clientId,
+      clientId,
+      walletId: wallet.id,
+      type: "WITHDRAWAL",
+      status: "PENDING",
+      amountCents,
+      currency: wallet.currency,
+      providerReference: null,
+      providerMessage: null,
+      phoneNumber: wPhone.trim(),
+      mobileNetwork: wNetwork,
+      note: null,
+      vendorId: null,
+      vendorName: null,
+      sponsorId: null,
+      sponsorName: null,
+      campaignId: null,
+      campaignName: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      syncStatus: "pending",
+    });
+
+    await queueOp("WITHDRAW_WALLET", {
+      clientId,
+      walletId: wallet.id,
+      walletClientId: wallet.clientId,
+      amountCents,
+      phoneNumber: wPhone.trim(),
+      mobileNetwork: wNetwork,
+    });
+
+    setWAmountMajor("");
+    setWPhone("");
+    setWSubmitting(false);
   }
 
   return (
@@ -183,7 +257,7 @@ export default function WalletDetailPage() {
           <p className="font-semibold text-danger">This event was cancelled.</p>
           <p className="mt-2 text-sm text-muted">
             Your remaining balance of {formatCents(wallet.balanceCents, wallet.currency)} can&apos;t
-            currently be spent or refunded.
+            be spent anymore, but you can still withdraw it below.
           </p>
         </div>
       ) : (
@@ -227,6 +301,61 @@ export default function WalletDetailPage() {
         </form>
       )}
 
+      {wallet.balanceCents > 0 && (
+        <form onSubmit={withdraw} className="card mt-6 space-y-4 p-6">
+          <h2 className="font-semibold">Withdraw</h2>
+          <p className="text-xs text-muted">
+            Cash out any of your remaining balance. An organizer reviews
+            requests and pays you out via mobile money — this usually isn&apos;t
+            instant.
+          </p>
+          <div>
+            <label className="label" htmlFor="wAmount">Amount ({wallet.currency})</label>
+            <input
+              id="wAmount"
+              type="number"
+              min="1"
+              // No step here — unlike top-up (which has no natural upper
+              // bound, so a step:500 spinner is a convenience), a
+              // withdrawal is capped at the current balance, which is
+              // often small. A fixed step could make it impossible to
+              // enter a valid amount at all (e.g. a step-500 field with a
+              // sub-500 balance has no valid non-zero value).
+              max={wallet.balanceCents / 100}
+              className="input"
+              value={wAmountMajor}
+              onChange={(e) => setWAmountMajor(e.target.value)}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label" htmlFor="wNetwork">Network</label>
+              <select id="wNetwork" className="input" value={wNetwork} onChange={(e) => setWNetwork(e.target.value)}>
+                {NETWORKS.map((n) => (
+                  <option key={n.value} value={n.value}>{n.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="wPhone">Phone number</label>
+              <input
+                id="wPhone"
+                className="input"
+                placeholder="+255 7XX XXX XXX"
+                value={wPhone}
+                onChange={(e) => setWPhone(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          {wError && <p className="text-sm text-danger">{wError}</p>}
+          <button type="submit" disabled={wSubmitting} className="btn-secondary w-full">
+            {wSubmitting ? "Submitting…" : "Request withdrawal"}
+          </button>
+        </form>
+      )}
+
       <h2 className="mb-3 mt-8 font-semibold">Transaction history</h2>
       {(transactions ?? []).length === 0 ? (
         <div className="card p-8 text-center text-muted">No activity yet.</div>
@@ -241,13 +370,16 @@ export default function WalletDetailPage() {
                   {t.sponsorName ? ` — ${t.sponsorName}` : ""}
                 </p>
                 <p className="text-xs text-muted">{formatDateTime(t.createdAt)}</p>
-                {t.status === "PENDING" && (
+                {t.status === "PENDING" && t.type === "TOPUP" && (
                   <button
                     className="mt-1 text-xs font-medium text-accent-hover"
                     onClick={() => checkStatus(t.id, t.clientId)}
                   >
                     Check status
                   </button>
+                )}
+                {t.status === "PENDING" && t.type === "WITHDRAWAL" && (
+                  <p className="mt-1 text-xs text-muted">Waiting for organizer review</p>
                 )}
               </div>
               <div className="text-right">

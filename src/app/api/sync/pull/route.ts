@@ -274,7 +274,7 @@ export async function GET(request: Request) {
 
     const myWallets = await prisma.wallet.findMany({
       where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
-      include: { event: { select: { id: true, clientId: true } } },
+      include: { event: { select: { id: true, clientId: true } }, owner: { select: { name: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
     payload.myWallets = myWallets.map((w) => ({
@@ -284,6 +284,8 @@ export async function GET(request: Request) {
       eventId: w.eventId,
       eventClientId: w.event.clientId,
       ownerUserId: w.ownerUserId,
+      ownerName: w.owner.name,
+      ownerEmail: w.owner.email,
       balanceCents: w.balanceCents,
       currency: w.currency,
       createdAt: w.createdAt.toISOString(),
@@ -310,6 +312,7 @@ export async function GET(request: Request) {
       providerReference: t.providerReference,
       providerMessage: t.providerMessage,
       phoneNumber: t.phoneNumber,
+      mobileNetwork: t.mobileNetwork,
       note: t.note ?? null,
       vendorId: t.vendorId,
       vendorName: t.vendor?.name ?? null,

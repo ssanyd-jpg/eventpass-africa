@@ -261,6 +261,12 @@ export interface LocalWallet {
   eventId: string;
   eventClientId?: string | null;
   ownerUserId: string;
+  // Organizer-visible only in practice — surfaced so the withdrawal review
+  // queue (see LocalWalletTransaction's WITHDRAWAL type below) can show who
+  // to pay. Absent/null for a buyer's own view of their own wallet is fine,
+  // they already know who they are.
+  ownerName: string | null;
+  ownerEmail: string | null;
   balanceCents: number;
   currency: string;
   createdAt: string;
@@ -272,13 +278,16 @@ export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
   walletId: string;
-  type: "TOPUP" | "SALE" | "SPONSOR_TAP";
+  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL";
   status: "PENDING" | "COMPLETED" | "FAILED";
   amountCents: number | null;
   currency: string;
   providerReference: string | null;
   providerMessage: string | null;
   phoneNumber: string | null;
+  // WITHDRAWAL only — which network the organizer should pay out on. TOPUP's
+  // payload has long accepted one too but never persisted it server-side.
+  mobileNetwork: string | null;
   // SPONSOR_TAP only — a staff-entered lead note, see WalletTransaction.note
   // in prisma/schema.prisma.
   note: string | null;
@@ -338,6 +347,9 @@ export type OutboxOpType =
   | "TOPUP_WALLET"
   | "CHECK_TOPUP_STATUS"
   | "CHARGE_WALLET"
+  | "WITHDRAW_WALLET"
+  | "APPROVE_WITHDRAWAL"
+  | "REJECT_WITHDRAWAL"
   | "SPONSOR_TAP"
   | "ADD_SPONSOR_CAMPAIGN"
   | "DEACTIVATE_SPONSOR_CAMPAIGN";
@@ -495,6 +507,28 @@ class EventPassAfricaDB extends Dexie {
     // pointer list of event ids, full-replaced on every pull. No .upgrade()
     // transform, same reasoning as every prior version bump in this file.
     this.version(9).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+    });
+    // New `mobileNetwork` field on walletTransactions and `ownerName`/
+    // `ownerEmail` on wallets (see LocalWallet/LocalWalletTransaction
+    // above) — no indexed-key change, so this bump is purely a changelog
+    // marker; no .upgrade() transform needed, same reasoning as every
+    // prior bump.
+    this.version(10).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

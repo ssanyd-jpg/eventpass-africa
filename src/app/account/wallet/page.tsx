@@ -46,6 +46,8 @@ export default function WalletListPage() {
       eventId,
       eventClientId: eventClientId ?? null,
       ownerUserId: user.id,
+      ownerName: user.name ?? null,
+      ownerEmail: user.email ?? null,
       balanceCents: 0,
       currency: event?.currency ?? "TZS",
       createdAt: new Date().toISOString(),

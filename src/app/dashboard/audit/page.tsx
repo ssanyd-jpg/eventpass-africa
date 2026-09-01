@@ -22,6 +22,8 @@ const ACTION_LABEL: Record<string, string> = {
   DEVICE_REACTIVATED: "Device reactivated",
   BROADCAST_SENT: "Broadcast sent",
   CREDENTIAL_REPLACED: "Credential replaced",
+  WITHDRAWAL_APPROVED: "Withdrawal approved",
+  WITHDRAWAL_REJECTED: "Withdrawal rejected",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:

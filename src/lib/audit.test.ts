@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSyncAuditEntry } from "@/lib/audit";
+import { formatCents } from "@/lib/format";
 
 describe("buildSyncAuditEntry", () => {
   it("returns null when the operation didn't succeed", () => {
@@ -50,5 +51,19 @@ describe("buildSyncAuditEntry", () => {
   it("builds an entry for ADD_MOBILE_MONEY_ACCOUNT", () => {
     const entry = buildSyncAuditEntry("ADD_MOBILE_MONEY_ACCOUNT", { ok: true, account: { provider: "MPESA_TZ" } });
     expect(entry).toEqual({ action: "PAYOUT_ACCOUNT_ADDED", summary: "Linked a MPESA_TZ payout account" });
+  });
+
+  it("builds an entry for APPROVE_WITHDRAWAL", () => {
+    const entry = buildSyncAuditEntry("APPROVE_WITHDRAWAL", { ok: true, transaction: { amountCents: 5000, currency: "TZS" } });
+    expect(entry).toEqual({ action: "WITHDRAWAL_APPROVED", summary: `Approved a withdrawal of ${formatCents(5000, "TZS")}` });
+  });
+
+  it("builds an entry for REJECT_WITHDRAWAL", () => {
+    const entry = buildSyncAuditEntry("REJECT_WITHDRAWAL", { ok: true, transaction: { amountCents: 5000, currency: "TZS" } });
+    expect(entry).toEqual({ action: "WITHDRAWAL_REJECTED", summary: `Rejected a withdrawal of ${formatCents(5000, "TZS")}` });
+  });
+
+  it("returns null for WITHDRAW_WALLET (buyer self-action, not audited)", () => {
+    expect(buildSyncAuditEntry("WITHDRAW_WALLET", { ok: true, transaction: {} })).toBeNull();
   });
 });
