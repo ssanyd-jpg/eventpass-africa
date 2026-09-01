@@ -126,6 +126,10 @@ export const payloadSchemas = {
     waiverText: z.string().max(8000).nullable().optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
     discountCodes: z.array(discountCodeInputSchema).optional(),
+    // Same exact shape as registrationQuestions — post-event survey
+    // questions, reusing registrationQuestionInputSchema verbatim rather
+    // than duplicating it (see the SurveyQuestion schema comment).
+    surveyQuestions: z.array(registrationQuestionInputSchema).optional(),
   }),
   CANCEL_EVENT: z.object({
     eventId: z.string().min(1),
@@ -751,6 +755,44 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
         const existingByClientId = await prisma.registrationQuestion.findUnique({ where: { clientId: String(q.clientId) } });
         if (!existingByClientId) {
           await prisma.registrationQuestion.create({
+            data: {
+              clientId: String(q.clientId),
+              eventId: event.id,
+              label: String(q.label),
+              type: String(q.type),
+              options: q.options !== undefined ? String(q.options) : null,
+              required: Boolean(q.required ?? false),
+              sortOrder: Number(q.sortOrder ?? 0),
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // Identical upsert-by-id-or-clientId shape as registrationQuestions above
+  // — post-event survey questions, same never-delete convention. Rides
+  // inside this same EDIT_EVENT save (one form, one save button) rather
+  // than a separate op.
+  if (Array.isArray(payload.surveyQuestions)) {
+    for (const q of payload.surveyQuestions as any[]) {
+      if (q.id) {
+        const current = await prisma.surveyQuestion.findUnique({ where: { id: q.id } });
+        if (!current || current.eventId !== event.id) continue;
+        await prisma.surveyQuestion.update({
+          where: { id: q.id },
+          data: {
+            label: String(q.label),
+            type: String(q.type),
+            options: q.options !== undefined ? String(q.options) : null,
+            required: Boolean(q.required ?? false),
+            sortOrder: Number(q.sortOrder ?? 0),
+          },
+        });
+      } else {
+        const existingByClientId = await prisma.surveyQuestion.findUnique({ where: { clientId: String(q.clientId) } });
+        if (!existingByClientId) {
+          await prisma.surveyQuestion.create({
             data: {
               clientId: String(q.clientId),
               eventId: event.id,

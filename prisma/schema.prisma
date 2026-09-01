@@ -52,6 +52,7 @@ model Organization {
   customerNotes       CustomerNote[]
   broadcasts          Broadcast[]
   credentials         Credential[]
+  supportTickets      SupportTicket[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -147,6 +148,53 @@ model Broadcast {
   @@index([organizationId, createdAt])
 }
 
+// status is OPEN | RESOLVED (plain-string convention). buyerUserId is a
+// plain string, not a relation — same discipline as CustomerNote.customerUserId
+// (User has no org ownership of its own). Any signed-in user may open a
+// ticket about an event, not just an existing customer — the opposite
+// trust direction from CustomerNote's organizer-authored-about-an-actual-
+// customer guard (addCustomerNoteById requires a prior order; this doesn't,
+// deliberately — several places in the app already promise "contact the
+// organizer" to any visitor, not just past buyers).
+model SupportTicket {
+  id        String   @id @default(cuid())
+  subject   String
+  body      String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id])
+
+  buyerUserId String
+
+  replies SupportTicketReply[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, buyerUserId])
+}
+
+// Append-only reply thread — same "the timeline itself is the record"
+// discipline as CustomerNote, extended to two directions (isFromOrganizer
+// distinguishes the buyer's own messages from the organizer's replies).
+model SupportTicketReply {
+  id              String   @id @default(cuid())
+  body            String
+  authorUserId    String
+  authorName      String
+  isFromOrganizer Boolean
+  createdAt       DateTime @default(now())
+
+  ticketId String
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
 // Pure audit/history trail for Ticket.code / Wallet.code / Vendor.badgeCode
 // replacement — NEVER read in the hot scan/charge lookup path (handleCheckIn/
 // handleCheckInVendor/handleChargeWallet/handleSponsorTap keep doing
@@ -228,6 +276,47 @@ model RegistrationAnswer {
   question   RegistrationQuestion @relation(fields: [questionId], references: [id])
 
   @@index([orderId])
+}
+
+// Organizer-defined, per event, post-event only — same TEXT | SELECT |
+// CHECKBOX plain-string shape and never-delete convention as
+// RegistrationQuestion (this is deliberately the same field set, not a
+// coincidence: it rides inside the same EDIT_EVENT op and reuses the exact
+// zod schema — see registrationQuestionInputSchema in sync-handlers.ts).
+// Kept out of the public `events` pull payload (unlike RegistrationQuestion,
+// which anonymous checkout needs pre-purchase) — survey questions are never
+// needed before a ticket is bought, same reasoning as DiscountCode.
+model SurveyQuestion {
+  id        String   @id @default(cuid())
+  clientId  String?  @unique
+  label     String
+  type      String   // TEXT | SELECT | CHECKBOX
+  options   String?  // comma-joined, SELECT only
+  required  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  responses SurveyResponse[]
+}
+
+// One row per question per buyer — not per order (a buyer with multiple
+// orders for the same event answers the survey once, not once per order,
+// unlike RegistrationAnswer which is inherently per-order/pre-purchase).
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  value     String
+  createdAt DateTime @default(now())
+
+  questionId String
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  buyerUserId String
+
+  @@unique([questionId, buyerUserId])
 }
 
 // role is OWNER | STAFF | GATE_CREW (plain-string convention — see
@@ -451,6 +540,8 @@ model Event {
   broadcasts            Broadcast[]
   registrationQuestions RegistrationQuestion[]
   discountCodes         DiscountCode[]
+  supportTickets        SupportTicket[]
+  surveyQuestions       SurveyQuestion[]
 }
 
 model TicketType {

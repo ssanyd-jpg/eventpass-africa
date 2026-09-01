@@ -4,6 +4,10 @@ import { auth } from "@/auth";
 import { formatCents, formatDateTime } from "@/lib/format";
 import { customerStatsByBuyer } from "@/lib/analytics";
 import { getCustomerListData } from "@/lib/analytics-data";
+import { loyaltyTierFromOrdersCount } from "@/lib/loyalty";
+
+const TIER_LABEL = { NEW: "New", REPEAT: "Repeat", VIP: "VIP" } as const;
+const TIER_STYLE = { NEW: "", REPEAT: "border-accent/40 bg-accent/10 text-accent-hover", VIP: "border-ok/40 bg-ok/10 text-ok" } as const;
 
 // Server-rendered, non-offline — mirrors dashboard/analytics/page.tsx and
 // dashboard/events/[id]/page.tsx: routine day-to-day work (viewing
@@ -45,7 +49,13 @@ export default async function CustomersPage() {
               className="flex items-center justify-between gap-3 p-4 text-sm transition hover:bg-surface2"
             >
               <div>
-                <p className="font-medium">{c.name}</p>
+                <p className="font-medium">
+                  {c.name}
+                  {(() => {
+                    const tier = loyaltyTierFromOrdersCount(c.ordersCount);
+                    return <span className={`pill ml-2 ${TIER_STYLE[tier]}`}>{TIER_LABEL[tier]}</span>;
+                  })()}
+                </p>
                 <p className="text-xs text-muted">{c.email}</p>
                 <p className="mt-1 text-xs text-muted">Last order {formatDateTime(c.lastOrderAt)}</p>
               </div>

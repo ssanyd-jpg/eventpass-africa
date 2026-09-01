@@ -67,11 +67,14 @@ export default function Navbar() {
           {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
           {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
           {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
+          {user && <NavLink href="/account/loyalty">{t("nav.myStatus")}</NavLink>}
+          {user && <NavLink href="/account/support">{t("nav.support")}</NavLink>}
           {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
           {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
+          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/support">{t("nav.supportInbox")}</NavLink>}
           {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
         </nav>
 

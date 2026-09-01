@@ -9,6 +9,7 @@ import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import OrderConfirmation from "@/components/OrderConfirmation";
+import QuestionFields from "@/components/QuestionFields";
 
 export default function EventDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -288,44 +289,11 @@ export default function EventDetailPage() {
             <>
               <h2 className="mb-4 font-semibold">A few questions</h2>
               <div className="space-y-4">
-                {registrationQuestions.map((q) => (
-                  <div key={q.id}>
-                    <label className="label" htmlFor={`q-${q.id}`}>
-                      {q.label}{q.required && <span className="text-danger"> *</span>}
-                    </label>
-                    {q.type === "TEXT" && (
-                      <input
-                        id={`q-${q.id}`}
-                        className="input"
-                        value={answers[q.id] ?? ""}
-                        onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
-                      />
-                    )}
-                    {q.type === "SELECT" && (
-                      <select
-                        id={`q-${q.id}`}
-                        className="input"
-                        value={answers[q.id] ?? ""}
-                        onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
-                      >
-                        <option value="">Select…</option>
-                        {(q.options ?? "").split(",").map((opt) => opt.trim()).filter(Boolean).map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    )}
-                    {q.type === "CHECKBOX" && (
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={(answers[q.id] ?? "") === "yes"}
-                          onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.checked ? "yes" : "" }))}
-                        />
-                        Yes
-                      </label>
-                    )}
-                  </div>
-                ))}
+                <QuestionFields
+                  questions={registrationQuestions}
+                  answers={answers}
+                  onChange={(questionId, value) => setAnswers((a) => ({ ...a, [questionId]: value }))}
+                />
 
                 {event.waiverText && (
                   <div className="border-t border-border pt-4">

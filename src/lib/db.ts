@@ -141,6 +141,34 @@ export interface LocalDiscountCode {
   updatedAt: string;
 }
 
+// Organizer-only, same reasoning as LocalDiscountCode — post-event survey
+// questions are never needed pre-purchase, so they don't ride in the
+// public `events` field. Populated from payload.mySurveyQuestions.
+export interface LocalSurveyQuestion {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  label: string;
+  type: "TEXT" | "SELECT" | "CHECKBOX";
+  options: string | null;
+  required: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// One row per event the caller has a completed order for, an event whose
+// startsAt is >24h in the past, has organizer-defined survey questions, and
+// no existing response from this buyer — see the lazy-trigger comment in
+// pull/route.ts. Full-replace on every pull (clear+bulkPut), unlike every
+// other table here, since this list must SHRINK as the buyer responds.
+export interface LocalPendingSurvey {
+  eventId: string;
+  eventClientId?: string | null;
+  eventTitle: string;
+  questions: LocalRegistrationQuestion[];
+}
+
 export interface LocalMobileMoneyAccount {
   id: string;
   clientId: string;
@@ -295,6 +323,8 @@ class EventPassAfricaDB extends Dexie {
   wallets!: Table<LocalWallet, string>;
   walletTransactions!: Table<LocalWalletTransaction, string>;
   discountCodes!: Table<LocalDiscountCode, string>;
+  surveyQuestions!: Table<LocalSurveyQuestion, string>;
+  pendingSurveys!: Table<LocalPendingSurvey, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -372,6 +402,25 @@ class EventPassAfricaDB extends Dexie {
       walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
       sponsors: "id, clientId, eventId, syncStatus",
       discountCodes: "id, clientId, eventId, ticketTypeId, code",
+    });
+    // New organizer-only surveyQuestions table (mirrors discountCodes) and
+    // pendingSurveys table (keyPath eventId, no auto-increment — it's
+    // fully replaced on every pull, not appended to). No .upgrade()
+    // transform, same reasoning as every prior version bump in this file.
+    this.version(7).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
     });
   }
 }

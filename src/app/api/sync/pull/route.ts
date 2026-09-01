@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { checkAndTrackDevice } from "@/lib/device-handlers";
+import { getPendingSurveysForBuyer } from "@/lib/survey-handlers";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -216,6 +217,31 @@ export async function GET(request: Request) {
       createdAt: dc.createdAt.toISOString(),
       updatedAt: dc.updatedAt.toISOString(),
     }));
+
+    // Organizer-only, same reasoning as myDiscountCodes — survey questions
+    // are never needed pre-purchase, so they don't ride in the public
+    // `events` field above.
+    const mySurveyQuestions = await prisma.surveyQuestion.findMany({
+      where: { event: { organizationId } },
+      orderBy: { sortOrder: "asc" },
+    });
+    payload.mySurveyQuestions = mySurveyQuestions.map((q) => ({
+      id: q.id,
+      clientId: q.clientId,
+      eventId: q.eventId,
+      label: q.label,
+      type: q.type,
+      options: q.options,
+      required: q.required,
+      sortOrder: q.sortOrder,
+      createdAt: q.createdAt.toISOString(),
+      updatedAt: q.updatedAt.toISOString(),
+    }));
+
+    // Lazy survey-invitation trigger — extracted to survey-handlers.ts for
+    // direct testability. See getPendingSurveysForBuyer's own comment for
+    // why this piggybacks on the pull poll instead of a real scheduler.
+    payload.pendingSurveys = await getPendingSurveysForBuyer(userId);
 
     const myWallets = await prisma.wallet.findMany({
       where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },

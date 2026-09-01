@@ -486,6 +486,46 @@ describe("handleEditEvent", () => {
     expect(stillThere).not.toBeNull();
   });
 
+  it("creates a survey question with no id, then updates the same row on replay with the now-known id (never appears in shapeEvent — organizer-only, verified via direct query)", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const first = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      surveyQuestions: [{ clientId: "sq-client-1", label: "How was it?", type: "TEXT" }],
+    });
+    expect(first.ok).toBe(true);
+    expect((first.event as any).surveyQuestions).toBeUndefined();
+    const stored = await prisma.surveyQuestion.findMany({ where: { eventId: event.id } });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].label).toBe("How was it?");
+
+    const second = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      surveyQuestions: [{ id: stored[0].id, clientId: "sq-client-1", label: "How was the event overall?", type: "TEXT" }],
+    });
+    expect(second.ok).toBe(true);
+    const restored = await prisma.surveyQuestion.findMany({ where: { eventId: event.id } });
+    expect(restored).toHaveLength(1);
+    expect(restored[0].id).toBe(stored[0].id);
+    expect(restored[0].label).toBe("How was the event overall?");
+  });
+
+  it("never deletes a survey question omitted from a later payload", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const question = await prisma.surveyQuestion.create({ data: { eventId: event.id, label: "Keep me", type: "TEXT" } });
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      surveyQuestions: [],
+    });
+
+    expect(result.ok).toBe(true);
+    const stillThere = await prisma.surveyQuestion.findUnique({ where: { id: question.id } });
+    expect(stillThere).not.toBeNull();
+  });
+
   it("sets and clears waiverText", async () => {
     const { user: organizer, organizationId } = await newOrganizer();
     const event = await createTestEvent(organizationId);

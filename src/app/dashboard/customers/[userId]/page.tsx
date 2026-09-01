@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCents, formatDateTime } from "@/lib/format";
 import { getCustomerDetailData } from "@/lib/analytics-data";
+import { loyaltyTierFromOrdersCount } from "@/lib/loyalty";
 import { addNote, replaceTicketCode, replaceWalletCode } from "../actions";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -11,6 +12,9 @@ const STATUS_STYLE: Record<string, string> = {
   NEEDS_REVIEW: "border-danger/40 bg-danger/10 text-danger",
   REFUNDED: "border-warn/40 bg-warn/10 text-warn",
 };
+
+const TIER_LABEL = { NEW: "New", REPEAT: "Repeat", VIP: "VIP" } as const;
+const TIER_STYLE = { NEW: "", REPEAT: "border-accent/40 bg-accent/10 text-accent-hover", VIP: "border-ok/40 bg-ok/10 text-ok" } as const;
 
 export default async function CustomerDetailPage({ params }: { params: { userId: string } }) {
   const session = await auth();
@@ -37,10 +41,21 @@ export default async function CustomerDetailPage({ params }: { params: { userId:
     orderBy: { createdAt: "desc" },
   });
 
+  // Filtered the same way customerStatsByBuyer/the customer list page
+  // already count orders (PAID/NEEDS_REVIEW only) — getCustomerDetailData
+  // deliberately doesn't filter (it shows REFUNDED orders too), so the
+  // tier is computed from a local filter here instead.
+  const tier = loyaltyTierFromOrdersCount(
+    orders.filter((o) => o.status === "PAID" || o.status === "NEEDS_REVIEW").length
+  );
+
   return (
     <div className="mx-auto max-w-2xl px-4 pb-20 pt-8 sm:px-6">
       <Link href="/dashboard/customers" className="text-sm text-muted hover:text-foreground">← Customers</Link>
-      <h1 className="mb-1 mt-3 text-2xl font-bold">{customer.name}</h1>
+      <h1 className="mb-1 mt-3 text-2xl font-bold">
+        {customer.name}
+        <span className={`pill ml-2 align-middle text-sm ${TIER_STYLE[tier]}`}>{TIER_LABEL[tier]}</span>
+      </h1>
       <p className="mb-6 text-sm text-muted">{customer.email}</p>
 
       <h2 className="mb-3 font-semibold">Order history</h2>

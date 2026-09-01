@@ -73,6 +73,13 @@ export default function EditEventPage() {
     return db.discountCodes.where("eventId").equals(event.id).toArray();
   }, [event?.id]);
 
+  // Same organizer-only split as discountCodes — survey questions must not
+  // ride in the public event pull either (see LocalSurveyQuestion).
+  const existingSurveyQuestions = useLiveQuery(async () => {
+    if (!event) return undefined;
+    return db.surveyQuestions.where("eventId").equals(event.id).toArray();
+  }, [event?.id]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -84,6 +91,7 @@ export default function EditEventPage() {
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
   const [questions, setQuestions] = useState<DraftQuestion[]>([]);
+  const [surveyQuestions, setSurveyQuestions] = useState<DraftQuestion[]>([]);
   const [discountCodes, setDiscountCodes] = useState<DraftDiscountCode[]>([]);
   const [waiverText, setWaiverText] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -123,7 +131,7 @@ export default function EditEventPage() {
   }, [status, user, router, id]);
 
   useEffect(() => {
-    if (event && existingDiscountCodes !== undefined && !loaded) {
+    if (event && existingDiscountCodes !== undefined && existingSurveyQuestions !== undefined && !loaded) {
       setTitle(event.title);
       setDescription(event.description);
       setCategory(event.category);
@@ -169,9 +177,20 @@ export default function EditEventPage() {
           active: dc.active,
         }))
       );
+      setSurveyQuestions(
+        existingSurveyQuestions.map((q) => ({
+          key: q.id,
+          id: q.id,
+          clientId: q.clientId ?? q.id,
+          label: q.label,
+          type: q.type,
+          options: q.options ?? "",
+          required: q.required,
+        }))
+      );
       setLoaded(true);
     }
-  }, [event, existingDiscountCodes, loaded]);
+  }, [event, existingDiscountCodes, existingSurveyQuestions, loaded]);
 
   if (!user) return null;
 
@@ -207,6 +226,10 @@ export default function EditEventPage() {
     setQuestions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  function updateSurveyQuestion(key: string, patch: Partial<DraftQuestion>) {
+    setSurveyQuestions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
   function updateDiscountCode(key: string, patch: Partial<DraftDiscountCode>) {
     setDiscountCodes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
@@ -229,6 +252,7 @@ export default function EditEventPage() {
     }
 
     const validQuestions = questions.filter((q) => q.label.trim());
+    const validSurveyQuestions = surveyQuestions.filter((q) => q.label.trim());
 
     const validDiscountCodes = discountCodes.filter((d) => d.code.trim());
     for (const d of validDiscountCodes) {
@@ -267,6 +291,30 @@ export default function EditEventPage() {
       sortOrder: index,
     }));
     const payloadQuestions = validQuestions.map((q, index) => ({
+      id: q.id,
+      clientId: q.clientId,
+      label: q.label.trim(),
+      type: q.type,
+      options: q.type === "SELECT" ? q.options.trim() : undefined,
+      required: q.required,
+      sortOrder: index,
+    }));
+
+    // Identical local/payload shapes as registrationQuestions above — see
+    // SurveyQuestion's schema comment for why they share this exact shape.
+    const localSurveyQuestions = validSurveyQuestions.map((q, index) => ({
+      id: q.id ?? q.clientId,
+      clientId: q.clientId,
+      eventId: event.id,
+      label: q.label.trim(),
+      type: q.type,
+      options: q.type === "SELECT" ? q.options.trim() : null,
+      required: q.required,
+      sortOrder: index,
+      createdAt: existingSurveyQuestions?.find((e) => e.id === q.id)?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    const payloadSurveyQuestions = validSurveyQuestions.map((q, index) => ({
       id: q.id,
       clientId: q.clientId,
       label: q.label.trim(),
@@ -350,6 +398,9 @@ export default function EditEventPage() {
     if (localDiscountCodes.length > 0) {
       await db.discountCodes.bulkPut(localDiscountCodes);
     }
+    if (localSurveyQuestions.length > 0) {
+      await db.surveyQuestions.bulkPut(localSurveyQuestions);
+    }
 
     await db.events.put({
       ...event,
@@ -394,6 +445,7 @@ export default function EditEventPage() {
       })),
       registrationQuestions: payloadQuestions,
       discountCodes: payloadDiscountCodes,
+      surveyQuestions: payloadSurveyQuestions,
     });
 
     setSubmitting(false);
@@ -651,6 +703,74 @@ export default function EditEventPage() {
               </div>
             ))}
             {questions.length === 0 && <p className="text-sm text-muted">No questions yet.</p>}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <label className="label !mb-0">Post-event survey questions</label>
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover"
+              onClick={() =>
+                setSurveyQuestions((rows) => [
+                  ...rows,
+                  { key: crypto.randomUUID(), clientId: newLocalId(), label: "", type: "TEXT", options: "", required: false },
+                ])
+              }
+            >
+              + Add question
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-muted">
+            Buyers are invited to answer once the event is at least 24 hours past.
+          </p>
+          <div className="space-y-3">
+            {surveyQuestions.map((q) => (
+              <div key={q.key} className="space-y-2 rounded-lg border border-border p-3">
+                <div className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
+                  <input
+                    placeholder="Question (e.g. How was the event?)"
+                    className="input"
+                    value={q.label}
+                    onChange={(e) => updateSurveyQuestion(q.key, { label: e.target.value })}
+                  />
+                  <select
+                    className="input"
+                    value={q.type}
+                    onChange={(e) => updateSurveyQuestion(q.key, { type: e.target.value as DraftQuestion["type"] })}
+                  >
+                    <option value="TEXT">Text</option>
+                    <option value="SELECT">Choice</option>
+                    <option value="CHECKBOX">Checkbox</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-danger"
+                    onClick={() => setSurveyQuestions((rows) => rows.filter((r) => r.key !== q.key))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {q.type === "SELECT" && (
+                  <input
+                    placeholder="Options, comma-separated (e.g. Great,Okay,Poor)"
+                    className="input"
+                    value={q.options}
+                    onChange={(e) => updateSurveyQuestion(q.key, { options: e.target.value })}
+                  />
+                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={q.required}
+                    onChange={(e) => updateSurveyQuestion(q.key, { required: e.target.checked })}
+                  />
+                  Required
+                </label>
+              </div>
+            ))}
+            {surveyQuestions.length === 0 && <p className="text-sm text-muted">No survey questions yet.</p>}
           </div>
         </div>
 

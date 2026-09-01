@@ -12,6 +12,8 @@ import {
   type LocalWallet,
   type LocalWalletTransaction,
   type LocalDiscountCode,
+  type LocalSurveyQuestion,
+  type LocalPendingSurvey,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -143,6 +145,18 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
 
     if (Array.isArray(data.myDiscountCodes)) {
       await db.discountCodes.bulkPut(data.myDiscountCodes as LocalDiscountCode[]);
+    }
+
+    if (Array.isArray(data.mySurveyQuestions)) {
+      await db.surveyQuestions.bulkPut(data.mySurveyQuestions as LocalSurveyQuestion[]);
+    }
+
+    // Full-replace, not bulkPut-only — this list must shrink as the buyer
+    // responds (a responded-to survey stops being "pending" server-side and
+    // must disappear locally too), unlike every other table here.
+    if (Array.isArray(data.pendingSurveys)) {
+      await db.pendingSurveys.clear();
+      await db.pendingSurveys.bulkPut(data.pendingSurveys as LocalPendingSurvey[]);
     }
 
     if (Array.isArray(data.myWallets)) {

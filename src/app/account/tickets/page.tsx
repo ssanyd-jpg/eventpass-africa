@@ -37,6 +37,10 @@ export default function MyTicketsPage() {
     return mine.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [user?.id]);
 
+  // Populated by the lazy survey-invitation trigger in
+  // src/app/api/sync/pull/route.ts — see LocalPendingSurvey in src/lib/db.ts.
+  const pendingSurveys = useLiveQuery(() => db.pendingSurveys.toArray(), []);
+
   useEffect(() => {
     if (status !== "loading" && !user) router.push("/login?callbackUrl=/account/tickets");
   }, [status, user, router]);
@@ -46,6 +50,20 @@ export default function MyTicketsPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-8 sm:px-6">
       <h1 className="mb-6 text-2xl font-bold">My Tickets</h1>
+
+      {pendingSurveys && pendingSurveys.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {pendingSurveys.map((s) => (
+            <Link
+              key={s.eventId}
+              href={`/account/surveys/${s.eventId}`}
+              className="card flex items-center justify-between border-accent/40 bg-accent/10 p-4 text-sm transition hover:border-accent"
+            >
+              <span>How was <strong>{s.eventTitle}</strong>? Tell the organizer →</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {orders === undefined ? (
         <div className="space-y-3">
@@ -60,22 +78,28 @@ export default function MyTicketsPage() {
       ) : (
         <div className="space-y-3">
           {orders.map((order) => (
-            <Link
-              key={order.id}
-              href={`/orders/${order.id}`}
-              className="card flex items-center justify-between p-4 transition hover:border-accent"
-            >
-              <div>
-                <p className="font-semibold">{order.eventTitle}</p>
-                <p className="text-sm text-muted">
-                  {formatDate(order.createdAt)} · {order.tickets.length} ticket
-                  {order.tickets.length === 1 ? "" : "s"} · {formatCents(order.totalCents, order.currency)}
-                </p>
-              </div>
-              <span className={`pill ${STATUS_STYLE[order.syncStatus]}`}>
-                {STATUS_LABEL[order.syncStatus]}
-              </span>
-            </Link>
+            <div key={order.id} className="card p-4">
+              <Link href={`/orders/${order.id}`} className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold">{order.eventTitle}</p>
+                  <p className="text-sm text-muted">
+                    {formatDate(order.createdAt)} · {order.tickets.length} ticket
+                    {order.tickets.length === 1 ? "" : "s"} · {formatCents(order.totalCents, order.currency)}
+                  </p>
+                </div>
+                <span className={`pill ${STATUS_STYLE[order.syncStatus]}`}>
+                  {STATUS_LABEL[order.syncStatus]}
+                </span>
+              </Link>
+              {!order.eventId.startsWith("local:") && (
+                <Link
+                  href={`/account/support/new?eventId=${order.eventId}`}
+                  className="mt-2 inline-block text-xs font-medium text-accent-hover"
+                >
+                  Contact organizer →
+                </Link>
+              )}
+            </div>
           ))}
         </div>
       )}
