@@ -15,6 +15,7 @@ import {
   type LocalSurveyQuestion,
   type LocalPendingSurvey,
   type LocalSponsorCampaign,
+  type LocalCredential,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -170,6 +171,15 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
     if (Array.isArray(data.recommendedEventIds)) {
       await db.recommendedEvents.clear();
       await db.recommendedEvents.bulkPut((data.recommendedEventIds as string[]).map((id) => ({ id })));
+    }
+
+    // Full-replace, same reasoning as pendingSurveys/recommendedEvents — a
+    // SUPERSEDED transition (a tag reassigned to someone else) must promptly
+    // stop the old row from resolving on every device, and Credential has no
+    // clientId/updatedAt to key an incremental merge on.
+    if (Array.isArray(data.credentials)) {
+      await db.credentials.clear();
+      await db.credentials.bulkPut(data.credentials as LocalCredential[]);
     }
 
     if (Array.isArray(data.myWallets)) {

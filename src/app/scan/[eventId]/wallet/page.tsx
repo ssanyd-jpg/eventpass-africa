@@ -9,7 +9,8 @@ import { queueOp, flushOutbox, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
-import NFCScanner from "@/components/NFCScanner";
+import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import { resolveCodeFromUid } from "@/lib/credentials";
 
 type TerminalResult = {
   kind: "valid" | "declined" | "invalid" | "offline" | "recorded";
@@ -227,6 +228,18 @@ export default function WalletChargeTerminalPage() {
 
   const activeHandler = mode === "sale" ? chargeWallet : recordTap;
 
+  // NFC uid resolution first (a wristband provisioned via /scan/[eventId]/
+  // provision), falling back to the decoded NDEF text (a tag bound the old
+  // way, via bindNfc() on the buyer's own wallet page) — chargeWallet/
+  // recordTap themselves are untouched, they still just take a code string.
+  const handleNfcDetect = useCallback(
+    async (reading: NFCReading) => {
+      const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "wallet") : null) ?? reading.text;
+      if (code) activeHandler(code);
+    },
+    [activeHandler]
+  );
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     activeHandler(code);
@@ -346,7 +359,7 @@ export default function WalletChargeTerminalPage() {
 
       <div className="mt-5">
         <CameraScanner onDetect={activeHandler} />
-        <NFCScanner onDetect={activeHandler} />
+        <NFCScanner onDetect={handleNfcDetect} />
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2">

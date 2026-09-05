@@ -222,6 +222,15 @@ model SupportTicketReply {
 model Credential {
   id                 String    @id @default(cuid())
   code               String
+  // NFC wristband provisioning — nullable, since a plain code-replacement
+  // row (see credential-handlers.ts) is unrelated to NFC. Deliberately NOT
+  // @unique: the same physical tag legitimately produces two ACTIVE rows at
+  // once (one ticketId-linked, one walletId-linked) — same reasoning as
+  // `code` above having no DB uniqueness. Enforcement (superseding any
+  // colliding ACTIVE row for a uid, ticket, or wallet before creating new
+  // ones) is application-level, inside one transaction, same discipline as
+  // replaceTicketCode/replaceWalletCode already use for `code`.
+  nfcUid             String?
   status             String    @default("ACTIVE")
   createdAt          DateTime  @default(now())
   createdByUserId    String
@@ -244,6 +253,7 @@ model Credential {
   @@index([organizationId, ticketId])
   @@index([organizationId, walletId])
   @@index([organizationId, vendorId])
+  @@index([organizationId, nfcUid])
 }
 
 // type is TEXT | SELECT | CHECKBOX (plain-string convention — see

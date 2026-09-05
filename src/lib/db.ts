@@ -280,6 +280,21 @@ export interface LocalWallet {
   syncStatus: "synced" | "pending";
 }
 
+// NFC wristband resolution only — a purely client-side uid->code translation
+// table (see src/lib/credentials.ts's resolveCodeFromUid), never read for
+// anything else. Full-replaced on every pull rather than merged, since a
+// SUPERSEDED transition (a tag reassigned to someone else) must promptly
+// stop the old row from resolving on every device, and Credential has no
+// clientId/updatedAt to key an incremental merge on.
+export interface LocalCredential {
+  id: string;
+  nfcUid: string;
+  status: string;
+  ticketId: string | null;
+  walletId: string | null;
+  code: string;
+}
+
 export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
@@ -392,6 +407,7 @@ class EventPassAfricaDB extends Dexie {
   pendingSurveys!: Table<LocalPendingSurvey, string>;
   sponsorCampaigns!: Table<LocalSponsorCampaign, string>;
   recommendedEvents!: Table<LocalRecommendedEvent, string>;
+  credentials!: Table<LocalCredential, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -572,6 +588,29 @@ class EventPassAfricaDB extends Dexie {
       pendingSurveys: "eventId",
       sponsorCampaigns: "id, clientId, sponsorId, code",
       recommendedEvents: "id",
+    });
+    // New `credentials` table (see LocalCredential above) for NFC wristband
+    // uid->code resolution — a genuinely new store, not a field addition to
+    // an existing one, but still no .upgrade() transform needed: it's
+    // full-replaced on every pull, same reasoning as pendingSurveys/
+    // recommendedEvents above.
+    this.version(12).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
     });
   }
 }

@@ -10,6 +10,8 @@ import { useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
+import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import { resolveCodeFromUid } from "@/lib/credentials";
 
 type ScanResult = {
   kind: "valid" | "already" | "invalid" | "refunded" | "notApproved" | "paymentPending" | "paymentFailed";
@@ -183,6 +185,19 @@ export default function GateScannerPage() {
 
   const activeCheckIn = mode === "attendee" ? checkIn : checkInVendor;
 
+  // NFC uid resolution first (a wristband provisioned via /scan/[eventId]/
+  // provision), falling back to the decoded NDEF text for backward
+  // compatibility — checkIn itself is untouched, it still just takes a
+  // ticket code string. Attendee mode only: vendor badges have no
+  // Credential-linking in this feature.
+  const handleNfcDetect = useCallback(
+    async (reading: NFCReading) => {
+      const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "ticket") : null) ?? reading.text;
+      if (code) checkIn(code);
+    },
+    [checkIn]
+  );
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     activeCheckIn(code);
@@ -268,6 +283,7 @@ export default function GateScannerPage() {
 
       <div className="mt-5">
         <CameraScanner onDetect={activeCheckIn} />
+        {mode === "attendee" && <NFCScanner onDetect={handleNfcDetect} />}
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2">

@@ -35,7 +35,8 @@ export default auth((req) => {
     path.startsWith("/dashboard/support") ||
     path.startsWith("/dashboard/withdrawals") ||
     path.startsWith("/dashboard/payments") ||
-    /^\/scan\/[^/]+\/wallet(\/|$)/.test(path);
+    /^\/scan\/[^/]+\/wallet(\/|$)/.test(path) ||
+    /^\/scan\/[^/]+\/provision(\/|$)/.test(path);
 
   if (isGateCrewRestricted && req.auth?.user?.organizationRole === "GATE_CREW") {
     const url = req.nextUrl.clone();
@@ -60,5 +61,6 @@ export const config = {
     "/dashboard/withdrawals/:path*",
     "/dashboard/payments/:path*",
     "/scan/:eventId/wallet",
+    "/scan/:eventId/provision",
   ],
 };

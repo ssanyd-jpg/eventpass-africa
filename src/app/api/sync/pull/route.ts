@@ -359,6 +359,17 @@ export async function GET(request: Request) {
       createdAt: s.createdAt.toISOString(),
       paidAt: s.paidAt ? s.paidAt.toISOString() : null,
     }));
+
+    // NFC wristband resolution data — staff-only, never buyer-visible (same
+    // organizationId-only scoping as mobileMoneyAccounts/settlements above,
+    // not the buyer+organizer OR pattern myOrders/myWallets use). ACTIVE and
+    // actually NFC-linked only — a plain code-replacement row (see
+    // credential-handlers.ts) has no nfcUid and is irrelevant here.
+    const credentials = await prisma.credential.findMany({
+      where: { organizationId, status: "ACTIVE", nfcUid: { not: null } },
+      select: { id: true, nfcUid: true, status: true, ticketId: true, walletId: true, code: true },
+    });
+    payload.credentials = credentials;
   }
 
   return NextResponse.json(payload);

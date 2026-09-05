@@ -14,6 +14,11 @@ interface NDEFRecordLike {
   data?: DataView;
 }
 interface NDEFReadingEvent {
+  // The tag's hardware serial number (e.g. "04:a2:1f:...") — present on
+  // real Web NFC implementations regardless of what's written on the tag,
+  // used for uid-based wristband resolution (see src/lib/credentials.ts).
+  // Absent/empty on some tag types, hence optional.
+  serialNumber?: string;
   message: { records: NDEFRecordLike[] };
 }
 interface NDEFReaderLike {
@@ -28,12 +33,21 @@ declare global {
   }
 }
 
-export default function NFCScanner({ onDetect }: { onDetect: (code: string) => void }) {
+export interface NFCReading {
+  // Hardware UID — the primary resolution path going forward.
+  uid: string | null;
+  // Decoded NDEF text record, if the tag has one — kept for backward
+  // compatibility with tags bound via the buyer wallet page's bindNfc(),
+  // which writes a code as NDEF text rather than relying on the uid.
+  text: string | null;
+}
+
+export default function NFCScanner({ onDetect }: { onDetect: (reading: NFCReading) => void }) {
   const { t } = useTranslation();
   const [supported, setSupported] = useState(false);
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastDetectionRef = useRef<{ code: string; at: number } | null>(null);
+  const lastDetectionRef = useRef<{ key: string; at: number } | null>(null);
 
   useEffect(() => {
     setSupported(typeof window !== "undefined" && "NDEFReader" in window);
@@ -45,21 +59,27 @@ export default function NFCScanner({ onDetect }: { onDetect: (code: string) => v
       const reader = new window.NDEFReader!();
       await reader.scan();
       reader.onreading = (event) => {
+        const uid = event.serialNumber || null;
+
+        let text: string | null = null;
         const record = event.message.records.find((r) => r.recordType === "text");
-        if (!record?.data) return;
-        // Text records are prefixed with a status byte + language code
-        // (e.g. "en") before the actual payload — skip past it.
-        const languageCodeLength = record.data.getUint8(0) & 0x3f;
-        const textBytes = new Uint8Array(record.data.buffer, record.data.byteOffset + 1 + languageCodeLength);
-        const value = new TextDecoder().decode(textBytes).trim();
-        if (!value) return;
+        if (record?.data) {
+          // Text records are prefixed with a status byte + language code
+          // (e.g. "en") before the actual payload — skip past it.
+          const languageCodeLength = record.data.getUint8(0) & 0x3f;
+          const textBytes = new Uint8Array(record.data.buffer, record.data.byteOffset + 1 + languageCodeLength);
+          text = new TextDecoder().decode(textBytes).trim() || null;
+        }
+
+        if (!uid && !text) return;
+        const key = uid ?? text ?? "";
         const now = Date.now();
         const last = lastDetectionRef.current;
         // debounce: ignore the same tag re-read within 3s (a tag left in
         // range fires onreading repeatedly, same problem the camera loop has)
-        if (!last || last.code !== value || now - last.at > 3000) {
-          lastDetectionRef.current = { code: value, at: now };
-          onDetect(value);
+        if (!last || last.key !== key || now - last.at > 3000) {
+          lastDetectionRef.current = { key, at: now };
+          onDetect({ uid, text });
         }
       };
       reader.onreadingerror = () => setError("Couldn't read that tag — try again.");
