@@ -120,6 +120,12 @@ export interface LocalOrder {
   // expired/inactive/max-redeemed/wrong-ticket-type), so the buyer can see
   // why they were still charged in full.
   discountRejectReason?: string | null;
+  // Airpay real-payment collection — mirrors LocalWalletTransaction's
+  // providerReference/providerMessage. paymentMethod is "AIRPAY_ONLINE" |
+  // "OFFLINE_DEFERRED" | null (legacy/unspecified, matches Order.paymentMethod).
+  providerReference?: string | null;
+  providerMessage?: string | null;
+  paymentMethod?: string | null;
   syncStatus: OrderSyncStatus;
   syncError?: string | null;
 }
@@ -352,7 +358,8 @@ export type OutboxOpType =
   | "REJECT_WITHDRAWAL"
   | "SPONSOR_TAP"
   | "ADD_SPONSOR_CAMPAIGN"
-  | "DEACTIVATE_SPONSOR_CAMPAIGN";
+  | "DEACTIVATE_SPONSOR_CAMPAIGN"
+  | "CHECK_ORDER_PAYMENT_STATUS";
 
 export interface OutboxEntry {
   id?: number;
@@ -529,6 +536,27 @@ class EventPassAfricaDB extends Dexie {
     // marker; no .upgrade() transform needed, same reasoning as every
     // prior bump.
     this.version(10).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+    });
+    // New `providerReference`/`providerMessage`/`paymentMethod` fields on
+    // orders (see LocalOrder above, for real Airpay payment collection) —
+    // no indexed-key change, so this bump is purely a changelog marker; no
+    // .upgrade() transform needed, same reasoning as every prior bump.
+    this.version(11).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import {
   createTestEvent,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
+  handleCheckOrderPaymentStatus,
   handleCheckIn,
   handleRefundOrder,
   handleApplyVendor,
@@ -27,6 +28,40 @@ import {
   handleDeactivateSponsorCampaign,
   payloadSchemas,
 } from "@/lib/sync-handlers";
+
+// No real Airpay credentials exist in the test environment, so
+// getActivePaymentProvider() always resolves to simulatedProvider (instant
+// PAID) — mocking it here exercises the PENDING/FAILED branches
+// handleSellTickets has to handle for a real provider. verifyAirpayOrder is
+// imported directly from @/lib/payments/airpay (not through
+// getActivePaymentProvider()), so it needs its own separate mock — mocking
+// only "@/lib/payments" leaves it throwing on the missing test credentials.
+// vi.hoisted, not two separate `const mock* = vi.fn()` statements — Vitest
+// hoists every vi.mock() factory above all imports, and with two of them in
+// one file the plain "declare a mock*-prefixed const right before its
+// vi.mock call" trick doesn't reliably hoist the second declaration ahead
+// of its factory (ReferenceError: Cannot access before initialization).
+// vi.hoisted() sidesteps that by hoisting the declarations explicitly.
+const { mockInitiateCharge, mockVerifyAirpayOrder } = vi.hoisted(() => ({
+  mockInitiateCharge: vi.fn(),
+  mockVerifyAirpayOrder: vi.fn(),
+}));
+vi.mock("@/lib/payments", () => ({
+  getActivePaymentProvider: () => ({
+    name: "MOCK",
+    isConfigured: () => true,
+    initiateCharge: mockInitiateCharge,
+  }),
+}));
+vi.mock("@/lib/payments/airpay", () => ({
+  verifyAirpayOrder: mockVerifyAirpayOrder,
+}));
+
+beforeEach(() => {
+  mockInitiateCharge.mockReset();
+  mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
+  mockVerifyAirpayOrder.mockReset();
+});
 
 // Every "organizer" in these tests needs a real Organization + OWNER
 // membership behind them now that Event/Vendor ownership checks compare
@@ -370,6 +405,181 @@ describe("handleSellTickets — discount codes", () => {
   });
 });
 
+describe("handleSellTickets — Airpay payment", () => {
+  it("holds the order PENDING when the charge is PENDING, defers the confirmation email, still reserves inventory", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-PENDING-1" });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "airpay-pending",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-PEND-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PENDING");
+    expect(result.order.paymentMethod).toBe("AIRPAY_ONLINE");
+    expect(result.order.providerReference).toBe("AP-PENDING-1");
+
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(1);
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(0);
+  });
+
+  it("marks the order PAID immediately when the charge resolves PAID synchronously", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "AP-PAID-1" });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "airpay-paid",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-PAID-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    expect(result.order.status).toBe("PAID");
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("creates a PAYMENT_FAILED order with no tickets/items when the charge is declined outright", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "FAILED", reference: "AP-DECLINE-1", message: "Invalid phone number" });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "airpay-failed",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-FAIL-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAYMENT_FAILED");
+    expect(result.order.providerMessage).toBe("Invalid phone number");
+    expect(result.order.tickets).toEqual([]);
+    expect(result.order.items).toEqual([]);
+
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0);
+    expect(await prisma.ticket.findUnique({ where: { code: "AP-FAIL-0001" } })).toBeNull();
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_PAYMENT_FAILED", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("rejects AIRPAY_ONLINE without a phoneNumber at the schema level", () => {
+    const parsed = payloadSchemas.SELL_TICKETS.safeParse({
+      clientId: "no-phone",
+      eventId: "evt-1",
+      items: [{ ticketTypeId: "tt-1", quantity: 1 }],
+      paymentMethod: "AIRPAY_ONLINE",
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("oversold wins as NEEDS_REVIEW even when the charge is PENDING", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-OVERSOLD-1" });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1, quantitySold: 1 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "airpay-oversold",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-OVER-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    expect(result.oversold).toBe(true);
+    expect(result.order.status).toBe("NEEDS_REVIEW");
+  });
+});
+
+describe("handleCheckOrderPaymentStatus", () => {
+  async function pendingOrder() {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: `AP-REF-${Date.now()}-${Math.random()}` });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `check-status-${Date.now()}-${Math.random()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CS-${Date.now()}-${Math.random()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+    return { buyer, event, tt, orderId: sale.order.id as string };
+  }
+
+  it("flips a PENDING order to PAID and sends the deferred confirmation", async () => {
+    const { buyer, orderId } = await pendingOrder();
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "PAID", reference: "irrelevant" });
+
+    const result = await handleCheckOrderPaymentStatus({ orderId });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    expect(result.ticketTypeUpdates).toEqual([]);
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("flips a PENDING order to PAYMENT_FAILED and releases exactly the reserved inventory", async () => {
+    const { buyer, tt, orderId } = await pendingOrder();
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "FAILED", reference: "irrelevant", message: "Insufficient funds" });
+
+    const result = await handleCheckOrderPaymentStatus({ orderId });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAYMENT_FAILED");
+    expect(result.order.providerMessage).toBe("Insufficient funds");
+    expect(result.ticketTypeUpdates).toEqual([{ id: tt.id, quantitySold: 0 }]);
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0);
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_PAYMENT_FAILED", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("is idempotent — a second FAILED check on an already-resolved order does not double-release inventory", async () => {
+    const { tt, orderId } = await pendingOrder();
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "FAILED", reference: "irrelevant" });
+
+    await handleCheckOrderPaymentStatus({ orderId });
+    await handleCheckOrderPaymentStatus({ orderId });
+
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    // Started at 0 sold, one ticket reserved it to 1, a single release must
+    // bring it back to exactly 0 — not -1 from a double release. Mirrors
+    // handleRejectWithdrawal's own double-refund guard test.
+    expect(updatedTt.quantitySold).toBe(0);
+    expect(mockVerifyAirpayOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call verifyAirpayOrder for an order that's already terminal", async () => {
+    const { orderId } = await pendingOrder();
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "PAID", reference: "irrelevant" });
+    await handleCheckOrderPaymentStatus({ orderId }); // resolves to PAID
+
+    mockVerifyAirpayOrder.mockClear();
+    const result = await handleCheckOrderPaymentStatus({ orderId });
+
+    expect(result.order.status).toBe("PAID");
+    expect(mockVerifyAirpayOrder).not.toHaveBeenCalled();
+  });
+});
+
 describe("handleEditEvent — discount codes", () => {
   it("creates a discount code referencing a ticket type by its real id", async () => {
     const { user: organizer, organizationId } = await newOrganizer();
@@ -591,6 +801,72 @@ describe("handleCheckIn", () => {
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
   });
+
+  it("still allows check-in for a NEEDS_REVIEW (oversold) order — unrelated, pre-existing behavior", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1, quantitySold: 1 }]);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `checkin-review-${Date.now()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKREV-${Date.now()}`] }],
+    });
+    expect(sale.order.status).toBe("NEEDS_REVIEW");
+
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects check-in for a ticket on a still-PENDING order", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-CHECKIN-PENDING" });
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `checkin-pending-${Date.now()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKPEND-${Date.now()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("PAYMENT_PENDING");
+  });
+
+  it("rejects check-in for a ticket on a PAYMENT_FAILED order", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-CHECKIN-FAIL" });
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `checkin-failed-${Date.now()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKFAIL-${Date.now()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "FAILED", reference: "irrelevant" });
+    await handleCheckOrderPaymentStatus({ orderId: sale.order.id });
+
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("PAYMENT_FAILED");
+  });
+
+  it("rejects check-in for a ticket on a REFUNDED order", async () => {
+    const { code, organizer, organizationId } = await soldTicket();
+    const order = await prisma.ticket.findUniqueOrThrow({ where: { code }, select: { orderId: true } });
+    await handleRefundOrder(organizer.id, organizationId, { orderId: order.orderId });
+
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("ORDER_REFUNDED");
+  });
 });
 
 describe("handleRefundOrder", () => {
@@ -676,6 +952,25 @@ describe("handleRefundOrder", () => {
     const second = await handleRefundOrder(organizer.id, organizationId, { orderId });
     expect(second.ok).toBe(true);
     expect(second.order.status).toBe("REFUNDED");
+  });
+
+  it("refuses to refund a still-PENDING order — nothing was ever paid", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-REFUND-PENDING" });
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `refund-pending-${Date.now()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`RFDPEND-${Date.now()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    const result = await handleRefundOrder(organizer.id, organizationId, { orderId: sale.order.id });
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("ORDER_NOT_PAID");
   });
 });
 

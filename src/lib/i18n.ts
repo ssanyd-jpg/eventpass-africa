@@ -20,6 +20,7 @@ export const dictionaries = {
     "nav.customers": "Customers",
     "nav.supportInbox": "Support",
     "nav.withdrawals": "Withdrawals",
+    "nav.payments": "Payments",
     "nav.admin": "Admin",
     "nav.logIn": "Log in",
     "nav.signUp": "Sign up",
@@ -65,6 +66,8 @@ export const dictionaries = {
     "scan.alreadyCheckedIn": "Already checked in.",
     "scan.notFound": "No ticket found with this code on this device.",
     "scan.refunded": "This ticket was refunded — entry denied.",
+    "scan.paymentPending": "Payment still pending — entry denied.",
+    "scan.paymentFailed": "Payment failed — entry denied.",
 
     "scan.modeAttendees": "Attendees",
     "scan.modeVendors": "Vendors",
@@ -96,6 +99,7 @@ export const dictionaries = {
     "nav.customers": "Wateja",
     "nav.supportInbox": "Msaada",
     "nav.withdrawals": "Kutoa Fedha",
+    "nav.payments": "Malipo",
     "nav.admin": "Msimamizi",
     "nav.logIn": "Ingia",
     "nav.signUp": "Jisajili",
@@ -141,6 +145,8 @@ export const dictionaries = {
     "scan.alreadyCheckedIn": "Tayari amethibitishwa.",
     "scan.notFound": "Hakuna tiketi yenye msimbo huu kwenye kifaa hiki.",
     "scan.refunded": "Tiketi hii ilirejeshewa fedha — kuingia kumekataliwa.",
+    "scan.paymentPending": "Malipo bado hayajathibitishwa — kuingia kumekataliwa.",
+    "scan.paymentFailed": "Malipo hayakufanikiwa — kuingia kumekataliwa.",
 
     "scan.modeAttendees": "Wageni",
     "scan.modeVendors": "Wachuuzi",

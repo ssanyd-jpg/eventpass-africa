@@ -5,6 +5,8 @@ const STATUS_STYLE: Record<string, string> = {
   PAID: "border-ok/40 bg-ok/10 text-ok",
   NEEDS_REVIEW: "border-danger/40 bg-danger/10 text-danger",
   REFUNDED: "border-warn/40 bg-warn/10 text-warn",
+  PENDING: "border-warn/40 bg-warn/10 text-warn",
+  PAYMENT_FAILED: "border-danger/40 bg-danger/10 text-danger",
 };
 
 export default async function AdminOrdersPage() {

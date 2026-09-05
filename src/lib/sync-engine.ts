@@ -256,15 +256,41 @@ async function applyRefundOrderResult(payload: any, result: any) {
 async function applySellTicketsResult(payload: any, result: any) {
   const localId = payload.clientId as string;
   const server = result.order;
+  const paymentFailed = server.status === "PAYMENT_FAILED";
   await db.orders.delete(localId);
   await db.orders.put({
     ...server,
-    syncStatus: result.oversold ? "conflict" : "synced",
-    syncError: result.oversold ? "Some items exceeded remaining capacity — organizer review needed." : null,
+    syncStatus: result.oversold || paymentFailed ? "conflict" : "synced",
+    syncError: result.oversold
+      ? "Some items exceeded remaining capacity — organizer review needed."
+      : paymentFailed
+        ? "Payment failed — no tickets were issued."
+        : null,
   });
 
   if (Array.isArray(result.ticketTypeUpdates)) {
     const event = await db.events.get(server.eventId);
+    if (event) {
+      const updated = {
+        ...event,
+        ticketTypes: event.ticketTypes.map((tt) => {
+          const match = result.ticketTypeUpdates.find((u: any) => u.id === tt.id);
+          return match ? { ...tt, quantitySold: match.quantitySold } : tt;
+        }),
+      };
+      await db.events.put(updated);
+    }
+  }
+}
+
+// Mirrors applyRefundOrderResult — acts on an already-synced order id (no
+// local-temp-id remap needed), and patches the cached event's
+// ticketTypes[].quantitySold when the FAILED branch released inventory.
+async function applyCheckOrderPaymentStatusResult(_payload: any, result: any) {
+  await db.orders.put({ ...result.order, syncStatus: "synced" });
+
+  if (Array.isArray(result.ticketTypeUpdates) && result.ticketTypeUpdates.length > 0) {
+    const event = await db.events.get(result.order.eventId);
     if (event) {
       const updated = {
         ...event,
@@ -505,6 +531,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CHECK_TOPUP_STATUS":
           await applyCheckTopupStatusResult(entry.payload, result);
+          break;
+        case "CHECK_ORDER_PAYMENT_STATUS":
+          await applyCheckOrderPaymentStatusResult(entry.payload, result);
           break;
         case "CHARGE_WALLET":
           await applyChargeWalletResult(entry.payload, result);

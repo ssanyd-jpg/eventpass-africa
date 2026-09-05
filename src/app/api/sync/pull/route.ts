@@ -141,6 +141,9 @@ export async function GET(request: Request) {
       discountCents: o.discountCents ?? 0,
       discountCode: o.discountCodeText ?? null,
       discountTicketTypeName: o.discountTicketTypeName ?? null,
+      providerReference: o.providerReference ?? null,
+      providerMessage: o.providerMessage ?? null,
+      paymentMethod: o.paymentMethod ?? null,
     }));
 
     const myVendors = await prisma.vendor.findMany({

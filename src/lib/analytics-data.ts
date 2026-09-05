@@ -49,7 +49,10 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
       select: { id: true, name: true, quantityTotal: true, quantitySold: true, event: { select: { title: true } } },
     }),
     prisma.ticket.findMany({
-      where: { eventId: { in: eventIds }, order: { status: { not: "REFUNDED" } } },
+      // Allowlist, matching the revenue query above — a still-PENDING
+      // (unpaid) or PAYMENT_FAILED order's tickets aren't real sales/
+      // check-in-rate data yet, same reasoning as excluding REFUNDED.
+      where: { eventId: { in: eventIds }, order: { status: { in: ["PAID", "NEEDS_REVIEW"] } } },
       select: { eventId: true, createdAt: true, checkedIn: true },
     }),
     prisma.vendor.findMany({
@@ -118,7 +121,9 @@ export async function getPlatformAnalyticsData(): Promise<PlatformAnalyticsRawDa
         select: { id: true, name: true, quantityTotal: true, quantitySold: true, event: { select: { id: true, title: true } } },
       }),
       prisma.ticket.findMany({
-        where: { order: { status: { not: "REFUNDED" } } },
+        // Allowlist, matching the revenue query above — see the identical
+        // comment on the organizer-scoped query.
+        where: { order: { status: { in: ["PAID", "NEEDS_REVIEW"] } } },
         select: { eventId: true, createdAt: true, checkedIn: true },
       }),
       prisma.vendor.findMany({

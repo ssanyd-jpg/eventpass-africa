@@ -85,6 +85,18 @@ export const payloadSchemas = {
     // handleSellTickets. An invalid/inapplicable code never blocks the
     // sale — see the soft-fail discount block below.
     discountCode: z.string().max(40).optional(),
+    // Omitted entirely = legacy/pre-payment-feature behavior: no charge
+    // attempt, instant PAID/NEEDS_REVIEW exactly as before this field
+    // existed. AIRPAY_ONLINE requires a phoneNumber (can't STK-push without
+    // one); mobileNetwork stays optional like TOPUP_WALLET's, since Airpay
+    // itself defaults an unset network to MPESA.
+    paymentMethod: z.enum(["AIRPAY_ONLINE", "OFFLINE_DEFERRED"]).optional(),
+    phoneNumber: z.string().min(6).max(20).optional(),
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+  }).superRefine((val, ctx) => {
+    if (val.paymentMethod === "AIRPAY_ONLINE" && !val.phoneNumber) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phoneNumber"], message: "phoneNumber is required for AIRPAY_ONLINE." });
+    }
   }),
   CHECK_IN: z.object({
     clientId: z.string().min(1),
@@ -212,6 +224,11 @@ export const payloadSchemas = {
     clientId: z.string().min(1),
     walletTransactionId: z.string().min(1),
     walletTransactionClientId: z.string().nullable().optional(),
+  }),
+  CHECK_ORDER_PAYMENT_STATUS: z.object({
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    orderClientId: z.string().nullable().optional(),
   }),
   // Unlike TOPUP_WALLET, phoneNumber/mobileNetwork are required — no real
   // disbursement API exists, so the organizer pays the buyer out manually
@@ -438,6 +455,9 @@ export function shapeOrder(o: any) {
     discountCents: o.discountCents ?? 0,
     discountCode: o.discountCodeText ?? null,
     discountTicketTypeName: o.discountTicketTypeName ?? null,
+    providerReference: o.providerReference ?? null,
+    providerMessage: o.providerMessage ?? null,
+    paymentMethod: o.paymentMethod ?? null,
     // Set only transiently on the return value of handleSellTickets itself
     // (never persisted) — informs the buyer why a typed code didn't apply.
     // Absent on every other shapeOrder call site (pull/replay/refund),
@@ -446,17 +466,22 @@ export function shapeOrder(o: any) {
   };
 }
 
+// Shared by handleSellTickets' idempotency lookup, its normal order.create,
+// and the immediate-payment-decline branch — all three need the same shape
+// for shapeOrder to work on the result.
+const fullOrderInclude = {
+  items: { include: { ticketType: true } },
+  tickets: { include: { ticketType: true } },
+  event: { select: { id: true, clientId: true, title: true } },
+  registrationAnswers: { include: { question: true } },
+} as const;
+
 export async function handleSellTickets(userId: string, payload: any) {
   const clientId = String(payload.clientId);
 
   const existing = await prisma.order.findUnique({
     where: { clientId },
-    include: {
-      items: { include: { ticketType: true } },
-      tickets: { include: { ticketType: true } },
-      event: { select: { id: true, clientId: true, title: true } },
-      registrationAnswers: { include: { question: true } },
-    },
+    include: fullOrderInclude,
   });
   if (existing) {
     return { ok: true, order: shapeOrder(existing), oversold: existing.status === "NEEDS_REVIEW", ticketTypeUpdates: [] };
@@ -475,6 +500,67 @@ export async function handleSellTickets(userId: string, payload: any) {
   }
 
   const items = payload.items as Array<{ ticketTypeId: string; quantity: number; codes?: string[] }>;
+
+  // AIRPAY_ONLINE charges the buyer BEFORE any inventory is touched — a
+  // hard-declined charge (e.g. no phone number) must never reserve tickets.
+  // Mirrors handleTopupWallet's exact ordering: initiateCharge happens
+  // outside/before the inventory-mutating $transaction.
+  let charge: { status: "PAID" | "PENDING" | "FAILED"; reference: string; message?: string } | null = null;
+  if (payload.paymentMethod === "AIRPAY_ONLINE") {
+    let precheckTotalCents = 0;
+    for (const item of items) {
+      const tt = await prisma.ticketType.findUnique({ where: { id: item.ticketTypeId }, select: { priceCents: true } });
+      if (tt) precheckTotalCents += tt.priceCents * item.quantity;
+    }
+
+    const provider = getActivePaymentProvider();
+    charge = await provider.initiateCharge({
+      orderClientId: clientId,
+      amountCents: precheckTotalCents,
+      phoneNumber: String(payload.phoneNumber),
+      mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : undefined,
+      description: `Tickets — ${event.title}`,
+    });
+
+    if (charge.status === "FAILED") {
+      // No inventory was ever reserved — persist a terminal order anyway
+      // (rather than returning ok: false with nothing saved) so the
+      // buyer's optimistic local PENDING order has something real to
+      // reconcile to; see applySellTicketsResult in sync-engine.ts.
+      const failedOrder = await prisma.order.create({
+        data: {
+          clientId,
+          status: "PAYMENT_FAILED",
+          totalCents: precheckTotalCents,
+          currency: event.currency,
+          waiverText: event.waiverText ?? null,
+          waiverAcceptedAt: payload.waiverAccepted ? new Date() : null,
+          paymentMethod: "AIRPAY_ONLINE",
+          providerReference: charge.reference || null,
+          providerMessage: charge.message ?? null,
+          userId,
+          eventId: event.id,
+        },
+        include: fullOrderInclude,
+      });
+
+      const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+      if (buyer) {
+        await sendNotification({
+          type: "ORDER_PAYMENT_FAILED",
+          channel: "EMAIL",
+          recipient: buyer.email,
+          subject: `Payment failed for ${event.title}`,
+          body: `Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${charge.message ? `: ${charge.message}` : "."} No tickets were issued and nothing was charged. Please try again.`,
+        });
+      }
+      return { ok: true, order: shapeOrder(failedOrder), oversold: false, ticketTypeUpdates: [] };
+    }
+    // charge.status is PENDING (Airpay's real provider always returns this)
+    // or PAID (the simulator, or a rare synchronous-approve) — fall through
+    // into the normal inventory-reserving transaction either way.
+  }
+
   let oversold = false;
   let totalCents = 0;
   const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
@@ -575,10 +661,18 @@ export async function handleSellTickets(userId: string, payload: any) {
     }
     const finalTotalCents = Math.max(0, totalCents - discountCents);
 
+    // Oversold always wins as NEEDS_REVIEW regardless of payment path — that
+    // pre-existing behavior is unrelated to whether a charge is pending.
+    // Otherwise a PENDING charge (Airpay's real, always-returned status)
+    // leaves the order PENDING until handleCheckOrderPaymentStatus confirms
+    // it; a PAID charge (simulator) or no payment method at all is the
+    // legacy instant-PAID path, unchanged.
+    const status = oversold ? "NEEDS_REVIEW" : charge?.status === "PENDING" ? "PENDING" : "PAID";
+
     const created = await tx.order.create({
       data: {
         clientId,
-        status: oversold ? "NEEDS_REVIEW" : "PAID",
+        status,
         totalCents: finalTotalCents,
         currency: event.currency,
         waiverText: event.waiverText ?? null,
@@ -587,18 +681,16 @@ export async function handleSellTickets(userId: string, payload: any) {
         discountCodeText: appliedDiscount?.code ?? null,
         discountTicketTypeName: appliedDiscount?.ticketTypeName ?? null,
         discountCents,
+        paymentMethod: payload.paymentMethod ?? null,
+        providerReference: charge?.reference ?? null,
+        providerMessage: charge?.message ?? null,
         userId,
         eventId: event.id,
         items: { create: orderItemsData },
         tickets: { create: ticketsData },
         registrationAnswers: { create: answersData },
       },
-      include: {
-        items: { include: { ticketType: true } },
-        tickets: { include: { ticketType: true } },
-        event: { select: { id: true, clientId: true, title: true } },
-        registrationAnswers: { include: { question: true } },
-      },
+      include: fullOrderInclude,
     });
 
     return { order: created, discountRejectReason };
@@ -609,8 +701,11 @@ export async function handleSellTickets(userId: string, payload: any) {
     // round-trip rather than a local one.
   }, { timeout: 15000, maxWait: 10000 });
 
+  // Deferred until handleCheckOrderPaymentStatus confirms payment for a
+  // still-PENDING order — sending it now would tell the buyer they have
+  // valid tickets before Airpay has actually confirmed anything.
   const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
-  if (buyer) {
+  if (buyer && order.status !== "PENDING") {
     const waiverLine = order.waiverAcceptedAt ? " You accepted the event waiver at checkout." : "";
     const discountLine = order.discountCents > 0
       ? ` A discount of ${formatCents(order.discountCents, event.currency)} (code ${order.discountCodeText}) was applied.`
@@ -631,7 +726,10 @@ export async function handleSellTickets(userId: string, payload: any) {
   return { ok: true, order: { ...shapeOrder(order), discountRejectReason }, oversold, ticketTypeUpdates };
 }
 
-const ticketInclude = { event: { select: { id: true, organizationId: true } } } as const;
+const ticketInclude = {
+  event: { select: { id: true, organizationId: true } },
+  order: { select: { id: true, status: true } },
+} as const;
 
 export function shapeTicket(t: any) {
   return {
@@ -654,6 +752,18 @@ export async function handleCheckIn(userId: string, organizationId: string, payl
   }
   if (ticket.event.organizationId !== organizationId) {
     return { ok: false, reason: "FORBIDDEN" };
+  }
+  // Payment/refund problems aren't fixable by retrying the scan — unlike
+  // TICKET_NOT_FOUND, none of these carry retry: true. NEEDS_REVIEW stays
+  // allowed at the gate — pre-existing, unrelated oversell-review behavior.
+  if (ticket.order.status === "PENDING") {
+    return { ok: false, reason: "PAYMENT_PENDING" };
+  }
+  if (ticket.order.status === "PAYMENT_FAILED") {
+    return { ok: false, reason: "PAYMENT_FAILED" };
+  }
+  if (ticket.order.status === "REFUNDED") {
+    return { ok: false, reason: "ORDER_REFUNDED" };
   }
   if (ticket.checkedIn) {
     return { ok: true, ticket: shapeTicket(ticket), alreadyCheckedIn: true };
@@ -979,6 +1089,12 @@ export async function handleRefundOrder(userId: string, organizationId: string, 
   if (order.status === "REFUNDED") {
     return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
   }
+  // A PENDING/PAYMENT_FAILED order never actually collected payment (or is
+  // still awaiting it) — refunding it is nonsensical, and for PAYMENT_FAILED
+  // its inventory has already been released by handleCheckOrderPaymentStatus.
+  if (order.status === "PENDING" || order.status === "PAYMENT_FAILED") {
+    return { ok: false, reason: "ORDER_NOT_PAID" };
+  }
 
   const alreadySettled = await prisma.settlementItem.findFirst({ where: { orderId: order.id } });
   if (alreadySettled) {
@@ -1015,6 +1131,96 @@ export async function handleRefundOrder(userId: string, organizationId: string, 
   });
 
   return { ok: true, order: shapeOrder(updated), ticketTypeUpdates };
+}
+
+// Mirrors handleCheckTopupStatus's CAS-on-status polling exactly, plus the
+// CAS+release discipline handleRejectWithdrawal uses for its refund — here,
+// a FAILED verification atomically flips the order status AND releases the
+// inventory that was optimistically reserved at SELL_TICKETS time.
+export async function handleCheckOrderPaymentStatus(payload: any) {
+  const order =
+    (await prisma.order.findUnique({ where: { id: String(payload.orderId) }, include: fullOrderInclude })) ??
+    (payload.orderClientId
+      ? await prisma.order.findUnique({ where: { clientId: String(payload.orderClientId) }, include: fullOrderInclude })
+      : null);
+
+  if (!order) {
+    return { ok: false, retry: true, reason: "ORDER_NOT_SYNCED_YET" };
+  }
+  if (order.status !== "PENDING") {
+    return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
+  }
+  if (!order.providerReference) {
+    return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
+  }
+
+  const result = await verifyAirpayOrder(order.providerReference);
+  if (result.status === "PENDING") {
+    return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
+  }
+
+  if (result.status === "PAID") {
+    // CAS on status only — no inventory change needed, it was already
+    // reserved at order-creation time (unlike a wallet top-up, which only
+    // credits the balance once COMPLETED).
+    const res = await prisma.order.updateMany({
+      where: { id: order.id, status: "PENDING" },
+      data: { status: "PAID", providerMessage: result.message ?? null },
+    });
+    const fresh = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+    if (res.count > 0) {
+      // Only just transitioned to PAID by this call — fire the confirmation
+      // that handleSellTickets deferred for a still-PENDING order.
+      const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true } });
+      if (buyer) {
+        await sendNotification({
+          type: "ORDER_CONFIRMATION",
+          channel: "EMAIL",
+          recipient: buyer.email,
+          subject: `Your tickets for ${fresh.event.title}`,
+          body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${formatCents(fresh.totalCents, fresh.currency)}. Ticket code(s): ${fresh.tickets.map((t) => t.code).join(", ")}.`,
+        });
+      }
+    }
+    return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
+  }
+
+  // FAILED — CAS the status and release the reserved inventory atomically.
+  // Ticket rows are never deleted (never-delete convention); they're simply
+  // gated out of check-in by order.status going forward.
+  const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
+  const outcome = await prisma.$transaction(async (tx) => {
+    const res = await tx.order.updateMany({
+      where: { id: order.id, status: "PENDING" },
+      data: { status: "PAYMENT_FAILED", providerMessage: result.message ?? null },
+    });
+    if (res.count === 0) return null; // already resolved by a race/replay
+    for (const item of order.items) {
+      const tt = await tx.ticketType.update({
+        where: { id: item.ticketTypeId },
+        data: { quantitySold: { decrement: item.quantity } },
+      });
+      ticketTypeUpdates.push({ id: tt.id, quantitySold: Math.max(0, tt.quantitySold) });
+    }
+    return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (!outcome) {
+    const fresh = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+    return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
+  }
+
+  const buyer = await prisma.user.findUnique({ where: { id: outcome.userId }, select: { email: true, name: true } });
+  if (buyer) {
+    await sendNotification({
+      type: "ORDER_PAYMENT_FAILED",
+      channel: "EMAIL",
+      recipient: buyer.email,
+      subject: `Payment failed for ${outcome.event.title}`,
+      body: `Hi ${buyer.name}, your mobile money payment for ${outcome.event.title} was not confirmed${result.message ? `: ${result.message}` : "."} Your reserved tickets have been released. No charge was made — please try again.`,
+    });
+  }
+  return { ok: true, order: shapeOrder(outcome), ticketTypeUpdates };
 }
 
 export function shapeVendor(v: any) {

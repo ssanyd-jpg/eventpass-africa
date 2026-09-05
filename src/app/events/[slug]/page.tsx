@@ -4,26 +4,34 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { db, newLocalId, type LocalOrder } from "@/lib/db";
-import { queueOp } from "@/lib/sync-engine";
+import { db, newLocalId } from "@/lib/db";
+import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
-import OrderConfirmation from "@/components/OrderConfirmation";
 import QuestionFields from "@/components/QuestionFields";
+
+const NETWORKS = [
+  { value: "MPESA", label: "M-Pesa" },
+  { value: "TIGO", label: "Tigo Pesa" },
+  { value: "AIRTEL", label: "Airtel Money" },
+  { value: "HALOTEL", label: "HaloPesa" },
+];
 
 export default function EventDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
   const { user } = useAppSession();
+  const online = useOnlineStatus();
   const events = useLiveQuery(() => db.events.toArray(), []);
   const event = events?.find((e) => e.slug === slug);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [step, setStep] = useState<"select" | "questions" | "confirm">("select");
   const [placing, setPlacing] = useState(false);
-  const [placedOrder, setPlacedOrder] = useState<LocalOrder | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
+  const [phone, setPhone] = useState("");
+  const [network, setNetwork] = useState(NETWORKS[0].value);
 
   const selection = useMemo(() => {
     if (!event) return [];
@@ -41,10 +49,6 @@ export default function EventDetailPage() {
   const hasQuestionsStep = registrationQuestions.length > 0 || !!event?.waiverText;
   const answersValid = registrationQuestions.every((q) => !q.required || (answers[q.id] ?? "").trim());
   const waiverOk = !event?.waiverText || waiverAccepted;
-
-  if (placedOrder) {
-    return <OrderConfirmation order={placedOrder} />;
-  }
 
   if (events === undefined) {
     return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
@@ -87,10 +91,14 @@ export default function EventDetailPage() {
       }))
     );
 
-    const order: LocalOrder = {
+    const order = {
       id: clientId,
       clientId,
-      status: "PAID",
+      // Online buyers hold in PENDING until the Airpay STK push confirms
+      // (see handleSellTickets/handleCheckOrderPaymentStatus); offline
+      // buyers keep the original instant-PAID flow, deferred to organizer
+      // reconciliation via paymentMethod below.
+      status: online ? "PENDING" : "PAID",
       totalCents,
       currency: event.currency,
       createdAt: new Date().toISOString(),
@@ -117,7 +125,10 @@ export default function EventDetailPage() {
       // the full list-price total; applySellTicketsResult overwrites this
       // whole order with the server-authoritative, correctly discounted one
       // once sync succeeds.
-      syncStatus: "pending",
+      syncStatus: "pending" as const,
+      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
+      providerReference: null,
+      providerMessage: online ? "Awaiting payment confirmation on your phone." : "Purchased offline — payment collection deferred.",
     };
 
     await db.orders.put(order);
@@ -147,16 +158,16 @@ export default function EventDetailPage() {
       answers: registrationQuestions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? "" })),
       waiverAccepted,
       discountCode: discountCode.trim() || undefined,
+      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
+      phoneNumber: online ? phone.trim() : undefined,
+      mobileNetwork: online ? network : undefined,
     });
 
-    // Update the address bar without a client-side route transition — a
-    // never-before-visited dynamic route needs a server round-trip in the
-    // App Router, which defeats the purpose when this purchase just
-    // happened fully offline. Rendering the confirmation inline works
-    // regardless of connectivity; the URL still becomes a valid deep link.
-    window.history.replaceState(null, "", `/orders/${clientId}`);
-    setPlacing(false);
-    setPlacedOrder(order);
+    // /orders/[id] live-queries this exact order out of Dexie, so it picks
+    // up the PENDING → PAID/PAYMENT_FAILED transition once the outbox flush
+    // resolves — unlike rendering a static snapshot inline here, which
+    // would never reflect a payment confirming in the background.
+    router.push(`/orders/${clientId}`);
   }
 
   return (
@@ -358,9 +369,33 @@ export default function EventDetailPage() {
                 </p>
               </div>
 
+              {online && (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="label" htmlFor="network">Mobile money network</label>
+                    <select id="network" className="input" value={network} onChange={(e) => setNetwork(e.target.value)}>
+                      {NETWORKS.map((n) => (
+                        <option key={n.value} value={n.value}>{n.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="phone">Phone number</label>
+                    <input
+                      id="phone"
+                      className="input"
+                      placeholder="e.g. 0712345678"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="mt-4 rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
-                Test checkout — no real payment is processed. Purchases complete
-                instantly, even offline, and sync automatically when connected.
+                {online
+                  ? "You'll get a mobile money prompt on your phone to confirm this payment. Your tickets are held until it's confirmed."
+                  : "Purchases complete instantly, even offline, and sync automatically when connected — the organizer will reconcile payment with you directly."}
               </div>
 
               {!user && (
@@ -373,7 +408,11 @@ export default function EventDetailPage() {
                 <button className="btn-secondary flex-1" onClick={() => setStep(hasQuestionsStep ? "questions" : "select")}>
                   Back
                 </button>
-                <button className="btn-primary flex-1" disabled={placing} onClick={placeOrder}>
+                <button
+                  className="btn-primary flex-1"
+                  disabled={placing || (online && phone.trim().length < 6)}
+                  onClick={placeOrder}
+                >
                   {placing ? "Placing…" : user ? `Pay ${formatCents(totalCents, event.currency)}` : "Log in to pay"}
                 </button>
               </div>

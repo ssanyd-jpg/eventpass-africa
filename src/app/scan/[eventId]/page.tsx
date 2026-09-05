@@ -12,7 +12,7 @@ import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 
 type ScanResult = {
-  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved";
+  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved" | "paymentPending" | "paymentFailed";
   message: string;
   ticketTypeName?: string;
   boothNumber?: string | null;
@@ -49,20 +49,29 @@ export default function GateScannerPage() {
     return db.orders.where("eventId").equals(event.id).toArray();
   }, [event?.id]);
 
+  // Allowlist, not an exclusion list — a ticket from a PENDING (awaiting
+  // Airpay confirmation), PAYMENT_FAILED, or REFUNDED order must never scan
+  // in, so only the two genuinely-checkoutable statuses count. NEEDS_REVIEW
+  // stays allowed — pre-existing, unrelated oversell-review behavior.
   const tickets = useMemo(
     () =>
       (orders ?? [])
-        .filter((o) => o.status !== "REFUNDED")
+        .filter((o) => o.status === "PAID" || o.status === "NEEDS_REVIEW")
         .flatMap((o) => o.tickets.map((t) => ({ ...t, orderId: o.id }))),
     [orders]
   );
-  const refundedCodes = useMemo(
-    () =>
-      new Set(
-        (orders ?? []).filter((o) => o.status === "REFUNDED").flatMap((o) => o.tickets.map((t) => t.code))
-      ),
-    [orders]
-  );
+  // Codes that must be rejected at the gate with a specific reason — mirrors
+  // the server-side handleCheckIn gate in sync-handlers.ts exactly, so the
+  // offline scanner can't wave in a ticket the server would reject.
+  const blockedCodes = useMemo(() => {
+    const map = new Map<string, "refunded" | "paymentPending" | "paymentFailed">();
+    for (const o of orders ?? []) {
+      const kind = o.status === "REFUNDED" ? "refunded" : o.status === "PENDING" ? "paymentPending" : o.status === "PAYMENT_FAILED" ? "paymentFailed" : null;
+      if (!kind) continue;
+      for (const t of o.tickets) map.set(t.code, kind);
+    }
+    return map;
+  }, [orders]);
   const checkedInCount = tickets.filter((t) => t.checkedIn).length;
 
   const vendors = useLiveQuery(async () => {
@@ -79,8 +88,8 @@ export default function GateScannerPage() {
   eventRef.current = event;
   const ticketsRef = useRef(tickets);
   ticketsRef.current = tickets;
-  const refundedCodesRef = useRef(refundedCodes);
-  refundedCodesRef.current = refundedCodes;
+  const blockedCodesRef = useRef(blockedCodes);
+  blockedCodesRef.current = blockedCodes;
   const vendorsRef = useRef(vendors);
   vendorsRef.current = vendors;
 
@@ -89,8 +98,13 @@ export default function GateScannerPage() {
     const event = eventRef.current;
     if (!normalized || !event) return;
 
-    if (refundedCodesRef.current.has(normalized)) {
-      setResult({ kind: "refunded", message: t("scan.refunded"), code: normalized });
+    const blocked = blockedCodesRef.current.get(normalized);
+    if (blocked) {
+      const message =
+        blocked === "refunded" ? t("scan.refunded")
+        : blocked === "paymentPending" ? t("scan.paymentPending")
+        : t("scan.paymentFailed");
+      setResult({ kind: blocked, message, code: normalized });
       return;
     }
 
@@ -275,7 +289,7 @@ export default function GateScannerPage() {
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid"
               ? "border-ok/40 bg-ok/10"
-              : result.kind === "already"
+              : result.kind === "already" || result.kind === "paymentPending"
               ? "border-warn/40 bg-warn/10"
               : "border-danger/40 bg-danger/10"
           }`}
@@ -289,14 +303,17 @@ export default function GateScannerPage() {
           )}
           <p
             className={`mt-1 text-lg font-semibold ${
-              result.kind === "valid" ? "text-ok" : result.kind === "already" ? "text-warn" : "text-danger"
+              result.kind === "valid" ? "text-ok" : result.kind === "already" || result.kind === "paymentPending" ? "text-warn" : "text-danger"
             }`}
           >
-            {result.kind === "valid" ? "✓ " : result.kind === "already" ? "↻ " : "✕ "}
+            {result.kind === "valid" ? "✓ " : result.kind === "already" || result.kind === "paymentPending" ? "↻ " : "✕ "}
             {result.message}
           </p>
-          {result.kind === "refunded" && (
+          {(result.kind === "refunded" || result.kind === "paymentFailed") && (
             <p className="mt-1 text-xs text-muted">Ask the holder for a valid ticket or alternate ID.</p>
+          )}
+          {result.kind === "paymentPending" && (
+            <p className="mt-1 text-xs text-muted">Payment hasn&apos;t been confirmed yet — ask the holder to check their order.</p>
           )}
         </div>
       )}

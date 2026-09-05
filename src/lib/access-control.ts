@@ -17,6 +17,7 @@ const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   "TOPUP_WALLET",
   "CHECK_TOPUP_STATUS",
   "WITHDRAW_WALLET",
+  "CHECK_ORDER_PAYMENT_STATUS",
 ]);
 
 export function isOpAllowedForRole(organizationRole: string | undefined, opType: OpType): boolean {

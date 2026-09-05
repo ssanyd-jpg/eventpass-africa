@@ -10,7 +10,8 @@ export type NotificationType =
   | "TICKET_TRANSFER"
   | "SUPPORT_TICKET_CREATED"
   | "WITHDRAWAL_REQUESTED"
-  | "WITHDRAWAL_DECIDED";
+  | "WITHDRAWAL_DECIDED"
+  | "ORDER_PAYMENT_FAILED";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 

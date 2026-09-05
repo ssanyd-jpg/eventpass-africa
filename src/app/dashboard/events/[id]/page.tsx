@@ -31,6 +31,22 @@ const RISK_STYLE: Record<RiskBand, string> = {
   HIGH: "pill border-danger/40 bg-danger/10 text-danger",
 };
 
+// Mirrors admin/orders/page.tsx's STATUS_STYLE convention — only shown for
+// a status worth flagging; PAID renders no pill (the default, unremarkable
+// case), matching RISK_STYLE's own "only show when notable" discipline.
+const ORDER_STATUS_STYLE: Record<string, string> = {
+  NEEDS_REVIEW: "pill border-danger/40 bg-danger/10 text-danger",
+  REFUNDED: "pill border-danger/40 bg-danger/10 text-danger",
+  PENDING: "pill border-warn/40 bg-warn/10 text-warn",
+  PAYMENT_FAILED: "pill border-danger/40 bg-danger/10 text-danger",
+};
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  NEEDS_REVIEW: "Review",
+  REFUNDED: "Refunded",
+  PENDING: "Awaiting payment",
+  PAYMENT_FAILED: "Payment failed",
+};
+
 export default function ManageEventPage() {
   const { id: rawId } = useParams<{ id: string }>();
   const id = decodeURIComponent(rawId);
@@ -77,7 +93,11 @@ export default function ManageEventPage() {
     );
   }
 
-  const activeOrders = (orders ?? []).filter((o) => o.status !== "REFUNDED");
+  // Allowlist, not an exclusion list — a still-PENDING (unpaid) or
+  // PAYMENT_FAILED order isn't real revenue/attendance yet, same reasoning
+  // as the REFUNDED exclusion this already had. NEEDS_REVIEW stays counted
+  // — pre-existing, unrelated oversell-review behavior.
+  const activeOrders = (orders ?? []).filter((o) => o.status === "PAID" || o.status === "NEEDS_REVIEW");
   const tickets = activeOrders.flatMap((o) => o.tickets);
   const checkedInCount = tickets.filter((t) => t.checkedIn).length;
 
@@ -266,11 +286,11 @@ export default function ManageEventPage() {
                   {order.syncStatus === "pending" && (
                     <span className="pill border-warn/40 bg-warn/10 text-warn">Pending sync</span>
                   )}
-                  {order.status === "NEEDS_REVIEW" && (
-                    <span className="pill border-danger/40 bg-danger/10 text-danger">Review</span>
+                  {ORDER_STATUS_STYLE[order.status] && (
+                    <span className={ORDER_STATUS_STYLE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</span>
                   )}
-                  {order.status === "REFUNDED" && (
-                    <span className="pill border-danger/40 bg-danger/10 text-danger">Refunded</span>
+                  {order.paymentMethod === "OFFLINE_DEFERRED" && (
+                    <span className="pill">Offline</span>
                   )}
                   {(() => {
                     const risk = riskByOrderId.get(order.id);
@@ -282,7 +302,7 @@ export default function ManageEventPage() {
                     );
                   })()}
                 </div>
-                {order.status !== "REFUNDED" && (
+                {(order.status === "PAID" || order.status === "NEEDS_REVIEW") && (
                   <button
                     onClick={() => refundOrder(order)}
                     disabled={refunding === order.id}

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { LocalOrder } from "@/lib/db";
+import { newLocalId, type LocalOrder } from "@/lib/db";
+import { queueOp } from "@/lib/sync-engine";
 import { formatCents } from "@/lib/format";
 import { useAppSession } from "@/lib/use-app-session";
 import TicketQr from "@/components/TicketQr";
@@ -106,11 +107,26 @@ function TransferControl({
   );
 }
 
+function checkPaymentStatus(order: LocalOrder) {
+  queueOp("CHECK_ORDER_PAYMENT_STATUS", {
+    clientId: newLocalId(),
+    orderId: order.id,
+    orderClientId: order.clientId,
+  });
+}
+
 export default function OrderConfirmation({ order }: { order: LocalOrder }) {
   const { user } = useAppSession();
   const [pendingByTicket, setPendingByTicket] = useState<Record<string, PendingTransfer>>({});
 
   const realTicketIds = order.tickets.filter((t) => !t.id.startsWith("local:")).map((t) => t.id);
+
+  // Mirrors the wallet top-up page's on-mount check — a single check plus
+  // the manual button below, never a repeating interval.
+  useEffect(() => {
+    if (order.status === "PENDING") checkPaymentStatus(order);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id, order.status]);
 
   useEffect(() => {
     if (realTicketIds.length === 0) return;
@@ -135,6 +151,23 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
         <h1 className="text-2xl font-bold">You&apos;re going!</h1>
         <p className="mt-1 text-muted">{order.eventTitle}</p>
 
+        {order.status === "PENDING" && (
+          <div className="mt-3 inline-flex flex-col items-center gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+            <span>Waiting for your mobile money confirmation…</span>
+            <button
+              type="button"
+              className="font-medium text-accent-hover underline"
+              onClick={() => checkPaymentStatus(order)}
+            >
+              Check payment status
+            </button>
+          </div>
+        )}
+        {order.status === "PAYMENT_FAILED" && (
+          <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-xs text-danger">
+            Payment wasn&apos;t confirmed — no tickets were issued. Please place a new order.
+          </p>
+        )}
         {order.syncStatus === "pending" && (
           <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-xs text-warn">
             Purchased offline — will sync automatically
@@ -152,6 +185,7 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
         )}
       </div>
 
+      {(order.status === "PAID" || order.status === "NEEDS_REVIEW" || !order.status) && (
       <div className="mt-8 space-y-3">
         {order.tickets.map((t, i) => {
           const holderId = t.currentHolderUserId ?? order.userId;
@@ -196,6 +230,7 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
           );
         })}
       </div>
+      )}
 
       <div className="card mt-6 p-4">
         {(order.discountCents ?? 0) > 0 && (
