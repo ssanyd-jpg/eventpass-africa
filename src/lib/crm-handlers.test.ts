@@ -66,7 +66,12 @@ describe("resolveBroadcastAudience", () => {
 });
 
 describe("sendBroadcast", () => {
-  it("creates one Broadcast row with the correct recipientCount and one NotificationLog row per recipient", async () => {
+  // Neon cold-start/latency headroom — two order-creation setup calls plus
+  // sendBroadcast's own writes (Broadcast + one NotificationLog per
+  // recipient) have been observed timing out at the default 60s under
+  // sustained load; 120s gives it room without masking a genuine hang (see
+  // vitest.global-setup.ts's standing-flaky-test-investigation comment).
+  it("creates one Broadcast row with the correct recipientCount and one NotificationLog row per recipient", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     const buyerA = await createTestUser({ name: "Amina" });
     const buyerB = await createTestUser({ name: "Baraka" });

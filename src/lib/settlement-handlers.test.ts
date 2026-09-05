@@ -23,7 +23,12 @@ async function paidOrder(organizationId: string, priceCents: number, currency = 
 }
 
 describe("runSettlement", () => {
-  it("aggregates unsettled orders, applies the 8% platform fee, and marks them paid out", async () => {
+  // Neon cold-start/latency headroom — this test chains several sequential
+  // setup calls plus runSettlement's own transaction and has been observed
+  // timing out at the default 60s under sustained load; 120s gives it room
+  // without masking a genuine hang (see vitest.global-setup.ts's own
+  // standing-flaky-test-investigation comment for the broader context).
+  it("aggregates unsettled orders, applies the 8% platform fee, and marks them paid out", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     await prisma.mobileMoneyAccount.create({
       data: { provider: "MPESA_TZ", phoneNumber: "255700000001", accountName: "Org", organizationId },
@@ -41,7 +46,7 @@ describe("runSettlement", () => {
     expect(result.settlements[0].platformFeeCents).toBe(24000); // 8% of 300000
     expect(result.settlements[0].netCents).toBe(276000);
     expect(result.settlements[0].status).toBe("PAID_OUT");
-  });
+  }, { timeout: 120000 });
 
   it("excludes orders already covered by a previous settlement", async () => {
     const { organizationId } = await newOrganizer();
@@ -83,7 +88,9 @@ describe("runSettlement", () => {
     expect(result.reason).toBe("NOTHING_TO_SETTLE");
   });
 
-  it("settles each currency separately rather than mixing totals", async () => {
+  // Same Neon latency headroom as the test above — two paidOrder setups in
+  // different currencies plus runSettlement's own per-currency transactions.
+  it("settles each currency separately rather than mixing totals", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     await prisma.mobileMoneyAccount.create({
       data: { provider: "MPESA_TZ", phoneNumber: "255700000004", accountName: "Org", organizationId },

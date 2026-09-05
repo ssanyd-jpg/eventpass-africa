@@ -38,4 +38,19 @@ export default function globalSetup() {
     env: testEnv,
     stdio: "inherit",
   });
+
+  // Neon's compute suspends after inactivity and can take several seconds
+  // to resume on the first real query — without this, that cold-start
+  // latency lands inside whichever test happens to run first (or, worse,
+  // inside a concurrent-transaction test where it can blow past the
+  // transaction's own timeout). db push above already touches the
+  // database, but a plain query here is a cheap, explicit belt-and-
+  // suspenders wake-up rather than relying on a schema operation's latency
+  // profile to double as one.
+  execSync(`npx prisma db execute --stdin`, {
+    cwd: dir,
+    env: testEnv,
+    input: "SELECT 1;\n",
+    stdio: ["pipe", "inherit", "inherit"],
+  });
 }
