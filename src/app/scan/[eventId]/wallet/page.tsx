@@ -10,10 +10,10 @@ import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
-import { resolveCodeFromUid } from "@/lib/credentials";
+import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
 
 type TerminalResult = {
-  kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned";
+  kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned" | "wristbandReplaced";
   message: string;
   code: string;
   // Set only for a tap that selected a campaign — lets the reactive
@@ -240,9 +240,12 @@ export default function WalletChargeTerminalPage() {
         return;
       }
       if (reading.uid) {
+        const replaced = await isUidSuperseded(reading.uid, "wallet");
         setResult({
-          kind: "notProvisioned",
-          message: "Wristband not provisioned — please visit the registration desk.",
+          kind: replaced ? "wristbandReplaced" : "notProvisioned",
+          message: replaced
+            ? "This wristband has been replaced — please visit the registration desk."
+            : "Wristband not provisioned — please visit the registration desk.",
           code: reading.uid,
         });
       }
@@ -391,7 +394,7 @@ export default function WalletChargeTerminalPage() {
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid" || result.kind === "recorded"
               ? "border-ok/40 bg-ok/10"
-              : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned"
+              : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
               ? "border-warn/40 bg-warn/10"
               : "border-danger/40 bg-danger/10"
           }`}
@@ -401,7 +404,7 @@ export default function WalletChargeTerminalPage() {
             className={`mt-1 text-lg font-semibold ${
               result.kind === "valid" || result.kind === "recorded"
                 ? "text-ok"
-                : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned"
+                : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
                 ? "text-warn"
                 : "text-danger"
             }`}

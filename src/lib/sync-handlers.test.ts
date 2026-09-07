@@ -28,8 +28,10 @@ import {
   handleAddSponsorCampaign,
   handleDeactivateSponsorCampaign,
   handleProvisionCredential,
+  handleReplaceCredential,
   payloadSchemas,
 } from "@/lib/sync-handlers";
+import { isOpAllowedForRole } from "@/lib/access-control";
 
 // No real Airpay credentials exist in the test environment, so
 // getActivePaymentProvider() always resolves to simulatedProvider (instant
@@ -1905,5 +1907,127 @@ describe("handleProvisionCredential", () => {
     const rows = await prisma.credential.findMany({ where: { clientId } });
     expect(rows).toHaveLength(2); // wallet-linked + ticket-linked, none superseded on replay
     expect(rows.every((r) => r.status === "ACTIVE")).toBe(true);
+  });
+});
+
+describe("handleReplaceCredential", () => {
+  function uniqueUid() {
+    return `04:${Date.now().toString(16)}:${Math.random().toString(16).slice(2, 10)}`;
+  }
+  function uniqueClientId() {
+    return `replace-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  // Directly seeds an ACTIVE wallet-linked Credential, bypassing
+  // handleProvisionCredential entirely — keeps these tests isolated from
+  // that handler's own behavior, same as how other handler test files in
+  // this project set up fixtures directly via prisma rather than always
+  // chaining through another handler.
+  async function activeWristband(organizationId: string, walletId: string, code: string, actorId: string) {
+    const uid = uniqueUid();
+    await prisma.credential.create({
+      data: { organizationId, nfcUid: uid, walletId, code, createdByUserId: actorId, createdByName: "Organizer" },
+    });
+    return uid;
+  }
+
+  it("supersedes the old credential (with the reason logged) and creates a new ACTIVE one sharing the same wallet", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 50000 });
+    const oldUid = await activeWristband(organizationId, wallet.id, wallet.code, organizer.id);
+    const newUid = uniqueUid();
+
+    const result: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      oldNfcUid: oldUid,
+      newNfcUid: newUid,
+      reason: "LOST",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.credentials).toHaveLength(1);
+    expect(result.credentials[0].nfcUid).toBe(newUid);
+    expect(result.credentials[0].walletId).toBe(wallet.id);
+    expect(result.credentials[0].status).toBe("ACTIVE");
+    // "Balance transferred" is the SAME wallet re-linked under a new uid —
+    // no money moves, no new WalletTransaction, the balance is just still
+    // there because it was never anywhere else.
+    expect(result.wallet.balanceCents).toBe(50000);
+
+    const oldRow = await prisma.credential.findFirst({ where: { nfcUid: oldUid } });
+    expect(oldRow?.status).toBe("SUPERSEDED");
+    expect(oldRow?.supersededReason).toBe("LOST");
+    expect(oldRow?.supersededAt).not.toBeNull();
+    expect(oldRow?.supersededByUserId).toBe(organizer.id);
+
+    const newRow = await prisma.credential.findFirst({ where: { nfcUid: newUid, status: "ACTIVE" } });
+    expect(newRow?.walletId).toBe(wallet.id);
+  });
+
+  it("replaying the same clientId returns the identical credential without a second supersede", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const wallet = await createTestWallet(event.id, attendee.id);
+    const oldUid = await activeWristband(organizationId, wallet.id, wallet.code, organizer.id);
+    const newUid = uniqueUid();
+    const payload = { clientId: uniqueClientId(), oldNfcUid: oldUid, newNfcUid: newUid, reason: "DAMAGED" };
+
+    const first: any = await handleReplaceCredential(organizer.id, organizationId, payload);
+    const second: any = await handleReplaceCredential(organizer.id, organizationId, payload);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.credentials.map((c: any) => c.id)).toEqual(first.credentials.map((c: any) => c.id));
+
+    const activeForNewUid = await prisma.credential.findMany({ where: { nfcUid: newUid, status: "ACTIVE" } });
+    expect(activeForNewUid).toHaveLength(1); // replay didn't create a duplicate
+
+    const oldRow = await prisma.credential.findFirst({ where: { nfcUid: oldUid } });
+    expect(oldRow?.status).toBe("SUPERSEDED"); // still superseded exactly once
+  });
+
+  it("errors cleanly (does not throw) when the old uid has already been superseded by an earlier replacement", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const wallet = await createTestWallet(event.id, attendee.id);
+    const uid1 = await activeWristband(organizationId, wallet.id, wallet.code, organizer.id);
+    const uid2 = uniqueUid();
+
+    const first: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      oldNfcUid: uid1,
+      newNfcUid: uid2,
+      reason: "LOST",
+    });
+    expect(first.ok).toBe(true);
+
+    // A second, genuinely different replacement attempt against the SAME
+    // now-superseded uid1 — e.g. two staff members handling the same lost-
+    // wristband report at once. Must not throw, and must not touch uid2's
+    // now-current credential.
+    const second: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      oldNfcUid: uid1,
+      newNfcUid: uniqueUid(),
+      reason: "LOST",
+    });
+    expect(second.ok).toBe(false);
+    expect(second.reason).toBe("CREDENTIAL_NOT_FOUND");
+
+    const stillActive = await prisma.credential.findFirst({ where: { nfcUid: uid2, status: "ACTIVE" } });
+    expect(stillActive).toBeTruthy();
+  });
+
+  // Real enforcement for every outbox op's role gating lives in the
+  // access-control allowlist, not inside the handler itself — same as
+  // PROVISION_CREDENTIAL, which has no in-handler role check either.
+  it("is blocked for GATE_CREW at the access-control allowlist", () => {
+    expect(isOpAllowedForRole("GATE_CREW", "REPLACE_CREDENTIAL")).toBe(false);
+    expect(isOpAllowedForRole("OWNER", "REPLACE_CREDENTIAL")).toBe(true);
+    expect(isOpAllowedForRole("STAFF", "REPLACE_CREDENTIAL")).toBe(true);
   });
 });

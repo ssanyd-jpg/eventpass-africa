@@ -199,6 +199,9 @@ export default function ManageEventPage() {
           <Link href={`/scan/${event.id}/provision`} target="_blank" rel="noopener noreferrer" className="btn-secondary">
             Wristband desk ↗
           </Link>
+          <Link href={`/scan/${event.id}/replace`} target="_blank" rel="noopener noreferrer" className="btn-secondary">
+            Wristband replacement ↗
+          </Link>
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>

@@ -387,6 +387,22 @@ async function applyProvisionCredentialResult(payload: any, result: any) {
   }
 }
 
+// Replaces the optimistic new-uid LocalCredential rows (keyed the same way
+// applyProvisionCredentialResult's are) with the server-authoritative ones.
+// The OLD rows need no cleanup here — they already carry their real server
+// id from a previous pull, and were optimistically flipped to SUPERSEDED in
+// place by the replace page itself; the next full pull (which now ships
+// SUPERSEDED rows too, see pull/route.ts) reconciles them with the server's
+// real supersededAt/supersededReason. No wallet touch — replacement never
+// creates or changes a Wallet, only which uid points at the existing one.
+async function applyReplaceCredentialResult(payload: any, result: any) {
+  await db.credentials.delete(`${payload.clientId}-wallet`);
+  await db.credentials.delete(`${payload.clientId}-ticket`);
+  for (const c of result.credentials ?? []) {
+    await db.credentials.put(c);
+  }
+}
+
 // TOPUP_WALLET creates a genuine new local-id transaction row that needs
 // remapping to its server id. Balance is only patched if the server says it
 // actually changed (COMPLETED) — never trust an optimistic local increment
@@ -557,6 +573,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "PROVISION_CREDENTIAL":
           await applyProvisionCredentialResult(entry.payload, result);
+          break;
+        case "REPLACE_CREDENTIAL":
+          await applyReplaceCredentialResult(entry.payload, result);
           break;
         case "TOPUP_WALLET":
           await applyTopupWalletResult(entry.payload, result);

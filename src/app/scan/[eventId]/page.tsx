@@ -11,10 +11,19 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
-import { resolveCodeFromUid } from "@/lib/credentials";
+import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
 
 type ScanResult = {
-  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved" | "paymentPending" | "paymentFailed" | "notProvisioned";
+  kind:
+    | "valid"
+    | "already"
+    | "invalid"
+    | "refunded"
+    | "notApproved"
+    | "paymentPending"
+    | "paymentFailed"
+    | "notProvisioned"
+    | "wristbandReplaced";
   message: string;
   ticketTypeName?: string;
   boothNumber?: string | null;
@@ -198,9 +207,10 @@ export default function GateScannerPage() {
         return;
       }
       if (reading.uid) {
+        const replaced = await isUidSuperseded(reading.uid, "ticket");
         setResult({
-          kind: "notProvisioned",
-          message: t("scan.notProvisioned"),
+          kind: replaced ? "wristbandReplaced" : "notProvisioned",
+          message: replaced ? t("scan.wristbandReplaced") : t("scan.notProvisioned"),
           code: reading.uid,
         });
       }
@@ -315,7 +325,7 @@ export default function GateScannerPage() {
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid"
               ? "border-ok/40 bg-ok/10"
-              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
+              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
               ? "border-warn/40 bg-warn/10"
               : "border-danger/40 bg-danger/10"
           }`}
@@ -331,14 +341,14 @@ export default function GateScannerPage() {
             className={`mt-1 text-lg font-semibold ${
               result.kind === "valid"
                 ? "text-ok"
-                : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
+                : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
                 ? "text-warn"
                 : "text-danger"
             }`}
           >
             {result.kind === "valid"
               ? "✓ "
-              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
+              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
               ? "↻ "
               : "✕ "}
             {result.message}

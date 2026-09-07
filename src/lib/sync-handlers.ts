@@ -236,6 +236,19 @@ export const payloadSchemas = {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either userId or email+name is required." });
     }
   }),
+  // Wristband replacement — identifies the attendee by their CURRENT
+  // (about-to-be-superseded) tag's uid rather than by userId/email, since by
+  // the time this op is queued the replace page has already resolved that
+  // uid to an attendee via the local credentials/wallets cache (see
+  // src/app/scan/[eventId]/replace/page.tsx). No eventId needed: Credential
+  // rows are organization-scoped, not event-scoped, and the old uid lookup
+  // is already scoped to the caller's own organizationId server-side.
+  REPLACE_CREDENTIAL: z.object({
+    clientId: z.string().min(1),
+    oldNfcUid: z.string().min(1),
+    newNfcUid: z.string().min(1),
+    reason: z.enum(["LOST", "DAMAGED", "STOLEN"]),
+  }),
   TOPUP_WALLET: z.object({
     clientId: z.string().min(1),
     walletId: z.string().min(1),
@@ -1681,7 +1694,16 @@ export async function handleCreateWallet(userId: string, payload: any) {
 const provisionUserSelect = { id: true, name: true, email: true } as const;
 
 function shapeCredential(c: any) {
-  return { id: c.id, nfcUid: c.nfcUid, status: c.status, ticketId: c.ticketId, walletId: c.walletId, code: c.code };
+  return {
+    id: c.id,
+    nfcUid: c.nfcUid,
+    status: c.status,
+    ticketId: c.ticketId,
+    walletId: c.walletId,
+    code: c.code,
+    createdAt: c.createdAt.toISOString(),
+    supersededAt: c.supersededAt ? c.supersededAt.toISOString() : null,
+  };
 }
 
 // Offline outbox counterpart to what was previously the provisionWristband
@@ -1833,6 +1855,108 @@ export async function handleProvisionCredential(userId: string, organizationId: 
     wallet: shapeWallet(outcome.wallet),
     user: outcome.user,
     eventTitle: outcome.eventTitle,
+  };
+}
+
+// Wristband loss/damage/theft replacement — mirrors handleProvisionCredential's
+// clientId-idempotency shape exactly, but identifies the attendee by their
+// CURRENT tag's uid (already resolved client-side, see the replace page)
+// rather than by userId/email, and never touches the User or Wallet rows:
+// the same wallet/ticket just gets re-linked under a new uid, which is what
+// "the balance transfers automatically" means here — there is no actual
+// money movement, the wallet itself never changes, only which physical tag
+// points at it.
+export async function handleReplaceCredential(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingCredentials = await prisma.credential.findMany({ where: { clientId } });
+  if (existingCredentials.length > 0) {
+    const wallet = await prisma.wallet.findUnique({
+      where: { id: existingCredentials.find((c) => c.walletId)?.walletId ?? "" },
+      include: walletInclude,
+    });
+    return {
+      ok: true,
+      credentials: existingCredentials.map(shapeCredential),
+      wallet: wallet ? shapeWallet(wallet) : null,
+      reason: String(payload.reason),
+    };
+  }
+
+  const oldNfcUid = String(payload.oldNfcUid);
+  const newNfcUid = String(payload.newNfcUid);
+  const reason = String(payload.reason);
+
+  // Resolved server-side from the authenticated actor, same reasoning as
+  // handleProvisionCredential's own actorName lookup.
+  const actor = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+  const actorName = actor?.name ?? actor?.email ?? "Unknown";
+
+  const outcome = await prisma.$transaction(
+    async (tx) => {
+      const oldCredentials = await tx.credential.findMany({
+        where: { organizationId, nfcUid: oldNfcUid, status: "ACTIVE" },
+      });
+      if (oldCredentials.length === 0) {
+        return { notFound: true as const };
+      }
+
+      const now = new Date();
+      await tx.credential.updateMany({
+        where: { id: { in: oldCredentials.map((c) => c.id) } },
+        data: { status: "SUPERSEDED", supersededAt: now, supersededByUserId: userId, supersededReason: reason },
+      });
+
+      // A physical tag can only meaningfully belong to one person at a time
+      // — same collision guard handleProvisionCredential uses, in case the
+      // replacement tag was already (mistakenly) provisioned for someone
+      // else and is still marked ACTIVE.
+      await tx.credential.updateMany({
+        where: { organizationId, nfcUid: newNfcUid, status: "ACTIVE" },
+        data: { status: "SUPERSEDED", supersededAt: now, supersededByUserId: userId, supersededReason: reason },
+      });
+
+      const credentials = [];
+      for (const old of oldCredentials) {
+        const created = await tx.credential.create({
+          data: {
+            clientId,
+            organizationId,
+            nfcUid: newNfcUid,
+            code: old.code,
+            walletId: old.walletId,
+            ticketId: old.ticketId,
+            vendorId: old.vendorId,
+            createdByUserId: userId,
+            createdByName: actorName,
+          },
+        });
+        credentials.push(created);
+      }
+
+      const walletId = oldCredentials.find((c) => c.walletId)?.walletId ?? null;
+      const wallet = walletId ? await tx.wallet.findUnique({ where: { id: walletId }, include: walletInclude }) : null;
+
+      return { notFound: false as const, credentials, wallet };
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  if (outcome.notFound) {
+    // Either the uid was never provisioned, or (the interesting case) it
+    // was already replaced — by this same request being retried after the
+    // clientId short-circuit above would normally catch it, or genuinely by
+    // someone else in between. Either way there is nothing ACTIVE left to
+    // supersede, so this is a clean, non-retryable error rather than a
+    // silent no-op.
+    return { ok: false, reason: "CREDENTIAL_NOT_FOUND" };
+  }
+
+  return {
+    ok: true,
+    credentials: outcome.credentials.map(shapeCredential),
+    wallet: outcome.wallet ? shapeWallet(outcome.wallet) : null,
+    reason,
   };
 }
 

@@ -21,6 +21,10 @@ export type AuditAction =
   | "BROADCAST_SENT"
   | "CREDENTIAL_REPLACED"
   | "CREDENTIAL_PROVISIONED"
+  // Distinct from CREDENTIAL_REPLACED, which is the plain lost-code
+  // reissue flow in credential-handlers.ts — this is specifically an NFC
+  // wristband swap (see handleReplaceCredential), with a logged reason.
+  | "WRISTBAND_REPLACED"
   | "WITHDRAWAL_APPROVED"
   | "WITHDRAWAL_REJECTED";
 
@@ -75,6 +79,11 @@ export function buildSyncAuditEntry(
       return { action: "WITHDRAWAL_REJECTED", summary: `Rejected a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
     case "PROVISION_CREDENTIAL":
       return { action: "CREDENTIAL_PROVISIONED", summary: `Provisioned a wristband for ${result.user?.name ?? "an attendee"} at "${result.eventTitle}"` };
+    case "REPLACE_CREDENTIAL":
+      return {
+        action: "WRISTBAND_REPLACED",
+        summary: `Replaced a wristband for ${result.wallet?.ownerName ?? "an attendee"} (reason: ${result.reason})`,
+      };
     // WITHDRAW_WALLET itself gets no case — buyer self-action, matches the
     // "attendee/vendor-applicant self-actions excluded" convention this
     // model's own doc comment already states.

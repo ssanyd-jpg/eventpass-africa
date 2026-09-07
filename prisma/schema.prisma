@@ -247,6 +247,11 @@ model Credential {
   createdByName      String
   supersededAt       DateTime?
   supersededByUserId String?
+  // Why a credential was superseded — only ever set by the wristband
+  // replacement flow (LOST/DAMAGED/STOLEN); null for every other supersede
+  // path (re-provisioning a new tag, cross-attendee tag reuse), which have
+  // no attendee-reported reason to log.
+  supersededReason   String?
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

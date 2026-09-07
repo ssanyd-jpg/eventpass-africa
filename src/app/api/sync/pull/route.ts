@@ -362,14 +362,36 @@ export async function GET(request: Request) {
 
     // NFC wristband resolution data — staff-only, never buyer-visible (same
     // organizationId-only scoping as mobileMoneyAccounts/settlements above,
-    // not the buyer+organizer OR pattern myOrders/myWallets use). ACTIVE and
-    // actually NFC-linked only — a plain code-replacement row (see
+    // not the buyer+organizer OR pattern myOrders/myWallets use). Actually
+    // NFC-linked only — a plain code-replacement row (see
     // credential-handlers.ts) has no nfcUid and is irrelevant here.
+    //
+    // Deliberately NOT status:"ACTIVE"-only (unlike the original shipped
+    // version) — a gate/wallet terminal needs to see a recently-SUPERSEDED
+    // row too, to tell "this exact wristband was replaced, see the
+    // registration desk" apart from "never provisioned at all" (see
+    // isUidSuperseded in credentials.ts). Accepted tradeoff: this table now
+    // accumulates one historical row per past replacement/re-provision,
+    // same as the server's own Credential table already does — never
+    // pruned, by design, for the audit trail.
     const credentials = await prisma.credential.findMany({
-      where: { organizationId, status: "ACTIVE", nfcUid: { not: null } },
-      select: { id: true, nfcUid: true, status: true, ticketId: true, walletId: true, code: true },
+      where: { organizationId, nfcUid: { not: null } },
+      select: {
+        id: true,
+        nfcUid: true,
+        status: true,
+        ticketId: true,
+        walletId: true,
+        code: true,
+        createdAt: true,
+        supersededAt: true,
+      },
     });
-    payload.credentials = credentials;
+    payload.credentials = credentials.map((c) => ({
+      ...c,
+      createdAt: c.createdAt.toISOString(),
+      supersededAt: c.supersededAt ? c.supersededAt.toISOString() : null,
+    }));
   }
 
   return NextResponse.json(payload);

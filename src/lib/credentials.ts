@@ -12,3 +12,14 @@ export async function resolveCodeFromUid(uid: string, kind: "ticket" | "wallet")
   );
   return match?.code ?? null;
 }
+
+// Only meaningful to call after resolveCodeFromUid returns null — tells the
+// gate/wallet terminal apart "this exact wristband was replaced" (see
+// handleReplaceCredential) from "this uid was never provisioned at all."
+// Requires the pull route to ship SUPERSEDED rows too, not just ACTIVE ones
+// (see pull/route.ts) — otherwise a replaced tag simply vanishes from this
+// device's cache on its next pull, indistinguishable from never existing.
+export async function isUidSuperseded(uid: string, kind: "ticket" | "wallet"): Promise<boolean> {
+  const rows = await db.credentials.where("nfcUid").equals(uid).toArray();
+  return rows.some((r) => !!r.supersededAt && (kind === "ticket" ? !!r.ticketId : !!r.walletId));
+}

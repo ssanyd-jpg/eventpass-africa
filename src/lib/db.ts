@@ -286,6 +286,11 @@ export interface LocalWallet {
 // SUPERSEDED transition (a tag reassigned to someone else) must promptly
 // stop the old row from resolving on every device, and Credential has no
 // clientId/updatedAt to key an incremental merge on.
+//
+// The pull route ships SUPERSEDED rows too, not just ACTIVE ones (see
+// pull/route.ts) — needed so a gate/wallet terminal can tell "this exact
+// wristband was replaced" (isUidSuperseded in credentials.ts) apart from
+// "never provisioned," which a purely-ACTIVE cache couldn't distinguish.
 export interface LocalCredential {
   id: string;
   nfcUid: string;
@@ -293,6 +298,11 @@ export interface LocalCredential {
   ticketId: string | null;
   walletId: string | null;
   code: string;
+  // Both optional — absent on the optimistic local rows a provisioning/
+  // replacement page writes before syncing, filled in once the server's
+  // authoritative row lands.
+  createdAt?: string;
+  supersededAt?: string | null;
 }
 
 export interface LocalWalletTransaction {
@@ -375,7 +385,8 @@ export type OutboxOpType =
   | "ADD_SPONSOR_CAMPAIGN"
   | "DEACTIVATE_SPONSOR_CAMPAIGN"
   | "CHECK_ORDER_PAYMENT_STATUS"
-  | "PROVISION_CREDENTIAL";
+  | "PROVISION_CREDENTIAL"
+  | "REPLACE_CREDENTIAL";
 
 export interface OutboxEntry {
   id?: number;
@@ -596,6 +607,28 @@ class EventPassAfricaDB extends Dexie {
     // full-replaced on every pull, same reasoning as pendingSurveys/
     // recommendedEvents above.
     this.version(12).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+    });
+    // New `createdAt`/`supersededAt` fields on LocalCredential (see above,
+    // for the wristband replacement flow) — no indexed-key change, so this
+    // bump is purely a changelog marker; no .upgrade() transform needed,
+    // same reasoning as every prior field-addition bump in this file.
+    this.version(13).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",
