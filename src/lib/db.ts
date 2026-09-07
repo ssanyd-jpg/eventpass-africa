@@ -93,6 +93,11 @@ export interface LocalOrder {
   totalCents: number;
   currency: string;
   createdAt: string;
+  // Absent on the optimistic local echo written before sync (there's
+  // nothing to date yet); filled in once the server-authoritative order
+  // replaces it. Used by the organizer dashboard's stuck-PENDING-orders
+  // section to tell how long an Airpay charge has actually been sitting.
+  updatedAt?: string;
   userId: string;
   // The buyer's account age at pull time — organizer-visible only (this
   // field only ever gets populated for orders on events the caller
@@ -386,7 +391,9 @@ export type OutboxOpType =
   | "DEACTIVATE_SPONSOR_CAMPAIGN"
   | "CHECK_ORDER_PAYMENT_STATUS"
   | "PROVISION_CREDENTIAL"
-  | "REPLACE_CREDENTIAL";
+  | "REPLACE_CREDENTIAL"
+  | "CANCEL_PENDING_ORDER"
+  | "MARK_ORDER_PAID";
 
 export interface OutboxEntry {
   id?: number;
@@ -629,6 +636,28 @@ class EventPassAfricaDB extends Dexie {
     // bump is purely a changelog marker; no .upgrade() transform needed,
     // same reasoning as every prior field-addition bump in this file.
     this.version(13).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+    });
+    // New `updatedAt` field on LocalOrder (see above, for the organizer
+    // dashboard's stuck-PENDING-orders section) — no indexed-key change,
+    // so this bump is purely a changelog marker; no .upgrade() transform
+    // needed, same reasoning as every prior field-addition bump.
+    this.version(14).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

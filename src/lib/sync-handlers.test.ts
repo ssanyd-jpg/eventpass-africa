@@ -15,6 +15,8 @@ import {
 import {
   handleSellTickets,
   handleCheckOrderPaymentStatus,
+  handleCancelPendingOrder,
+  handleMarkOrderPaid,
   handleCheckIn,
   handleRefundOrder,
   handleApplyVendor,
@@ -523,6 +525,49 @@ describe("handleSellTickets — Airpay payment", () => {
     expect(result.oversold).toBe(true);
     expect(result.order.status).toBe("NEEDS_REVIEW");
   });
+
+  it("a retry after PAYMENT_FAILED creates a fresh PENDING order without conflicting with the failed attempt's (non-)reservation", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    // First attempt: declined outright — per the existing "creates a
+    // PAYMENT_FAILED order with no tickets/items" behavior, this reserves
+    // nothing at all.
+    mockInitiateCharge.mockResolvedValue({ status: "FAILED", reference: "AP-RETRY-DECLINE", message: "Insufficient funds" });
+    const failed = await handleSellTickets(buyer.id, {
+      clientId: "airpay-retry-attempt-1",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-RETRY-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+    expect(failed.order.status).toBe("PAYMENT_FAILED");
+
+    // Retry — a genuinely new clientId (a new "Pay" tap), same ticket type.
+    // Must not be blocked or conflated with the failed attempt, and must
+    // reserve inventory exactly once (not doubled from the first attempt,
+    // which reserved nothing to begin with).
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-RETRY-PENDING" });
+    const retried = await handleSellTickets(buyer.id, {
+      clientId: "airpay-retry-attempt-2",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-RETRY-0002"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    expect(retried.order.status).toBe("PENDING");
+    expect(retried.order.id).not.toBe(failed.order.id);
+    expect(retried.order.providerReference).toBe("AP-RETRY-PENDING");
+
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(1); // only the retry reserved a seat
+
+    expect(await prisma.ticket.findUnique({ where: { code: "AP-RETRY-0001" } })).toBeNull(); // failed attempt issued nothing
+    expect(await prisma.ticket.findUnique({ where: { code: "AP-RETRY-0002" } })).not.toBeNull();
+  });
 });
 
 describe("handleCheckOrderPaymentStatus", () => {
@@ -594,6 +639,110 @@ describe("handleCheckOrderPaymentStatus", () => {
 
     expect(result.order.status).toBe("PAID");
     expect(mockVerifyAirpayOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleCancelPendingOrder", () => {
+  async function pendingOrder() {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: `AP-CANCEL-${Date.now()}-${Math.random()}` });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `cancel-${Date.now()}-${Math.random()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CANCEL-${Date.now()}-${Math.random()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+    return { buyer, tt, orderId: sale.order.id as string };
+  }
+
+  it("cancels a PENDING order and releases the reserved inventory", async () => {
+    const { buyer, tt, orderId } = await pendingOrder();
+
+    const result: any = await handleCancelPendingOrder(buyer.id, { orderId });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("CANCELLED");
+    expect(result.ticketTypeUpdates).toEqual([{ id: tt.id, quantitySold: 0 }]);
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0);
+  });
+
+  it("refuses to cancel an order belonging to a different buyer", async () => {
+    const { orderId } = await pendingOrder();
+    const someoneElse = await createTestUser();
+
+    const result: any = await handleCancelPendingOrder(someoneElse.id, { orderId });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — cancelling an already-cancelled order does not double-release inventory", async () => {
+    const { buyer, tt, orderId } = await pendingOrder();
+
+    await handleCancelPendingOrder(buyer.id, { orderId });
+    const second: any = await handleCancelPendingOrder(buyer.id, { orderId });
+
+    expect(second.ok).toBe(true);
+    expect(second.order.status).toBe("CANCELLED");
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(0); // not -1 from a double release
+  });
+});
+
+describe("handleMarkOrderPaid", () => {
+  async function pendingOrder() {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: `AP-MARKPAID-${Date.now()}-${Math.random()}` });
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `markpaid-${Date.now()}-${Math.random()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`MARKPAID-${Date.now()}-${Math.random()}`] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+    return { organizer, organizationId, buyer, tt, orderId: sale.order.id as string };
+  }
+
+  it("marks a PENDING order PAID and sends the deferred confirmation, without touching inventory", async () => {
+    const { organizer, organizationId, buyer, tt, orderId } = await pendingOrder();
+    const before = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+
+    const result: any = await handleMarkOrderPaid(organizer.id, organizationId, { orderId });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    const after = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(after.quantitySold).toBe(before.quantitySold); // already reserved at checkout
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("refuses to mark an order paid for a different organization", async () => {
+    const { orderId } = await pendingOrder();
+    const { user: someoneElse, organizationId: otherOrgId } = await newOrganizer();
+
+    const result: any = await handleMarkOrderPaid(someoneElse.id, otherOrgId, { orderId });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("FORBIDDEN");
+  });
+
+  it("is idempotent — marking an already-PAID order paid again does not re-send the confirmation", async () => {
+    const { organizer, organizationId, buyer, orderId } = await pendingOrder();
+
+    await handleMarkOrderPaid(organizer.id, organizationId, { orderId });
+    const second: any = await handleMarkOrderPaid(organizer.id, organizationId, { orderId });
+
+    expect(second.ok).toBe(true);
+    expect(second.order.status).toBe("PAID");
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
   });
 });
 

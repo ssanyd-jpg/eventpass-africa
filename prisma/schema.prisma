@@ -625,8 +625,9 @@ model Order {
   discountTicketTypeName  String?
   discountCents            Int      @default(0)
   // Airpay real-payment collection (status can also be "PENDING" awaiting
-  // STK-push confirmation, or "PAYMENT_FAILED" if declined/timed out —
-  // mirrors WalletTransaction.providerReference/providerMessage below).
+  // STK-push confirmation, "PAYMENT_FAILED" if declined/timed out, or
+  // "CANCELLED" if the buyer gave up waiting (see handleCancelPendingOrder)
+  // — mirrors WalletTransaction.providerReference/providerMessage below).
   // paymentMethod is "AIRPAY_ONLINE" | "OFFLINE_DEFERRED" | null (legacy/
   // unspecified — an order created before this feature, or by a client
   // that didn't opt into either path).

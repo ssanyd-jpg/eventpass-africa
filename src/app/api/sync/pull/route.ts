@@ -110,6 +110,7 @@ export async function GET(request: Request) {
       totalCents: o.totalCents,
       currency: o.currency,
       createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
       userId: o.userId,
       userCreatedAt: o.user.createdAt.toISOString(),
       eventId: o.eventId,

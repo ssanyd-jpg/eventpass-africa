@@ -39,12 +39,14 @@ const ORDER_STATUS_STYLE: Record<string, string> = {
   REFUNDED: "pill border-danger/40 bg-danger/10 text-danger",
   PENDING: "pill border-warn/40 bg-warn/10 text-warn",
   PAYMENT_FAILED: "pill border-danger/40 bg-danger/10 text-danger",
+  CANCELLED: "pill",
 };
 const ORDER_STATUS_LABEL: Record<string, string> = {
   NEEDS_REVIEW: "Review",
   REFUNDED: "Refunded",
   PENDING: "Awaiting payment",
   PAYMENT_FAILED: "Payment failed",
+  CANCELLED: "Cancelled by buyer",
 };
 
 export default function ManageEventPage() {
@@ -54,6 +56,7 @@ export default function ManageEventPage() {
   const { user } = useAppSession();
   const [refunding, setRefunding] = useState<string | null>(null);
   const [refundError, setRefundError] = useState<string | null>(null);
+  const [markingPaid, setMarkingPaid] = useState<string | null>(null);
 
   // Middleware already redirects GATE_CREW away from this route server-side
   // — this is defense-in-depth for a device offline with an already-cached
@@ -142,6 +145,34 @@ export default function ManageEventPage() {
     anomaliesByOrderId.set(flag.relatedId, [...(anomaliesByOrderId.get(flag.relatedId) ?? []), flag.message]);
   }
   const riskByOrderId = new Map(anomalyRows.map((row) => [row.id, scoreOrderRisk(row, { allOrders: anomalyRows })]));
+
+  // Likely-abandoned Airpay STK pushes — the buyer's phone prompt expired
+  // or they never saw it, but the poll/webhook never resolved it either.
+  // Keyed off updatedAt (falls back to createdAt for a not-yet-synced local
+  // echo that has no updatedAt yet) rather than createdAt alone, since a
+  // resolved-then-somehow-reopened order shouldn't count from its original
+  // creation time. 10 minutes is deliberately well past Airpay's own STK
+  // prompt timeout (~60-120s in practice) — this is for orders the normal
+  // flow has already given up on, not ones still genuinely in flight.
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
+  const stuckPendingOrders = (orders ?? []).filter(
+    (o) => o.status === "PENDING" && Date.now() - new Date(o.updatedAt ?? o.createdAt).getTime() > TEN_MINUTES_MS
+  );
+
+  async function markOrderPaid(order: NonNullable<typeof orders>[number]) {
+    setMarkingPaid(order.id);
+    try {
+      // No inventory change — PENDING already reserved it at checkout time.
+      await db.orders.put({ ...order, status: "PAID", syncStatus: "pending" });
+      await queueOp("MARK_ORDER_PAID", {
+        clientId: newLocalId(),
+        orderId: order.id,
+        orderClientId: order.clientId,
+      });
+    } finally {
+      setMarkingPaid(null);
+    }
+  }
 
   async function refundOrder(order: NonNullable<typeof orders>[number]) {
     setRefundError(null);
@@ -274,6 +305,39 @@ export default function ManageEventPage() {
             {revenueForecast.some((p) => p.projected) && (
               <p className="mt-3 text-xs text-muted">Lighter bars are a projection based on recent sales pace, not actual revenue.</p>
             )}
+          </div>
+        </>
+      )}
+
+      {stuckPendingOrders.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 font-semibold">Pending payments needing follow-up</h2>
+          <div className="card divide-y divide-border">
+            {stuckPendingOrders.map((order) => {
+              const minutesPending = Math.floor(
+                (Date.now() - new Date(order.updatedAt ?? order.createdAt).getTime()) / 60000
+              );
+              return (
+                <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                  <div>
+                    <p className="font-medium">{formatCents(order.totalCents, order.currency)}</p>
+                    <p className="text-xs text-muted">
+                      {order.items.map((i) => `${i.quantity}× ${i.ticketTypeName}`).join(", ")}
+                    </p>
+                    <p className="mt-1 text-xs text-warn">
+                      Pending {minutesPending}m{order.providerReference ? ` · Ref: ${order.providerReference}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => markOrderPaid(order)}
+                    disabled={markingPaid === order.id}
+                    className="btn-secondary !py-1.5 text-xs disabled:opacity-50"
+                  >
+                    {markingPaid === order.id ? "Marking…" : "Mark as paid"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

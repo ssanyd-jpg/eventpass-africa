@@ -21,6 +21,8 @@ import {
   handleTopupWallet,
   handleCheckTopupStatus,
   handleCheckOrderPaymentStatus,
+  handleCancelPendingOrder,
+  handleMarkOrderPaid,
   handleChargeWallet,
   handleWithdrawWallet,
   handleApproveWithdrawal,
@@ -136,6 +138,12 @@ export async function POST(request: Request) {
         break;
       case "CHECK_ORDER_PAYMENT_STATUS":
         result = await handleCheckOrderPaymentStatus(body.payload);
+        break;
+      case "CANCEL_PENDING_ORDER":
+        result = await handleCancelPendingOrder(session.user.id, body.payload);
+        break;
+      case "MARK_ORDER_PAID":
+        result = await handleMarkOrderPaid(session.user.id, session.user.organizationId, body.payload);
         break;
       case "CHARGE_WALLET":
         result = await handleChargeWallet(session.user.id, session.user.organizationId, body.payload);

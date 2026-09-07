@@ -267,6 +267,22 @@ export const payloadSchemas = {
     orderId: z.string().min(1),
     orderClientId: z.string().nullable().optional(),
   }),
+  // Buyer self-action — same dual orderId/orderClientId lookup shape as
+  // CHECK_ORDER_PAYMENT_STATUS, since the buyer taps "Cancel" while the
+  // order may or may not have synced yet.
+  CANCEL_PENDING_ORDER: z.object({
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    orderClientId: z.string().nullable().optional(),
+  }),
+  // Organizer-only reconciliation action (see handleMarkOrderPaid) — for
+  // when the buyer confirmed on their phone but Airpay's callback/poll
+  // never caught it. Same dual-lookup shape as the two ops above.
+  MARK_ORDER_PAID: z.object({
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    orderClientId: z.string().nullable().optional(),
+  }),
   // Unlike TOPUP_WALLET, phoneNumber/mobileNetwork are required — no real
   // disbursement API exists, so the organizer pays the buyer out manually
   // once approved, and can't do that without knowing where to send it.
@@ -462,6 +478,7 @@ export function shapeOrder(o: any) {
     totalCents: o.totalCents,
     currency: o.currency,
     createdAt: o.createdAt.toISOString(),
+    updatedAt: o.updatedAt.toISOString(),
     userId: o.userId,
     eventId: o.eventId,
     eventClientId: o.event?.clientId ?? null,
@@ -509,7 +526,10 @@ export function shapeOrder(o: any) {
 const fullOrderInclude = {
   items: { include: { ticketType: true } },
   tickets: { include: { ticketType: true } },
-  event: { select: { id: true, clientId: true, title: true } },
+  // organizationId added for handleMarkOrderPaid's ownership check below —
+  // shapeOrder itself never reads it, so this is a no-op for every other
+  // existing caller of fullOrderInclude.
+  event: { select: { id: true, clientId: true, title: true, organizationId: true } },
   registrationAnswers: { include: { question: true } },
 } as const;
 
@@ -1258,6 +1278,103 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     });
   }
   return { ok: true, order: shapeOrder(outcome), ticketTypeUpdates };
+}
+
+// Buyer-initiated "never mind" for a still-PENDING Airpay charge (tapped
+// back / gave up waiting) — same dual orderId/orderClientId resolution and
+// CAS-then-release-inventory shape as handleCheckOrderPaymentStatus's
+// FAILED branch, just triggered by the buyer instead of a poll result.
+// Idempotent: replaying against an order that's already CANCELLED (or has
+// since resolved to PAID/PAYMENT_FAILED some other way) just returns its
+// current state rather than erroring — there's nothing left to cancel.
+export async function handleCancelPendingOrder(userId: string, payload: any) {
+  const order =
+    (await prisma.order.findUnique({ where: { id: String(payload.orderId) }, include: fullOrderInclude })) ??
+    (payload.orderClientId
+      ? await prisma.order.findUnique({ where: { clientId: String(payload.orderClientId) }, include: fullOrderInclude })
+      : null);
+
+  if (!order) {
+    return { ok: false, retry: true, reason: "ORDER_NOT_SYNCED_YET" };
+  }
+  if (order.userId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (order.status !== "PENDING") {
+    return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
+  }
+
+  const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
+  const outcome = await prisma.$transaction(async (tx) => {
+    const res = await tx.order.updateMany({
+      where: { id: order.id, status: "PENDING" },
+      data: { status: "CANCELLED" },
+    });
+    if (res.count === 0) return null; // already resolved by a race/replay
+    for (const item of order.items) {
+      const tt = await tx.ticketType.update({
+        where: { id: item.ticketTypeId },
+        data: { quantitySold: { decrement: item.quantity } },
+      });
+      ticketTypeUpdates.push({ id: tt.id, quantitySold: Math.max(0, tt.quantitySold) });
+    }
+    return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (!outcome) {
+    const fresh = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+    return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
+  }
+
+  return { ok: true, order: shapeOrder(outcome), ticketTypeUpdates };
+}
+
+// Organizer reconciliation action for a PENDING order the buyer says they
+// completed on their phone but Airpay's callback/the buyer's own poll never
+// caught — e.g. the buyer closed the tab before the confirmation landed.
+// Deliberately does NOT call verifyAirpayOrder: this is staff vouching for
+// a payment they've confirmed some other way (their own Airpay merchant
+// dashboard, a call with the buyer), not a re-check of the same API. CAS +
+// idempotent on replay, same discipline as every other status transition
+// here; no inventory change since PENDING already reserved it.
+export async function handleMarkOrderPaid(userId: string, organizationId: string, payload: any) {
+  const order =
+    (await prisma.order.findUnique({ where: { id: String(payload.orderId) }, include: fullOrderInclude })) ??
+    (payload.orderClientId
+      ? await prisma.order.findUnique({ where: { clientId: String(payload.orderClientId) }, include: fullOrderInclude })
+      : null);
+
+  if (!order) {
+    return { ok: false, retry: true, reason: "ORDER_NOT_SYNCED_YET" };
+  }
+  if (order.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (order.status !== "PENDING") {
+    return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
+  }
+
+  const res = await prisma.order.updateMany({
+    where: { id: order.id, status: "PENDING" },
+    data: { status: "PAID" },
+  });
+  const fresh = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
+
+  if (res.count > 0) {
+    // Only just transitioned to PAID by this call — same deferred
+    // confirmation handleCheckOrderPaymentStatus's own PAID branch sends.
+    const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true } });
+    if (buyer) {
+      await sendNotification({
+        type: "ORDER_CONFIRMATION",
+        channel: "EMAIL",
+        recipient: buyer.email,
+        subject: `Your tickets for ${fresh.event.title}`,
+        body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${formatCents(fresh.totalCents, fresh.currency)}. Ticket code(s): ${fresh.tickets.map((t) => t.code).join(", ")}.`,
+      });
+    }
+  }
+  return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
 }
 
 export function shapeVendor(v: any) {

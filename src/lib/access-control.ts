@@ -18,6 +18,10 @@ const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   "CHECK_TOPUP_STATUS",
   "WITHDRAW_WALLET",
   "CHECK_ORDER_PAYMENT_STATUS",
+  // Buyer self-action, same as CHECK_ORDER_PAYMENT_STATUS above — a gate
+  // crew member is still a buyer for their own orders. MARK_ORDER_PAID is
+  // deliberately NOT here: that's an organizer reconciliation action.
+  "CANCEL_PENDING_ORDER",
 ]);
 
 export function isOpAllowedForRole(organizationRole: string | undefined, opType: OpType): boolean {

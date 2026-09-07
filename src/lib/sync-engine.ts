@@ -296,6 +296,10 @@ async function applySellTicketsResult(payload: any, result: any) {
 // Mirrors applyRefundOrderResult — acts on an already-synced order id (no
 // local-temp-id remap needed), and patches the cached event's
 // ticketTypes[].quantitySold when the FAILED branch released inventory.
+// Reused as-is for CANCEL_PENDING_ORDER and MARK_ORDER_PAID below: both are
+// the exact same "order transitioned, maybe inventory changed" shape as a
+// PENDING poll result, just triggered by the buyer or organizer instead of
+// an Airpay check.
 async function applyCheckOrderPaymentStatusResult(_payload: any, result: any) {
   await db.orders.put({ ...result.order, syncStatus: "synced" });
 
@@ -584,6 +588,8 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           await applyCheckTopupStatusResult(entry.payload, result);
           break;
         case "CHECK_ORDER_PAYMENT_STATUS":
+        case "CANCEL_PENDING_ORDER":
+        case "MARK_ORDER_PAID":
           await applyCheckOrderPaymentStatusResult(entry.payload, result);
           break;
         case "CHARGE_WALLET":

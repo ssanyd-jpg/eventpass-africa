@@ -25,6 +25,8 @@ export type AuditAction =
   // reissue flow in credential-handlers.ts — this is specifically an NFC
   // wristband swap (see handleReplaceCredential), with a logged reason.
   | "WRISTBAND_REPLACED"
+  | "ORDER_CANCELLED"
+  | "ORDER_MARKED_PAID"
   | "WITHDRAWAL_APPROVED"
   | "WITHDRAWAL_REJECTED";
 
@@ -84,6 +86,14 @@ export function buildSyncAuditEntry(
         action: "WRISTBAND_REPLACED",
         summary: `Replaced a wristband for ${result.wallet?.ownerName ?? "an attendee"} (reason: ${result.reason})`,
       };
+    // CANCEL_PENDING_ORDER's own idempotent replay (order already resolved
+    // some other way) also lands here since buildSyncAuditEntry only checks
+    // result.ok — harmless duplicate-looking log entry, same tradeoff every
+    // other idempotent op's audit case already accepts.
+    case "CANCEL_PENDING_ORDER":
+      return { action: "ORDER_CANCELLED", summary: `Cancelled a pending order for "${result.order.eventTitle}"` };
+    case "MARK_ORDER_PAID":
+      return { action: "ORDER_MARKED_PAID", summary: `Marked an order paid manually for "${result.order.eventTitle}"` };
     // WITHDRAW_WALLET itself gets no case — buyer self-action, matches the
     // "attendee/vendor-applicant self-actions excluded" convention this
     // model's own doc comment already states.
