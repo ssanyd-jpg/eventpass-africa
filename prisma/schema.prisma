@@ -221,6 +221,16 @@ model SupportTicketReply {
 // full ordered chain without one.
 model Credential {
   id                 String    @id @default(cuid())
+  // Offline outbox replay safety — every other outbox-created entity
+  // (Order, Ticket, Wallet, WalletTransaction, Vendor, Sponsor, Event) has
+  // one of these; Credential was the one exception while provisioning was
+  // still a Server Action. Deliberately NOT @unique, unlike every one of
+  // those — a single provisioning action can create two rows (wallet-linked
+  // + ticket-linked) sharing the same clientId by design, so a replay's
+  // findMany({where:{clientId}}) finds and returns both instead of
+  // re-superseding. A DB-level unique constraint would reject the second
+  // row outright.
+  clientId           String?
   code               String
   // NFC wristband provisioning — nullable, since a plain code-replacement
   // row (see credential-handlers.ts) is unrelated to NFC. Deliberately NOT
@@ -254,6 +264,7 @@ model Credential {
   @@index([organizationId, walletId])
   @@index([organizationId, vendorId])
   @@index([organizationId, nfcUid])
+  @@index([clientId])
 }
 
 // type is TEXT | SELECT | CHECKBOX (plain-string convention — see

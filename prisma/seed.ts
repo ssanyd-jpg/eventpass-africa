@@ -44,21 +44,21 @@ async function main() {
   const demoPassword = await bcrypt.hash("password123", 10);
 
   const organizer = await prisma.user.upsert({
-    where: { email: "organizer@eventpassafrica.dev" },
+    where: { email: "organizer@chaap.dev" },
     update: {},
     create: {
       name: "Nova Events Co.",
-      email: "organizer@eventpassafrica.dev",
+      email: "organizer@chaap.dev",
       passwordHash: demoPassword,
     },
   });
 
   const secondOrganizer = await prisma.user.upsert({
-    where: { email: "promoter@eventpassafrica.dev" },
+    where: { email: "promoter@chaap.dev" },
     update: {},
     create: {
       name: "Skyline Presents",
-      email: "promoter@eventpassafrica.dev",
+      email: "promoter@chaap.dev",
       passwordHash: demoPassword,
     },
   });
@@ -67,22 +67,22 @@ async function main() {
   const secondOrganizationId = await ensureOrganization(secondOrganizer);
 
   const fan = await prisma.user.upsert({
-    where: { email: "fan@eventpassafrica.dev" },
+    where: { email: "fan@chaap.dev" },
     update: {},
     create: {
       name: "Alex Rivera",
-      email: "fan@eventpassafrica.dev",
+      email: "fan@chaap.dev",
       passwordHash: demoPassword,
     },
   });
   await ensureOrganization(fan);
 
   const admin = await prisma.user.upsert({
-    where: { email: "admin@eventpassafrica.dev" },
+    where: { email: "admin@chaap.dev" },
     update: {},
     create: {
       name: "Platform Admin",
-      email: "admin@eventpassafrica.dev",
+      email: "admin@chaap.dev",
       passwordHash: demoPassword,
       role: "ADMIN",
     },
@@ -221,10 +221,10 @@ async function main() {
 
   console.log("Seed complete.");
   console.log("Demo accounts (password: password123):");
-  console.log("  organizer@eventpassafrica.dev  (organizer)");
-  console.log("  promoter@eventpassafrica.dev   (organizer)");
-  console.log("  fan@eventpassafrica.dev        (attendee)");
-  console.log("  admin@eventpassafrica.dev      (admin)");
+  console.log("  organizer@chaap.dev  (organizer)");
+  console.log("  promoter@chaap.dev   (organizer)");
+  console.log("  fan@chaap.dev        (attendee)");
+  console.log("  admin@chaap.dev      (admin)");
 }
 
 main()

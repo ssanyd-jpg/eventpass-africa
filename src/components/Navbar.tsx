@@ -53,11 +53,9 @@ export default function Navbar() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon.svg" alt="" className="h-9 w-9 rounded-lg" />
           <span className="flex flex-col leading-none">
-            <span className="font-display text-base font-extrabold tracking-tight">
-              <span className="text-silver">EVENT</span>
-              <span className="text-crimson">PASS</span>
+            <span className="font-display text-base font-extrabold tracking-tight text-silver">
+              CHAAP
             </span>
-            <span className="text-[10px] font-bold tracking-[0.3em] text-helix-blue">AFRICA</span>
           </span>
         </Link>
 

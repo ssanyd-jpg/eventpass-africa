@@ -368,6 +368,25 @@ async function applyCreateWalletResult(payload: any, result: any) {
   await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
 }
 
+// Replaces the two optimistic LocalCredential rows written under the
+// clientId-derived keys (see the provisioning page) with the
+// server-authoritative rows, and reconciles the wallet the same way
+// applyCreateWalletResult does (a new attendee's wallet was also written
+// optimistically alongside the credentials).
+async function applyProvisionCredentialResult(payload: any, result: any) {
+  await db.credentials.delete(`${payload.clientId}-wallet`);
+  await db.credentials.delete(`${payload.clientId}-ticket`);
+  for (const c of result.credentials ?? []) {
+    await db.credentials.put(c);
+  }
+  if (result.wallet) {
+    if (payload.walletClientId) {
+      await db.wallets.delete(payload.walletClientId);
+    }
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
 // TOPUP_WALLET creates a genuine new local-id transaction row that needs
 // remapping to its server id. Balance is only patched if the server says it
 // actually changed (COMPLETED) — never trust an optimistic local increment
@@ -535,6 +554,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CREATE_WALLET":
           await applyCreateWalletResult(entry.payload, result);
+          break;
+        case "PROVISION_CREDENTIAL":
+          await applyProvisionCredentialResult(entry.payload, result);
           break;
         case "TOPUP_WALLET":
           await applyTopupWalletResult(entry.payload, result);

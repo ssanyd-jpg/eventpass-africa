@@ -13,7 +13,7 @@ import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { resolveCodeFromUid } from "@/lib/credentials";
 
 type TerminalResult = {
-  kind: "valid" | "declined" | "invalid" | "offline" | "recorded";
+  kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned";
   message: string;
   code: string;
   // Set only for a tap that selected a campaign — lets the reactive
@@ -235,7 +235,17 @@ export default function WalletChargeTerminalPage() {
   const handleNfcDetect = useCallback(
     async (reading: NFCReading) => {
       const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "wallet") : null) ?? reading.text;
-      if (code) activeHandler(code);
+      if (code) {
+        activeHandler(code);
+        return;
+      }
+      if (reading.uid) {
+        setResult({
+          kind: "notProvisioned",
+          message: "Wristband not provisioned — please visit the registration desk.",
+          code: reading.uid,
+        });
+      }
     },
     [activeHandler]
   );
@@ -381,7 +391,7 @@ export default function WalletChargeTerminalPage() {
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid" || result.kind === "recorded"
               ? "border-ok/40 bg-ok/10"
-              : result.kind === "declined" || result.kind === "offline"
+              : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned"
               ? "border-warn/40 bg-warn/10"
               : "border-danger/40 bg-danger/10"
           }`}
@@ -391,7 +401,7 @@ export default function WalletChargeTerminalPage() {
             className={`mt-1 text-lg font-semibold ${
               result.kind === "valid" || result.kind === "recorded"
                 ? "text-ok"
-                : result.kind === "declined" || result.kind === "offline"
+                : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned"
                 ? "text-warn"
                 : "text-danger"
             }`}

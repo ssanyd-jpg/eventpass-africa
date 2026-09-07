@@ -73,6 +73,8 @@ export function buildSyncAuditEntry(
       return { action: "WITHDRAWAL_APPROVED", summary: `Approved a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
     case "REJECT_WITHDRAWAL":
       return { action: "WITHDRAWAL_REJECTED", summary: `Rejected a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
+    case "PROVISION_CREDENTIAL":
+      return { action: "CREDENTIAL_PROVISIONED", summary: `Provisioned a wristband for ${result.user?.name ?? "an attendee"} at "${result.eventTitle}"` };
     // WITHDRAW_WALLET itself gets no case — buyer self-action, matches the
     // "attendee/vendor-applicant self-actions excluded" convention this
     // model's own doc comment already states.

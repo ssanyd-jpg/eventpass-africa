@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     type: "PASSWORD_RESET",
     channel: "EMAIL",
     recipient: user.email,
-    subject: "Reset your EventPass Africa password",
+    subject: "Reset your Chaap password",
     body: `Hi ${user.name}, reset your password here (expires in 1 hour): ${resetUrl}`,
   });
 

@@ -374,7 +374,8 @@ export type OutboxOpType =
   | "SPONSOR_TAP"
   | "ADD_SPONSOR_CAMPAIGN"
   | "DEACTIVATE_SPONSOR_CAMPAIGN"
-  | "CHECK_ORDER_PAYMENT_STATUS";
+  | "CHECK_ORDER_PAYMENT_STATUS"
+  | "PROVISION_CREDENTIAL";
 
 export interface OutboxEntry {
   id?: number;

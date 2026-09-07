@@ -223,3 +223,58 @@ export async function getCustomerDetailData(organizationId: string, userId: stri
   const user = orders[0]?.user ?? (await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } }));
   return { customer: { userId, name: user?.name ?? "Unknown", email: user?.email ?? "" }, orders, wallets };
 }
+
+export interface LiveEventRawData {
+  event: { startsAt: Date } | null;
+  tickets: { checkedIn: boolean; checkedInAt: Date | null }[];
+  ticketTypes: { quantityTotal: number }[];
+  wallets: { balanceCents: number }[];
+  walletTxs: {
+    type: string;
+    status: string;
+    amountCents: number | null;
+    createdAt: Date;
+    vendorId: string | null;
+    vendor: { id: string; name: string } | null;
+  }[];
+}
+
+// One combined fetcher backing checkInsByHour/transactionsByVendorByHour/
+// liveEventStats — same "one fetcher per dashboard's worth of data, many
+// pure functions draw from it" shape as getOrganizerAnalyticsData above,
+// rather than three separate queries repeating the same tickets/walletTxs
+// reads. event: null when the id doesn't resolve — callers should treat
+// that as "event not found," same as every other id-scoped fetcher.
+export async function getLiveEventData(eventId: string): Promise<LiveEventRawData> {
+  const [event, tickets, ticketTypes, wallets, walletTxs] = await Promise.all([
+    prisma.event.findUnique({ where: { id: eventId }, select: { startsAt: true } }),
+    prisma.ticket.findMany({
+      // Allowlist, same reasoning as every other analytics ticket query —
+      // a still-PENDING or PAYMENT_FAILED order's tickets aren't real
+      // attendance data yet.
+      where: { eventId, order: { status: { in: ["PAID", "NEEDS_REVIEW"] } } },
+      select: { checkedIn: true, checkedInAt: true },
+    }),
+    prisma.ticketType.findMany({
+      where: { eventId },
+      select: { quantityTotal: true },
+    }),
+    prisma.wallet.findMany({
+      where: { eventId },
+      select: { balanceCents: true },
+    }),
+    prisma.walletTransaction.findMany({
+      where: { wallet: { eventId } },
+      select: {
+        type: true,
+        status: true,
+        amountCents: true,
+        createdAt: true,
+        vendorId: true,
+        vendor: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+
+  return { event, tickets, ticketTypes, wallets, walletTxs };
+}

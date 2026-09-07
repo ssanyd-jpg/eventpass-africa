@@ -86,9 +86,9 @@ function LoginForm() {
 
       <div className="mt-4 rounded-lg border border-border bg-surface p-4 text-xs text-muted">
         <p className="mb-1 font-semibold text-foreground">{t("login.demoAccounts")}</p>
-        <p>organizer@eventpassafrica.dev / password123 (organizer)</p>
-        <p>fan@eventpassafrica.dev / password123 (attendee)</p>
-        <p>admin@eventpassafrica.dev / password123 (admin)</p>
+        <p>organizer@chaap.dev / password123 (organizer)</p>
+        <p>fan@chaap.dev / password123 (attendee)</p>
+        <p>admin@chaap.dev / password123 (admin)</p>
       </div>
 
       <p className="mt-6 text-center text-sm text-muted">

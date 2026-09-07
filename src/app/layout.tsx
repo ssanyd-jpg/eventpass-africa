@@ -19,7 +19,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "EventPass Africa — Event Ticketing That Works Offline",
+  title: "Chaap — Event Ticketing That Works Offline",
   description:
     "Browse events, sell tickets, scan gate entry, and settle vendor payouts same-day — all with 100% offline capability.",
   manifest: "/manifest.json",

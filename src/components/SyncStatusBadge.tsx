@@ -26,7 +26,7 @@ export default function SyncStatusBadge() {
   }
 
   return (
-    <div className="pill gap-2" title={online ? "Connected to EventPass Africa cloud" : "No connectivity — working from local data"}>
+    <div className="pill gap-2" title={online ? "Connected to Chaap cloud" : "No connectivity — working from local data"}>
       <span
         className={`h-2 w-2 rounded-full ${dotColor} ${pulse ? "animate-ping" : ""}`}
         style={{ boxShadow: pulse ? "none" : `0 0 0 3px transparent` }}

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     type: "ORGANIZATION_INVITE",
     channel: "EMAIL",
     recipient: parsed.data.email,
-    subject: `You've been invited to join ${session.user.organizationName} on EventPass Africa`,
+    subject: `You've been invited to join ${session.user.organizationName} on Chaap`,
     body: `Hi, ${session.user.name} invited you to join ${session.user.organizationName} as a team member. Accept here (expires in 7 days): ${acceptUrl}`,
   });
 

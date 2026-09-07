@@ -325,3 +325,174 @@ export function sponsorTapsBySponsor(
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
 }
+
+const HOUR_MS = 60 * 60 * 1000;
+
+// Floors to the top of the hour, in local time — same "this codebase never
+// does timezone-aware bucketing" convention bucketByDay already follows
+// with startOfDay.
+function startOfHourMs(date: Date): number {
+  const d = new Date(date);
+  d.setMinutes(0, 0, 0);
+  return d.getTime();
+}
+
+function formatHourLabel(ms: number): string {
+  return `${String(new Date(ms).getHours()).padStart(2, "0")}:00`;
+}
+
+export interface HourPoint {
+  hour: string; // "09:00"
+  count: number; // arrivals in this hour only
+  cumulative: number; // running total through this hour, inclusive
+}
+
+// Zero-filled hourly check-in series, from the event's start hour through
+// `now` (or the latest actual check-in, if later — a defensive floor, not
+// the expected case) — same zero-fill philosophy as bucketByDay, extended
+// to carry both the per-hour arrival rate and the running total so callers
+// can show either without recomputing from the other.
+export function checkInsByHour(
+  tickets: { checkedInAt: Date | null }[],
+  eventStartsAt: Date,
+  now: Date = new Date()
+): HourPoint[] {
+  const checkedInTimes = tickets
+    .map((t) => t.checkedInAt)
+    .filter((d): d is Date => d !== null);
+
+  const startHour = startOfHourMs(eventStartsAt);
+  const latest = checkedInTimes.reduce((max, d) => (d.getTime() > max ? d.getTime() : max), now.getTime());
+  const endHour = Math.max(startOfHourMs(new Date(latest)), startHour);
+
+  const totals = new Map<number, number>();
+  for (const d of checkedInTimes) {
+    const key = startOfHourMs(d);
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+
+  const series: HourPoint[] = [];
+  let cumulative = 0;
+  for (let t = startHour; t <= endHour; t += HOUR_MS) {
+    const count = totals.get(t) ?? 0;
+    cumulative += count;
+    series.push({ hour: formatHourLabel(t), count, cumulative });
+  }
+  return series;
+}
+
+export interface VendorHourPoint {
+  hour: string;
+  count: number;
+  amountCents: number;
+}
+
+export interface VendorHourlyStats {
+  vendorName: string;
+  hours: VendorHourPoint[];
+}
+
+// Heat-map grid data: completed SALE transactions grouped by vendor and by
+// hour of day. Zero-filled across the SAME hour range as checkInsByHour
+// (event start through now/latest activity) so every vendor's row shares
+// one column set — a grid needs aligned columns, unlike a plain ranked
+// list. Single amountCents total per cell, not split by currency: unlike
+// the cross-event rankings elsewhere in this file, every wallet on one
+// event shares that event's one currency, so there's nothing to split.
+export function transactionsByVendorByHour(
+  txs: {
+    type: string;
+    status: string;
+    amountCents: number | null;
+    createdAt: Date;
+    vendor: { id: string; name: string } | null;
+  }[],
+  eventStartsAt: Date,
+  now: Date = new Date()
+): VendorHourlyStats[] {
+  const sales = txs.filter((t) => t.type === "SALE" && t.status === "COMPLETED" && t.vendor);
+
+  const startHour = startOfHourMs(eventStartsAt);
+  const latest = sales.reduce((max, t) => (t.createdAt.getTime() > max ? t.createdAt.getTime() : max), now.getTime());
+  const endHour = Math.max(startOfHourMs(new Date(latest)), startHour);
+  const hourKeys: number[] = [];
+  for (let t = startHour; t <= endHour; t += HOUR_MS) hourKeys.push(t);
+
+  const byVendor = new Map<string, { name: string; totals: Map<number, { count: number; amountCents: number }> }>();
+  for (const t of sales) {
+    const vendor = t.vendor!;
+    const entry = byVendor.get(vendor.id) ?? { name: vendor.name, totals: new Map() };
+    const key = startOfHourMs(t.createdAt);
+    const bucket = entry.totals.get(key) ?? { count: 0, amountCents: 0 };
+    bucket.count += 1;
+    bucket.amountCents += t.amountCents ?? 0;
+    entry.totals.set(key, bucket);
+    byVendor.set(vendor.id, entry);
+  }
+
+  return Array.from(byVendor.values()).map((v) => ({
+    vendorName: v.name,
+    hours: hourKeys.map((key) => {
+      const bucket = v.totals.get(key) ?? { count: 0, amountCents: 0 };
+      return { hour: formatHourLabel(key), count: bucket.count, amountCents: bucket.amountCents };
+    }),
+  }));
+}
+
+export interface LiveEventStats {
+  totalCheckedIn: number;
+  capacityTotal: number;
+  checkInsLast30Min: number;
+  totalTopUpCents: number;
+  totalSpendCents: number;
+  unspentBalanceCents: number;
+  activeVendorCount: number;
+  lastUpdated: Date;
+}
+
+// Single real-time snapshot for a live event-day dashboard. Only COMPLETED
+// wallet transactions count toward volume, same convention as
+// summarizeWalletActivity. Not split by currency for the same reason as
+// transactionsByVendorByHour — one event, one currency.
+export function liveEventStats(
+  tickets: { checkedIn: boolean; checkedInAt: Date | null }[],
+  ticketTypes: { quantityTotal: number }[],
+  wallets: { balanceCents: number }[],
+  walletTxs: { type: string; status: string; amountCents: number | null; createdAt: Date; vendorId: string | null }[],
+  now: Date = new Date()
+): LiveEventStats {
+  const totalCheckedIn = tickets.filter((t) => t.checkedIn).length;
+  const capacityTotal = ticketTypes.reduce((sum, tt) => sum + tt.quantityTotal, 0);
+
+  const thirtyMinAgo = now.getTime() - 30 * 60 * 1000;
+  const checkInsLast30Min = tickets.filter(
+    (t) => t.checkedInAt !== null && t.checkedInAt.getTime() >= thirtyMinAgo
+  ).length;
+
+  const sixtyMinAgo = now.getTime() - 60 * 60 * 1000;
+  let totalTopUpCents = 0;
+  let totalSpendCents = 0;
+  const activeVendorIds = new Set<string>();
+  for (const t of walletTxs) {
+    if (t.status !== "COMPLETED") continue;
+    if (t.type === "TOPUP") {
+      totalTopUpCents += t.amountCents ?? 0;
+    } else if (t.type === "SALE") {
+      totalSpendCents += t.amountCents ?? 0;
+      if (t.vendorId && t.createdAt.getTime() >= sixtyMinAgo) activeVendorIds.add(t.vendorId);
+    }
+  }
+
+  const unspentBalanceCents = wallets.reduce((sum, w) => sum + w.balanceCents, 0);
+
+  return {
+    totalCheckedIn,
+    capacityTotal,
+    checkInsLast30Min,
+    totalTopUpCents,
+    totalSpendCents,
+    unspentBalanceCents,
+    activeVendorCount: activeVendorIds.size,
+    lastUpdated: now,
+  };
+}

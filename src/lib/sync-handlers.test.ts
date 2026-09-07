@@ -10,6 +10,7 @@ import {
   createTestSponsor,
   createTestWallet,
   createTestSponsorCampaign,
+  createPaidOrder,
 } from "@/lib/test-fixtures";
 import {
   handleSellTickets,
@@ -26,6 +27,7 @@ import {
   handleSponsorTap,
   handleAddSponsorCampaign,
   handleDeactivateSponsorCampaign,
+  handleProvisionCredential,
   payloadSchemas,
 } from "@/lib/sync-handlers";
 
@@ -1702,5 +1704,206 @@ describe("handleCheckInVendor", () => {
     const result = await handleCheckInVendor(someoneElse.id, someoneElseOrgId, { badgeCode });
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
+  });
+});
+
+describe("handleProvisionCredential", () => {
+  function uniqueUid() {
+    return `04:${Date.now().toString(16)}:${Math.random().toString(16).slice(2, 10)}`;
+  }
+  function uniqueClientId() {
+    return `provision-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  it("links both the wallet and an existing PAID ticket, sharing the same nfcUid", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const { event } = await createPaidOrder(organizationId, buyer.id, 100000);
+    const uid = uniqueUid();
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uid,
+      userId: buyer.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.wallet.ownerUserId).toBe(buyer.id);
+    expect(result.credentials.map((c: any) => c.walletId).filter(Boolean)).toHaveLength(1);
+    expect(result.credentials.map((c: any) => c.ticketId).filter(Boolean)).toHaveLength(1);
+
+    const rows = await prisma.credential.findMany({ where: { nfcUid: uid, status: "ACTIVE" } });
+    expect(rows).toHaveLength(2);
+  });
+
+  it("succeeds wallet-only when the attendee has no PAID/NEEDS_REVIEW ticket for this event", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const uid = uniqueUid();
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uid,
+      email: attendee.email,
+      name: attendee.name,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.wallet.ownerUserId).toBe(attendee.id);
+    expect(result.credentials).toHaveLength(1);
+    expect(result.credentials[0].walletId).toBe(result.wallet.id);
+
+    const rows = await prisma.credential.findMany({ where: { nfcUid: uid, status: "ACTIVE" } });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("links the ticket's current transfer-holder, not the original buyer", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const originalBuyer = await createTestUser();
+    const holder = await createTestUser();
+    const { event, order } = await createPaidOrder(organizationId, originalBuyer.id, 100000);
+    await prisma.ticket.update({ where: { id: order.tickets[0].id }, data: { currentHolderUserId: holder.id } });
+    const uid = uniqueUid();
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uid,
+      userId: holder.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.wallet.ownerUserId).toBe(holder.id);
+    expect(result.credentials.some((c: any) => c.ticketId === order.tickets[0].id)).toBe(true);
+  });
+
+  it("creates a real User with a working password hash for a brand-new email", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const email = `walkup-${Date.now()}@test.local`;
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      email,
+      name: "Walk-up Attendee",
+    });
+
+    expect(result.ok).toBe(true);
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: result.user.id } });
+    expect(stored.passwordHash).toBeTruthy();
+    expect(stored.passwordHash).not.toBe(email);
+  });
+
+  it("reuses an existing User by email rather than creating a duplicate", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const existing = await createTestUser();
+    const event = await createTestEvent(organizationId);
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      email: existing.email,
+      name: "Ignored",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.user.id).toBe(existing.id);
+    expect(await prisma.user.count({ where: { email: existing.email } })).toBe(1);
+  });
+
+  it("re-provisioning a NEW tag for the same attendee supersedes their old credential(s)", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationId);
+
+    const first: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      userId: attendee.id,
+    });
+    const second: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      userId: attendee.id,
+    });
+
+    expect(first.wallet.id).toBe(second.wallet.id); // same wallet, one per user per event
+    const history = await prisma.credential.findMany({ where: { walletId: first.wallet.id }, orderBy: { createdAt: "asc" } });
+    expect(history).toHaveLength(2);
+    expect(history[0].status).toBe("SUPERSEDED");
+    expect(history[0].supersededAt).not.toBeNull();
+    expect(history[1].status).toBe("ACTIVE");
+  });
+
+  it("cross-attendee tag reuse: re-provisioning a uid previously bound to A, now for B, supersedes A's row(s) too", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendeeA = await createTestUser();
+    const attendeeB = await createTestUser();
+    const event = await createTestEvent(organizationId);
+    const uid = uniqueUid();
+
+    await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uid,
+      userId: attendeeA.id,
+    });
+    const forB: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uid,
+      userId: attendeeB.id,
+    });
+
+    const activeForUid = await prisma.credential.findMany({ where: { nfcUid: uid, status: "ACTIVE" } });
+    expect(activeForUid).toHaveLength(1);
+    expect(activeForUid[0].walletId).toBe(forB.wallet.id);
+  });
+
+  it("returns FORBIDDEN when the event belongs to a different organization", async () => {
+    const { organizationId: organizationIdA } = await newOrganizer();
+    const { user: organizerB, organizationId: organizationIdB } = await newOrganizer();
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organizationIdA);
+
+    const result: any = await handleProvisionCredential(organizerB.id, organizationIdB, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      userId: attendee.id,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("FORBIDDEN");
+  });
+
+  // The one behavior an outbox op needs that the old Server Action never
+  // did: a dropped-response retry must not supersede-then-recreate a second
+  // time — see handleProvisionCredential's clientId short-circuit.
+  it("replaying the same clientId returns the identical credential rows without a second supersede", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const { event } = await createPaidOrder(organizationId, attendee.id, 100000);
+    const clientId = uniqueClientId();
+    const payload = { clientId, eventId: event.id, nfcUid: uniqueUid(), userId: attendee.id };
+
+    const first: any = await handleProvisionCredential(organizer.id, organizationId, payload);
+    const second: any = await handleProvisionCredential(organizer.id, organizationId, payload);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.credentials.map((c: any) => c.id).sort()).toEqual(first.credentials.map((c: any) => c.id).sort());
+    expect(second.credentials.every((c: any) => c.status === "ACTIVE")).toBe(true);
+
+    const rows = await prisma.credential.findMany({ where: { clientId } });
+    expect(rows).toHaveLength(2); // wallet-linked + ticket-linked, none superseded on replay
+    expect(rows.every((r) => r.status === "ACTIVE")).toBe(true);
   });
 });

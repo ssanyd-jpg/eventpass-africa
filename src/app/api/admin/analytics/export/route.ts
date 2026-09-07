@@ -144,7 +144,7 @@ export async function GET() {
   ];
 
   const csv = buildCsvDocument(sections);
-  const filename = `eventpass-platform-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `chaap-platform-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
 
   return new NextResponse(csv, {
     headers: {

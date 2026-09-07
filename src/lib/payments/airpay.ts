@@ -124,7 +124,7 @@ export const airpayProvider: PaymentProvider = {
     const orderid = `AP${req.orderClientId.replace(/[^a-zA-Z0-9]/g, "").slice(-24)}`;
 
     const payload = {
-      buyer_email: "buyer@eventpassafrica.dev",
+      buyer_email: "buyer@chaap.dev",
       buyer_phone: toLocalSubscriberNumber(req.phoneNumber),
       buyer_firstname: "Guest",
       buyer_lastname: "Buyer",

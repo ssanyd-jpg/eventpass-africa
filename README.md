@@ -1,4 +1,4 @@
-# EventPass Africa
+# Chaap
 
 An offline-first event ticketing platform — browse events, sell tickets,
 scan gate entry, manage refunds, and settle vendor payouts, all designed
@@ -30,10 +30,10 @@ npm run dev
 
 Visit http://localhost:3000. Demo accounts (password `password123`):
 
-- `organizer@eventpassafrica.dev` / `promoter@eventpassafrica.dev` — organizer
+- `organizer@chaap.dev` / `promoter@chaap.dev` — organizer
   accounts, already own the seeded events
-- `fan@eventpassafrica.dev` — attendee account
-- `admin@eventpassafrica.dev` — platform admin (`/admin`)
+- `fan@chaap.dev` — attendee account
+- `admin@chaap.dev` — platform admin (`/admin`)
 
 Run the test suite with `npm test`.
 

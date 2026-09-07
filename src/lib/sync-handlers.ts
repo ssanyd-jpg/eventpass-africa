@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateTicketCode, slugify, formatCents } from "@/lib/format";
@@ -211,6 +213,28 @@ export const payloadSchemas = {
     code: z.string().min(1).max(40),
     eventId: z.string().min(1),
     eventClientId: z.string().nullable().optional(),
+  }),
+  // Either userId (an already-resolved attendee) or email+name (a walk-up
+  // attendee with no account yet) must be present — never both trusted at
+  // once, enforced below.
+  PROVISION_CREDENTIAL: z.object({
+    clientId: z.string().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    nfcUid: z.string().min(1),
+    userId: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    name: z.string().min(1).max(120).optional(),
+    // Set only when the provisioning page had to optimistically create a
+    // brand-new local Wallet (no existing wallet found for this attendee) —
+    // lets the new server-side Wallet row carry the same clientId that
+    // local optimistic row used, so applyProvisionCredentialResult can
+    // delete-then-replace it the same way applyCreateWalletResult does.
+    walletClientId: z.string().min(1).optional(),
+  }).superRefine((val, ctx) => {
+    if (!val.userId && !(val.email && val.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either userId or email+name is required." });
+    }
   }),
   TOPUP_WALLET: z.object({
     clientId: z.string().min(1),
@@ -1652,6 +1676,164 @@ export async function handleCreateWallet(userId: string, payload: any) {
   });
 
   return { ok: true, wallet: shapeWallet(created) };
+}
+
+const provisionUserSelect = { id: true, name: true, email: true } as const;
+
+function shapeCredential(c: any) {
+  return { id: c.id, nfcUid: c.nfcUid, status: c.status, ticketId: c.ticketId, walletId: c.walletId, code: c.code };
+}
+
+// Offline outbox counterpart to what was previously the provisionWristband
+// Server Action (src/lib/wristband-handlers.ts, now removed) — same
+// find-or-create-attendee/wallet, best-effort ticket link, and
+// supersede-then-create Credential logic, with one addition an outbox op
+// needs that a single UI-triggered Server Action call didn't: a clientId
+// idempotency check, since a queued op can be retried after a dropped
+// response. findUnique(email) ?? create(...) for the attendee, and the
+// eventId_ownerUserId unique for the wallet, are already replay-safe on
+// their own (same reasoning handleCreateWallet's own fallback lookup
+// relies on) — the clientId check below is specifically for the Credential
+// rows themselves, which have no other natural uniqueness to fall back on.
+export async function handleProvisionCredential(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existingCredentials = await prisma.credential.findMany({ where: { clientId } });
+  if (existingCredentials.length > 0) {
+    const wallet = await prisma.wallet.findUnique({
+      where: { id: existingCredentials.find((c) => c.walletId)?.walletId ?? "" },
+      include: walletInclude,
+    });
+    const [user, event] = await Promise.all([
+      wallet ? prisma.user.findUnique({ where: { id: wallet.ownerUserId }, select: provisionUserSelect }) : null,
+      prisma.event.findUnique({ where: { id: String(payload.eventId) }, select: { title: true } }),
+    ]);
+    return {
+      ok: true,
+      credentials: existingCredentials.map(shapeCredential),
+      wallet: wallet ? shapeWallet(wallet) : null,
+      user,
+      eventTitle: event?.title,
+    };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const nfcUid = String(payload.nfcUid);
+  // Resolved server-side from the authenticated actor, not trusted from the
+  // payload — payloadSchemas.PROVISION_CREDENTIAL has no actorName field
+  // (unlike the old Server Action, which got it for free from the session
+  // in its own wrapper), so this handler looks it up itself instead.
+  const actor = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+  const actorName = actor?.name ?? actor?.email ?? "Unknown";
+
+  const outcome = await prisma.$transaction(
+    async (tx) => {
+      let user;
+      if (payload.userId) {
+        user = await tx.user.findUniqueOrThrow({ where: { id: String(payload.userId) }, select: provisionUserSelect });
+      } else {
+        const email = String(payload.email);
+        user = await tx.user.findUnique({ where: { email }, select: provisionUserSelect });
+        if (!user) {
+          // No account yet (a walk-up attendee) — create a real, functional
+          // User row with a random password nobody knows. They can later
+          // claim it via the existing generic "forgot password" flow (which
+          // already works for any email with a User row, regardless of how
+          // its hash was set) — same shape as a normal door-sale account.
+          const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+          user = await tx.user.create({
+            data: { name: String(payload.name), email, passwordHash },
+            select: provisionUserSelect,
+          });
+        }
+      }
+
+      let wallet = await tx.wallet.findUnique({
+        where: { eventId_ownerUserId: { eventId: event.id, ownerUserId: user.id } },
+        include: walletInclude,
+      });
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            clientId: payload.walletClientId ? String(payload.walletClientId) : undefined,
+            code: generateTicketCode(),
+            eventId: event.id,
+            ownerUserId: user.id,
+            currency: event.currency,
+          },
+          include: walletInclude,
+        });
+      }
+
+      // Best-effort, read-only — a Ticket only exists via a completed
+      // order, never created here. Covers both the original buyer and
+      // someone who received this ticket via an accepted transfer.
+      const ticket = await tx.ticket.findFirst({
+        where: {
+          eventId: event.id,
+          order: { status: { in: ["PAID", "NEEDS_REVIEW"] } },
+          OR: [{ order: { userId: user.id } }, { currentHolderUserId: user.id }],
+        },
+      });
+
+      // A physical tag can only meaningfully belong to one person at a time
+      // — supersede anything ACTIVE that collides on this uid, OR on the
+      // wallet/ticket we're about to (re-)link, before creating new rows.
+      await tx.credential.updateMany({
+        where: {
+          organizationId,
+          status: "ACTIVE",
+          OR: [{ nfcUid }, { walletId: wallet.id }, ...(ticket ? [{ ticketId: ticket.id }] : [])],
+        },
+        data: { status: "SUPERSEDED", supersededAt: new Date(), supersededByUserId: userId },
+      });
+
+      const walletCredential = await tx.credential.create({
+        data: {
+          clientId,
+          organizationId,
+          nfcUid,
+          walletId: wallet.id,
+          code: wallet.code,
+          createdByUserId: userId,
+          createdByName: actorName,
+        },
+      });
+      const credentials = [walletCredential];
+      if (ticket) {
+        const ticketCredential = await tx.credential.create({
+          data: {
+            clientId,
+            organizationId,
+            nfcUid,
+            ticketId: ticket.id,
+            code: ticket.code,
+            createdByUserId: userId,
+            createdByName: actorName,
+          },
+        });
+        credentials.push(ticketCredential);
+      }
+
+      return { user, wallet, credentials, eventTitle: event.title };
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  return {
+    ok: true,
+    credentials: outcome.credentials.map(shapeCredential),
+    wallet: shapeWallet(outcome.wallet),
+    user: outcome.user,
+    eventTitle: outcome.eventTitle,
+  };
 }
 
 export async function handleTopupWallet(userId: string, payload: any) {

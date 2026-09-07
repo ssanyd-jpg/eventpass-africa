@@ -13,6 +13,9 @@ import {
   spendByVendor,
   sponsorTapsBySponsor,
   customerStatsByBuyer,
+  checkInsByHour,
+  transactionsByVendorByHour,
+  liveEventStats,
 } from "./analytics";
 
 describe("bucketByDay", () => {
@@ -265,5 +268,109 @@ describe("customerStatsByBuyer", () => {
       { userId: "u2", user: { name: "Baraka", email: "baraka@test.local" }, totalCents: 50000, currency: "TZS", createdAt: new Date("2026-08-02") },
     ]);
     expect(stats.map((s) => s.userId).sort()).toEqual(["u1", "u2"]);
+  });
+});
+
+describe("checkInsByHour", () => {
+  it("zero-fills every hour from event start through now, even with no check-ins", () => {
+    const series = checkInsByHour([], new Date("2026-08-01T09:00:00"), new Date("2026-08-01T11:30:00"));
+    expect(series.map((p) => p.hour)).toEqual(["09:00", "10:00", "11:00"]);
+    expect(series.every((p) => p.count === 0 && p.cumulative === 0)).toBe(true);
+  });
+
+  it("buckets check-ins by hour and carries a running cumulative total forward", () => {
+    const tickets = [
+      { checkedInAt: new Date("2026-08-01T09:15:00") },
+      { checkedInAt: new Date("2026-08-01T09:45:00") },
+      { checkedInAt: new Date("2026-08-01T10:30:00") },
+    ];
+    const series = checkInsByHour(tickets, new Date("2026-08-01T09:00:00"), new Date("2026-08-01T11:30:00"));
+    expect(series).toEqual([
+      { hour: "09:00", count: 2, cumulative: 2 },
+      { hour: "10:00", count: 1, cumulative: 3 },
+      { hour: "11:00", count: 0, cumulative: 3 },
+    ]);
+  });
+
+  it("ignores tickets that haven't checked in yet", () => {
+    const tickets = [{ checkedInAt: null }, { checkedInAt: new Date("2026-08-01T09:10:00") }];
+    const series = checkInsByHour(tickets, new Date("2026-08-01T09:00:00"), new Date("2026-08-01T09:30:00"));
+    expect(series).toEqual([{ hour: "09:00", count: 1, cumulative: 1 }]);
+  });
+});
+
+describe("transactionsByVendorByHour", () => {
+  it("returns nothing for no transactions", () => {
+    const rows = transactionsByVendorByHour([], new Date("2026-08-01T09:00:00"), new Date("2026-08-01T10:30:00"));
+    expect(rows).toEqual([]);
+  });
+
+  it("buckets completed SALE transactions by vendor and by hour, ignoring other types/statuses, with every vendor sharing the same zero-filled hour columns", () => {
+    const txs = [
+      { type: "SALE", status: "COMPLETED", amountCents: 1000, createdAt: new Date("2026-08-01T09:20:00"), vendor: { id: "v1", name: "Spice Grill" } },
+      { type: "SALE", status: "COMPLETED", amountCents: 500, createdAt: new Date("2026-08-01T09:50:00"), vendor: { id: "v1", name: "Spice Grill" } },
+      { type: "SALE", status: "COMPLETED", amountCents: 2000, createdAt: new Date("2026-08-01T10:10:00"), vendor: { id: "v2", name: "Coconut Water" } },
+      { type: "SALE", status: "FAILED", amountCents: 9999, createdAt: new Date("2026-08-01T09:25:00"), vendor: { id: "v1", name: "Spice Grill" } },
+      { type: "TOPUP", status: "COMPLETED", amountCents: 5000, createdAt: new Date("2026-08-01T09:30:00"), vendor: null },
+    ];
+    const rows = transactionsByVendorByHour(txs, new Date("2026-08-01T09:00:00"), new Date("2026-08-01T10:30:00"));
+
+    const spiceGrill = rows.find((r) => r.vendorName === "Spice Grill")!;
+    const coconutWater = rows.find((r) => r.vendorName === "Coconut Water")!;
+    expect(spiceGrill.hours).toEqual([
+      { hour: "09:00", count: 2, amountCents: 1500 },
+      { hour: "10:00", count: 0, amountCents: 0 },
+    ]);
+    expect(coconutWater.hours).toEqual([
+      { hour: "09:00", count: 0, amountCents: 0 },
+      { hour: "10:00", count: 1, amountCents: 2000 },
+    ]);
+  });
+});
+
+describe("liveEventStats", () => {
+  it("computes check-in, capacity, wallet, and active-vendor stats from raw rows", () => {
+    const now = new Date("2026-08-01T12:00:00");
+    const tickets = [
+      { checkedIn: true, checkedInAt: new Date("2026-08-01T11:50:00") }, // within last 30 min
+      { checkedIn: true, checkedInAt: new Date("2026-08-01T09:00:00") }, // checked in, but not recent
+      { checkedIn: false, checkedInAt: null },
+    ];
+    const ticketTypes = [{ quantityTotal: 100 }, { quantityTotal: 50 }];
+    const wallets = [{ balanceCents: 3000 }, { balanceCents: 2000 }];
+    const walletTxs = [
+      { type: "TOPUP", status: "COMPLETED", amountCents: 5000, createdAt: new Date("2026-08-01T10:00:00"), vendorId: null },
+      { type: "TOPUP", status: "PENDING", amountCents: 9999, createdAt: new Date("2026-08-01T10:00:00"), vendorId: null },
+      { type: "SALE", status: "COMPLETED", amountCents: 1500, createdAt: new Date("2026-08-01T11:30:00"), vendorId: "v1" }, // within last 60 min
+      { type: "SALE", status: "COMPLETED", amountCents: 800, createdAt: new Date("2026-08-01T09:00:00"), vendorId: "v2" }, // not recent
+      { type: "SALE", status: "FAILED", amountCents: 9999, createdAt: new Date("2026-08-01T11:45:00"), vendorId: "v3" },
+    ];
+
+    const stats = liveEventStats(tickets, ticketTypes, wallets, walletTxs, now);
+    expect(stats).toEqual({
+      totalCheckedIn: 2,
+      capacityTotal: 150,
+      checkInsLast30Min: 1,
+      totalTopUpCents: 5000,
+      totalSpendCents: 2300,
+      unspentBalanceCents: 5000,
+      activeVendorCount: 1,
+      lastUpdated: now,
+    });
+  });
+
+  it("handles zero data cleanly", () => {
+    const now = new Date("2026-08-01T12:00:00");
+    const stats = liveEventStats([], [], [], [], now);
+    expect(stats).toEqual({
+      totalCheckedIn: 0,
+      capacityTotal: 0,
+      checkInsLast30Min: 0,
+      totalTopUpCents: 0,
+      totalSpendCents: 0,
+      unspentBalanceCents: 0,
+      activeVendorCount: 0,
+      lastUpdated: now,
+    });
   });
 });

@@ -16,6 +16,7 @@ import {
   handleRejectVendor,
   handleCheckInVendor,
   handleCreateWallet,
+  handleProvisionCredential,
   handleTopupWallet,
   handleCheckTopupStatus,
   handleCheckOrderPaymentStatus,
@@ -119,6 +120,9 @@ export async function POST(request: Request) {
         break;
       case "CREATE_WALLET":
         result = await handleCreateWallet(session.user.id, body.payload);
+        break;
+      case "PROVISION_CREDENTIAL":
+        result = await handleProvisionCredential(session.user.id, session.user.organizationId, body.payload);
         break;
       case "TOPUP_WALLET":
         result = await handleTopupWallet(session.user.id, body.payload);

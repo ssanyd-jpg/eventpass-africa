@@ -14,7 +14,7 @@ import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { resolveCodeFromUid } from "@/lib/credentials";
 
 type ScanResult = {
-  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved" | "paymentPending" | "paymentFailed";
+  kind: "valid" | "already" | "invalid" | "refunded" | "notApproved" | "paymentPending" | "paymentFailed" | "notProvisioned";
   message: string;
   ticketTypeName?: string;
   boothNumber?: string | null;
@@ -193,9 +193,19 @@ export default function GateScannerPage() {
   const handleNfcDetect = useCallback(
     async (reading: NFCReading) => {
       const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "ticket") : null) ?? reading.text;
-      if (code) checkIn(code);
+      if (code) {
+        checkIn(code);
+        return;
+      }
+      if (reading.uid) {
+        setResult({
+          kind: "notProvisioned",
+          message: t("scan.notProvisioned"),
+          code: reading.uid,
+        });
+      }
     },
-    [checkIn]
+    [checkIn, t]
   );
 
   function onSubmit(e: React.FormEvent) {
@@ -305,7 +315,7 @@ export default function GateScannerPage() {
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid"
               ? "border-ok/40 bg-ok/10"
-              : result.kind === "already" || result.kind === "paymentPending"
+              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
               ? "border-warn/40 bg-warn/10"
               : "border-danger/40 bg-danger/10"
           }`}
@@ -319,10 +329,18 @@ export default function GateScannerPage() {
           )}
           <p
             className={`mt-1 text-lg font-semibold ${
-              result.kind === "valid" ? "text-ok" : result.kind === "already" || result.kind === "paymentPending" ? "text-warn" : "text-danger"
+              result.kind === "valid"
+                ? "text-ok"
+                : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
+                ? "text-warn"
+                : "text-danger"
             }`}
           >
-            {result.kind === "valid" ? "✓ " : result.kind === "already" || result.kind === "paymentPending" ? "↻ " : "✕ "}
+            {result.kind === "valid"
+              ? "✓ "
+              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned"
+              ? "↻ "
+              : "✕ "}
             {result.message}
           </p>
           {(result.kind === "refunded" || result.kind === "paymentFailed") && (

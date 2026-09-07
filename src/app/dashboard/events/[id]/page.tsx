@@ -193,6 +193,12 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/edit`} className="btn-secondary">Edit</Link>
           <Link href={`/dashboard/events/${event.id}/vendors`} className="btn-secondary">Vendors</Link>
           <Link href={`/dashboard/events/${event.id}/sponsors`} className="btn-secondary">Sponsors</Link>
+          <Link href={`/dashboard/events/${event.id}/live`} target="_blank" rel="noopener noreferrer" className="btn-secondary">
+            Live monitoring ↗
+          </Link>
+          <Link href={`/scan/${event.id}/provision`} target="_blank" rel="noopener noreferrer" className="btn-secondary">
+            Wristband desk ↗
+          </Link>
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>

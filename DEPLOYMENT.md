@@ -1,4 +1,4 @@
-# Deploying EventPass Africa
+# Deploying Chaap
 
 The schema is Postgres-only (`prisma/schema.prisma` — SQLite was only ever
 a local-dev placeholder, retired once a real database existed). Local dev
@@ -98,7 +98,7 @@ follow-up task once credentials are verified against the sandbox.
 
 ## Post-deploy checklist
 
-- [ ] Log in as the seeded admin (`admin@eventpassafrica.dev` if you ran
+- [ ] Log in as the seeded admin (`admin@chaap.dev` if you ran
       the seed script) and change that password immediately, or delete
       the seed accounts and create a real admin via the database directly.
 - [ ] Confirm `/admin/notifications` is reachable — it's how you'll relay
