@@ -16,6 +16,13 @@ model User {
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
+  // Nullable — no signup flow collects this. Only ever set opportunistically
+  // when a buyer types one at AIRPAY_ONLINE checkout (see handleSellTickets),
+  // which is also the only source SMS notifications (order confirmation,
+  // wristband provisioning, low wallet balance) have to reach a user — see
+  // src/lib/sms.ts. A user who's never paid online has no phone on file, so
+  // those SMS sends are skipped for them, not an error.
+  phone        String?
   passwordHash String
   role         String   @default("USER")
   createdAt    DateTime @default(now())

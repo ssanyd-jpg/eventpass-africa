@@ -7,6 +7,8 @@ import { sendNotification } from "@/lib/notifications";
 import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { getActivePaymentProvider } from "@/lib/payments";
 import { verifyAirpayOrder } from "@/lib/payments/airpay";
+import { normalizeTanzaniaPhone } from "@/lib/sms";
+import { buildOrderConfirmationHtml } from "@/lib/email";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -526,10 +528,10 @@ export function shapeOrder(o: any) {
 const fullOrderInclude = {
   items: { include: { ticketType: true } },
   tickets: { include: { ticketType: true } },
-  // organizationId added for handleMarkOrderPaid's ownership check below —
-  // shapeOrder itself never reads it, so this is a no-op for every other
-  // existing caller of fullOrderInclude.
-  event: { select: { id: true, clientId: true, title: true, organizationId: true } },
+  // organizationId added for handleMarkOrderPaid's ownership check, slug
+  // for the retry links in PAYMENT_FAILED notifications — shapeOrder itself
+  // reads neither, so this is a no-op for every other existing caller.
+  event: { select: { id: true, clientId: true, title: true, organizationId: true, slug: true } },
   registrationAnswers: { include: { question: true } },
 } as const;
 
@@ -570,6 +572,15 @@ export async function handleSellTickets(userId: string, payload: any) {
       if (tt) precheckTotalCents += tt.priceCents * item.quantity;
     }
 
+    // Opportunistic capture — this checkout phone number is the only
+    // source SMS notifications have to reach this buyer at all (see
+    // src/lib/sms.ts and User.phone's own doc comment in schema.prisma).
+    // Persisted regardless of how the charge below resolves, so even a
+    // FAILED attempt's retry SMS later in this same function has a number
+    // to send to.
+    const normalizedPhone = normalizeTanzaniaPhone(String(payload.phoneNumber));
+    await prisma.user.update({ where: { id: userId }, data: { phone: normalizedPhone } });
+
     const provider = getActivePaymentProvider();
     charge = await provider.initiateCharge({
       orderClientId: clientId,
@@ -601,15 +612,27 @@ export async function handleSellTickets(userId: string, payload: any) {
         include: fullOrderInclude,
       });
 
-      const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+      const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
       if (buyer) {
+        const retryUrl = `${process.env.NEXTAUTH_URL ?? ""}/events/${event.slug}`;
+        const declineReason = charge.message ? `: ${charge.message}` : ".";
         await sendNotification({
           type: "ORDER_PAYMENT_FAILED",
           channel: "EMAIL",
           recipient: buyer.email,
           subject: `Payment failed for ${event.title}`,
-          body: `Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${charge.message ? `: ${charge.message}` : "."} No tickets were issued and nothing was charged. Please try again.`,
+          body: `Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason} No tickets were issued and nothing was charged. Try again: ${retryUrl}`,
+          html: `<p>Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason}</p><p>No tickets were issued and nothing was charged.</p><p><a href="${retryUrl}">Try again</a></p>`,
         });
+        if (buyer.phone) {
+          await sendNotification({
+            type: "ORDER_PAYMENT_FAILED",
+            channel: "SMS",
+            recipient: buyer.phone,
+            subject: "Payment failed",
+            body: `Chaap: Payment for ${event.title} failed. Try again: ${retryUrl}`,
+          });
+        }
       }
       return { ok: true, order: shapeOrder(failedOrder), oversold: false, ticketTypeUpdates: [] };
     }
@@ -761,19 +784,38 @@ export async function handleSellTickets(userId: string, payload: any) {
   // Deferred until handleCheckOrderPaymentStatus confirms payment for a
   // still-PENDING order — sending it now would tell the buyer they have
   // valid tickets before Airpay has actually confirmed anything.
-  const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+  const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
   if (buyer && order.status !== "PENDING") {
     const waiverLine = order.waiverAcceptedAt ? " You accepted the event waiver at checkout." : "";
     const discountLine = order.discountCents > 0
       ? ` A discount of ${formatCents(order.discountCents, event.currency)} (code ${order.discountCodeText}) was applied.`
       : "";
+    const totalFormatted = formatCents(order.totalCents, event.currency);
+    const ticketCodes = order.tickets.map((t) => t.code);
     await sendNotification({
       type: "ORDER_CONFIRMATION",
       channel: "EMAIL",
       recipient: buyer.email,
       subject: `Your tickets for ${event.title}`,
-      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${formatCents(order.totalCents, event.currency)}. Ticket code(s): ${order.tickets.map((t) => t.code).join(", ")}.${discountLine}${waiverLine}`,
+      body: `Hi ${buyer.name}, your order for ${event.title} is confirmed. Total: ${totalFormatted}. Ticket code(s): ${ticketCodes.join(", ")}.${discountLine}${waiverLine}`,
+      html: await buildOrderConfirmationHtml({
+        buyerName: buyer.name,
+        eventTitle: event.title,
+        totalFormatted,
+        ticketCodes,
+        extraLines: [discountLine, waiverLine].map((l) => l.trim()).filter(Boolean),
+      }),
     });
+    if (buyer.phone) {
+      const ticketPart = ticketCodes.length === 1 ? `Ticket ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+      await sendNotification({
+        type: "ORDER_CONFIRMATION",
+        channel: "SMS",
+        recipient: buyer.phone,
+        subject: "Order confirmed",
+        body: `Chaap: ${ticketPart} for ${event.title}. Total ${totalFormatted}. See you there!`,
+      });
+    }
   }
 
   // discountRejectReason is transient buyer-facing feedback, not persisted
@@ -1228,15 +1270,33 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     if (res.count > 0) {
       // Only just transitioned to PAID by this call — fire the confirmation
       // that handleSellTickets deferred for a still-PENDING order.
-      const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true } });
+      const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true, phone: true } });
       if (buyer) {
+        const totalFormatted = formatCents(fresh.totalCents, fresh.currency);
+        const ticketCodes = fresh.tickets.map((t) => t.code);
         await sendNotification({
           type: "ORDER_CONFIRMATION",
           channel: "EMAIL",
           recipient: buyer.email,
           subject: `Your tickets for ${fresh.event.title}`,
-          body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${formatCents(fresh.totalCents, fresh.currency)}. Ticket code(s): ${fresh.tickets.map((t) => t.code).join(", ")}.`,
+          body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${totalFormatted}. Ticket code(s): ${ticketCodes.join(", ")}.`,
+          html: await buildOrderConfirmationHtml({
+            buyerName: buyer.name,
+            eventTitle: fresh.event.title,
+            totalFormatted,
+            ticketCodes,
+          }),
         });
+        if (buyer.phone) {
+          const ticketPart = ticketCodes.length === 1 ? `Ticket ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+          await sendNotification({
+            type: "ORDER_CONFIRMATION",
+            channel: "SMS",
+            recipient: buyer.phone,
+            subject: "Order confirmed",
+            body: `Chaap: ${ticketPart} for ${fresh.event.title}. Total ${totalFormatted}. See you there!`,
+          });
+        }
       }
     }
     return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
@@ -1267,15 +1327,27 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
   }
 
-  const buyer = await prisma.user.findUnique({ where: { id: outcome.userId }, select: { email: true, name: true } });
+  const buyer = await prisma.user.findUnique({ where: { id: outcome.userId }, select: { email: true, name: true, phone: true } });
   if (buyer) {
+    const retryUrl = `${process.env.NEXTAUTH_URL ?? ""}/events/${outcome.event.slug}`;
+    const declineReason = result.message ? `: ${result.message}` : ".";
     await sendNotification({
       type: "ORDER_PAYMENT_FAILED",
       channel: "EMAIL",
       recipient: buyer.email,
       subject: `Payment failed for ${outcome.event.title}`,
-      body: `Hi ${buyer.name}, your mobile money payment for ${outcome.event.title} was not confirmed${result.message ? `: ${result.message}` : "."} Your reserved tickets have been released. No charge was made — please try again.`,
+      body: `Hi ${buyer.name}, your mobile money payment for ${outcome.event.title} was not confirmed${declineReason} Your reserved tickets have been released. No charge was made. Try again: ${retryUrl}`,
+      html: `<p>Hi ${buyer.name}, your mobile money payment for ${outcome.event.title} was not confirmed${declineReason}</p><p>Your reserved tickets have been released. No charge was made.</p><p><a href="${retryUrl}">Try again</a></p>`,
     });
+    if (buyer.phone) {
+      await sendNotification({
+        type: "ORDER_PAYMENT_FAILED",
+        channel: "SMS",
+        recipient: buyer.phone,
+        subject: "Payment failed",
+        body: `Chaap: Payment for ${outcome.event.title} failed. Try again: ${retryUrl}`,
+      });
+    }
   }
   return { ok: true, order: shapeOrder(outcome), ticketTypeUpdates };
 }
@@ -1363,15 +1435,33 @@ export async function handleMarkOrderPaid(userId: string, organizationId: string
   if (res.count > 0) {
     // Only just transitioned to PAID by this call — same deferred
     // confirmation handleCheckOrderPaymentStatus's own PAID branch sends.
-    const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true } });
+    const buyer = await prisma.user.findUnique({ where: { id: fresh.userId }, select: { email: true, name: true, phone: true } });
     if (buyer) {
+      const totalFormatted = formatCents(fresh.totalCents, fresh.currency);
+      const ticketCodes = fresh.tickets.map((t) => t.code);
       await sendNotification({
         type: "ORDER_CONFIRMATION",
         channel: "EMAIL",
         recipient: buyer.email,
         subject: `Your tickets for ${fresh.event.title}`,
-        body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${formatCents(fresh.totalCents, fresh.currency)}. Ticket code(s): ${fresh.tickets.map((t) => t.code).join(", ")}.`,
+        body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${totalFormatted}. Ticket code(s): ${ticketCodes.join(", ")}.`,
+        html: await buildOrderConfirmationHtml({
+          buyerName: buyer.name,
+          eventTitle: fresh.event.title,
+          totalFormatted,
+          ticketCodes,
+        }),
       });
+      if (buyer.phone) {
+        const ticketPart = ticketCodes.length === 1 ? `Ticket ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+        await sendNotification({
+          type: "ORDER_CONFIRMATION",
+          channel: "SMS",
+          recipient: buyer.phone,
+          subject: "Order confirmed",
+          body: `Chaap: ${ticketPart} for ${fresh.event.title}. Total ${totalFormatted}. See you there!`,
+        });
+      }
     }
   }
   return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
@@ -1750,7 +1840,7 @@ export function shapeWalletTransaction(t: any) {
 
 const walletInclude = {
   event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } },
-  owner: { select: { name: true, email: true } },
+  owner: { select: { name: true, email: true, phone: true } },
 } as const;
 const walletTxInclude = {
   vendor: { select: { name: true } },
@@ -1808,7 +1898,7 @@ export async function handleCreateWallet(userId: string, payload: any) {
   return { ok: true, wallet: shapeWallet(created) };
 }
 
-const provisionUserSelect = { id: true, name: true, email: true } as const;
+const provisionUserSelect = { id: true, name: true, email: true, phone: true } as const;
 
 function shapeCredential(c: any) {
   return {
@@ -1965,6 +2055,21 @@ export async function handleProvisionCredential(userId: string, organizationId: 
     },
     { timeout: 15000, maxWait: 10000 }
   );
+
+  // Optional confirmation SMS, per the Session 6 spec — no email
+  // equivalent for this event. Best-effort, skipped silently when this
+  // attendee has no phone on file, which is the common case: nothing in
+  // the provisioning flow itself collects one (see User.phone's doc
+  // comment on why AIRPAY_ONLINE checkout is the only real source).
+  if (outcome.user.phone) {
+    await sendNotification({
+      type: "WRISTBAND_PROVISIONED",
+      channel: "SMS",
+      recipient: outcome.user.phone,
+      subject: "Wristband active",
+      body: `Chaap: Your wristband is active! Wallet code: ${outcome.wallet.code}. Balance: ${formatCents(outcome.wallet.balanceCents, outcome.wallet.currency)}.`,
+    });
+  }
 
   return {
     ok: true,
@@ -2312,6 +2417,21 @@ export async function handleChargeWallet(userId: string, organizationId: string,
       declined: true,
       reason: "INSUFFICIENT_BALANCE",
     };
+  }
+
+  // Low-balance warning — TZS-specific threshold (this app's one real
+  // currency; a USD/other-currency wallet's 2000-cent balance means
+  // something completely different, so this deliberately doesn't fire for
+  // those). Best-effort, skipped silently when the attendee has no phone
+  // on file, same discipline as the wristband-provisioned SMS above.
+  if (result.wallet.currency === "TZS" && result.wallet.balanceCents < 200000 && result.wallet.owner?.phone) {
+    await sendNotification({
+      type: "LOW_WALLET_BALANCE",
+      channel: "SMS",
+      recipient: result.wallet.owner.phone,
+      subject: "Low wallet balance",
+      body: "Your Chaap balance is low — top up at any station",
+    });
   }
 
   return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };

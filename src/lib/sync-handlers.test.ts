@@ -31,6 +31,7 @@ import {
   handleDeactivateSponsorCampaign,
   handleProvisionCredential,
   handleReplaceCredential,
+  handleChargeWallet,
   payloadSchemas,
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
@@ -2178,5 +2179,99 @@ describe("handleReplaceCredential", () => {
     expect(isOpAllowedForRole("GATE_CREW", "REPLACE_CREDENTIAL")).toBe(false);
     expect(isOpAllowedForRole("OWNER", "REPLACE_CREDENTIAL")).toBe(true);
     expect(isOpAllowedForRole("STAFF", "REPLACE_CREDENTIAL")).toBe(true);
+  });
+});
+
+describe("handleChargeWallet — low wallet balance SMS", () => {
+  // No dedicated AT_API_KEY/AT_USERNAME in the test environment, so
+  // sendNotification takes its "not configured" branch and just writes a
+  // NotificationLog row with status "LOGGED" — checking that row is exactly
+  // how every other notification-triggering test in this file already
+  // verifies a notification fired, without needing to mock the SMS provider.
+  // Phone is set already-normalized (+255...), matching what real code
+  // actually persists (see normalizeTanzaniaPhone in handleSellTickets) —
+  // and unique per test so it can never collide with another test's own
+  // NotificationLog rows in this shared, never-cleaned-up test database.
+  async function approvedVendorWithWallet(balanceCents: number) {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const attendee = await createTestUser();
+    const phone = `+255${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)}`;
+    await prisma.user.update({ where: { id: attendee.id }, data: { phone } });
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents, currency: "TZS" });
+    const added = await handleAddVendor(organizer.id, organizationId, {
+      clientId: `low-balance-vendor-${event.id}`,
+      eventId: event.id,
+      name: "Snack Stand",
+      category: "Food",
+      badgeCode: `LOWBAL-${event.id}`,
+    });
+    return { organizer, organizationId, event, wallet, vendorId: added.vendor.id as string, phone };
+  }
+
+  it("sends a low-balance SMS when a charge leaves the wallet below TZS 2,000", async () => {
+    const { organizer, organizationId, event, wallet, vendorId, phone } = await approvedVendorWithWallet(250000); // TZS 2,500
+
+    const result: any = await handleChargeWallet(organizer.id, organizationId, {
+      clientId: `charge-low-${Date.now()}`,
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      amountCents: 100000, // leaves 150000 = TZS 1,500, below the 200000 threshold
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.declined).toBeFalsy();
+    const logs = await prisma.notificationLog.findMany({ where: { type: "LOW_WALLET_BALANCE", recipient: phone } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].body).toBe("Your Chaap balance is low — top up at any station");
+  });
+
+  it("does not send a low-balance SMS when the remaining balance stays at or above TZS 2,000", async () => {
+    const { organizer, organizationId, event, wallet, vendorId, phone } = await approvedVendorWithWallet(500000); // TZS 5,000
+
+    const result: any = await handleChargeWallet(organizer.id, organizationId, {
+      clientId: `charge-ok-${Date.now()}`,
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      amountCents: 100000, // leaves 400000 = TZS 4,000, still above the threshold
+    });
+
+    expect(result.ok).toBe(true);
+    const logs = await prisma.notificationLog.findMany({ where: { type: "LOW_WALLET_BALANCE", recipient: phone } });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("does not send a low-balance SMS when the attendee has no phone on file", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const attendee = await createTestUser(); // no phone set
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents: 250000, currency: "TZS" });
+    const added = await handleAddVendor(organizer.id, organizationId, {
+      clientId: `low-balance-nophone-${event.id}`,
+      eventId: event.id,
+      name: "Snack Stand",
+      category: "Food",
+      badgeCode: `LOWBALNP-${event.id}`,
+    });
+
+    // Delta rather than an absolute count — this NotificationLog table is
+    // shared across every test in this file (and every past run against
+    // this same test database) and never cleaned up, so an absolute
+    // toHaveLength(0) would be broken by any unrelated historical row.
+    const before = await prisma.notificationLog.count({ where: { type: "LOW_WALLET_BALANCE" } });
+
+    const result: any = await handleChargeWallet(organizer.id, organizationId, {
+      clientId: `charge-nophone-${Date.now()}`,
+      walletCode: wallet.code,
+      vendorId: added.vendor.id,
+      eventId: event.id,
+      amountCents: 100000,
+    });
+
+    expect(result.ok).toBe(true);
+    const after = await prisma.notificationLog.count({ where: { type: "LOW_WALLET_BALANCE" } });
+    expect(after).toBe(before);
   });
 });

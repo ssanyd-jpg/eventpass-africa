@@ -45,7 +45,8 @@ npx prisma db seed         # optional — loads demo events/accounts
    | `NEXTAUTH_URL` | Yes | Your production URL, e.g. `https://your-app.vercel.app` |
    | `BLOB_READ_WRITE_TOKEN` | No | Enables real event photo uploads — see §3 |
    | `RESEND_API_KEY` | No | Enables real email delivery — see §4 |
-   | `AFRICASTALKING_API_KEY` | No | Enables real SMS delivery — see §4 |
+   | `CHAAP_FROM_EMAIL` | No | Sender address for real email (default: `noreply@chaap-africa.com`) — see §4 |
+   | `AT_API_KEY` / `AT_USERNAME` | No | Enables real SMS delivery via Africa's Talking — both required together, see §4 |
    | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §5 |
 
 3. Deploy. `npm run build` runs the same way it does locally.
@@ -58,16 +59,24 @@ store to the project (Storage tab) — this automatically injects
 `BLOB_READ_WRITE_TOKEN`. Nothing else to configure; `/api/upload` and the
 event edit page's photo uploader already check for this token.
 
-## 4. Email / SMS (optional)
+## 4. Email / SMS
 
-Every notification the app would send (order confirmations, password
-resets, cancellations, refunds) currently lands in the `NotificationLog`
+Real delivery is wired in: `src/lib/notifications.ts`'s `sendNotification()`
+— the single choke point every caller (checkout, password reset, org
+invites, wristband provisioning, low-balance warnings, ...) already goes
+through — calls `sendEmail()` (`src/lib/email.ts`, via Resend) whenever
+`RESEND_API_KEY` is set, and `sendSMS()` (`src/lib/sms.ts`, via Africa's
+Talking, Tanzania-only) whenever both `AT_API_KEY` and `AT_USERNAME` are
+set. Without those, every call still just lands in the `NotificationLog`
 table, visible to admins at `/admin/notifications` — see the README's
-"Simulated pieces" section for why. To go live, implement the provider
-call in `src/lib/notifications.ts`'s `sendNotification()` — that function
-is the single choke point every caller already goes through, so nothing
-else in the app needs to change. Resend (email) and Africa's Talking (SMS,
-covers Tanzania) are reasonable low-effort choices, but any provider works.
+"Simulated pieces" section — same dev-mode behavior as before, per channel.
+
+SMS needs a phone number to send to, and no signup flow collects one —
+`User.phone` is only ever populated opportunistically when a buyer types a
+number at AIRPAY_ONLINE checkout (see `handleSellTickets`). An attendee who
+never paid online (cash/offline order, or a walk-up wristband provisioned
+by email) has no phone on file, so their SMS sends are silently skipped —
+they still get the email.
 
 ## 5. Mobile money charging (optional)
 

@@ -119,25 +119,23 @@ you can kill the network entirely and keep browsing/buying/scanning.
 
 ## Simulated pieces (by design)
 
-- **Checkout** — no real payment processor is wired up; "Pay" completes
-  instantly and just writes a local order. A provider-agnostic adapter
-  (`src/lib/payments/`) exists — a `SimulatedProvider` (today's behavior,
-  active by default) and an `airpayProvider` for **Airpay Tanzania**, the
-  chosen aggregator (fronts M-Pesa, Tigo Pesa, and Airtel Money behind one
-  "Seamless mobile money" integration) — but it isn't called from checkout
-  yet. `airpayProvider` implements Airpay's actual Collection API (OAuth
-  token exchange, their AES-256-CBC/checksum request envelope, the charge
-  call, and poll-based order verification — see `src/lib/payments/airpay.ts`
-  and `airpay-crypto.ts`), built from a merchant-provided API reference
-  rather than Airpay's public site (they don't publish this). A few details
-  in that reference are ambiguous and documented as assumptions in
-  `airpay-crypto.ts`'s comments — confirm those against Airpay's sandbox
-  before any real charge runs through it. Separately, wiring in a real
-  STK-push-style charge means checkout has to wait on the buyer confirming
-  on their own phone, which only makes sense for online self-service
-  purchases (offline/in-person sales stay cash-in-hand, marked paid
-  instantly, same as today) — a real design decision worth making
-  deliberately, not bolted on to code nobody can test yet.
+- **Checkout** — online purchases (device connected) go through
+  `getActivePaymentProvider()` (`src/lib/payments/`): an `airpayProvider`
+  for **Airpay Tanzania** (fronts M-Pesa, Tigo Pesa, and Airtel Money behind
+  one "Seamless mobile money" integration) when all `AIRPAY_*` env vars are
+  set, falling back to a `SimulatedProvider` (instant "paid", no real
+  charge) otherwise — so checkout works end-to-end in dev/pilot without
+  real credentials. `airpayProvider` implements Airpay's actual Collection
+  API (OAuth token exchange, their AES-256-CBC/checksum request envelope,
+  the charge call, and poll-based order verification — see
+  `src/lib/payments/airpay.ts` and `airpay-crypto.ts`), built from a
+  merchant-provided API reference rather than Airpay's public site (they
+  don't publish this). A few details in that reference are ambiguous and
+  documented as assumptions in `airpay-crypto.ts`'s comments — confirm
+  those against Airpay's sandbox before any real charge runs through it.
+  Offline/in-person sales stay cash-in-hand, marked paid instantly, same as
+  before this was wired up — see `getPaymentMode()` in
+  `src/lib/payments/index.ts` for the online/offline split.
 - **Settlements** (`/dashboard/settlements`) — models a same-day mobile
   money payout (M-Pesa TZ / Tigo Pesa / Airtel Money / HaloPesa): an
   organizer links an account, and "Run settlement now" aggregates unpaid
@@ -145,10 +143,14 @@ you can kill the network entirely and keep browsing/buying/scanning.
   funds move; `src/lib/settlement-handlers.ts` is the integration point
   where a real provider call would go.
 - **Email / SMS** — every notification (order confirmations, password
-  resets, cancellations, refunds) goes through the single choke point
-  `src/lib/notifications.ts`. With no provider configured, it logs to
-  `NotificationLog` (visible at `/admin/notifications`) instead of sending
-  anything — wiring up a real provider later only touches that one file.
+  resets, cancellations, refunds, wristband provisioning, low wallet
+  balance) goes through the single choke point `src/lib/notifications.ts`,
+  which sends real email via Resend (`src/lib/email.ts`) when
+  `RESEND_API_KEY` is set and real SMS via Africa's Talking
+  (`src/lib/sms.ts`, Tanzania-only) when `AT_API_KEY`/`AT_USERNAME` are
+  set. Without those, it logs to `NotificationLog` (visible at
+  `/admin/notifications`) instead of sending anything, per channel — the
+  original dev-mode behavior, unchanged for whichever isn't configured.
 - **Event photo uploads** — events default to a `picsum.photos` placeholder
   image. `/api/upload` and the edit page's uploader use Vercel Blob when
   `BLOB_READ_WRITE_TOKEN` is set, and fall back to the placeholder
