@@ -8,7 +8,7 @@ import { db, newLocalId, type LocalVendor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { generateTicketCode, formatCents } from "@/lib/format";
-import { replaceVendorBadgeCode } from "./actions";
+import { replaceVendorBadgeCode, sendVendorPortalLink, markVendorSettlementProcessing, markVendorSettlementProcessed } from "./actions";
 import { detectVendorAnomalies } from "@/lib/anomaly";
 import { scoreVendorRisk, type RiskBand } from "@/lib/risk";
 
@@ -21,6 +21,17 @@ const RISK_STYLE: Record<RiskBand, string> = {
 };
 
 const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
+
+const SETTLEMENT_LABEL: Record<LocalVendor["settlementStatus"], string> = {
+  PENDING: "Pending",
+  PROCESSING: "Processing",
+  SETTLED: "Settled",
+};
+const SETTLEMENT_STYLE: Record<LocalVendor["settlementStatus"], string> = {
+  PENDING: "text-muted",
+  PROCESSING: "text-warn",
+  SETTLED: "text-ok",
+};
 
 export default function ManageVendorsPage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -114,6 +125,54 @@ export default function ManageVendorsPage() {
     }
   }
 
+  async function sendPortalLink(vendor: LocalVendor) {
+    if (!vendor.contactEmail) {
+      alert("This vendor has no contact email on file.");
+      return;
+    }
+    if (!confirm(`Send ${vendor.name} their vendor portal sign-in link?`)) return;
+    setBusyId(vendor.id);
+    try {
+      await sendVendorPortalLink(vendor.id);
+      alert(`Portal link sent to ${vendor.contactEmail}.`);
+    } catch {
+      alert("Couldn't send the portal link. Try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function startSettlementProcessing(vendor: LocalVendor) {
+    setBusyId(vendor.id);
+    try {
+      await markVendorSettlementProcessing(vendor.id);
+      await db.vendors.put({ ...vendor, settlementStatus: "PROCESSING", syncStatus: "synced" });
+    } catch {
+      alert("Couldn't update the settlement status. Try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function settleVendor(vendor: LocalVendor) {
+    if (!confirm(`Mark ${vendor.name}'s settlement as paid out? This sends them an SMS with the amount.`)) return;
+    setBusyId(vendor.id);
+    try {
+      const result = await markVendorSettlementProcessed(vendor.id);
+      await db.vendors.put({
+        ...vendor,
+        settlementStatus: "SETTLED",
+        settlementAmountCents: result.amountCents,
+        settlementProcessedAt: new Date().toISOString(),
+        syncStatus: "synced",
+      });
+    } catch {
+      alert("Couldn't settle this vendor. Try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function rejectVendor(vendor: LocalVendor) {
     if (!confirm(`Reject ${vendor.name}'s application?`)) return;
     setBusyId(vendor.id);
@@ -156,6 +215,9 @@ export default function ManageVendorsPage() {
       badgeCode,
       checkedIn: false,
       checkedInAt: null,
+      settlementStatus: "PENDING",
+      settlementAmountCents: 0,
+      settlementProcessedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -304,19 +366,50 @@ export default function ManageVendorsPage() {
                 <p className="text-sm text-muted">
                   {v.category}{v.boothNumber ? ` · Booth ${v.boothNumber}` : ""} · badge {v.badgeCode}
                 </p>
+                <p className="mt-1 text-sm text-muted">
+                  Settlement: <span className={SETTLEMENT_STYLE[v.settlementStatus]}>{SETTLEMENT_LABEL[v.settlementStatus]}</span>
+                  {v.settlementStatus === "SETTLED" && ` · ${formatCents(v.settlementAmountCents, v.currency)}`}
+                </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-3">
                 <span className={`pill ${v.checkedIn ? "border-ok/40 bg-ok/10 text-ok" : "border-border text-muted"}`}>
                   {v.checkedIn ? "Checked in" : "Not checked in"}
                 </span>
                 {v.syncStatus === "synced" && (
-                  <button
-                    className="text-xs font-medium text-danger hover:underline disabled:opacity-50"
-                    disabled={busyId === v.id}
-                    onClick={() => regenerateBadge(v)}
-                  >
-                    Mark lost & issue new code
-                  </button>
+                  <>
+                    <button
+                      className="text-xs font-medium text-accent-hover hover:underline disabled:opacity-50"
+                      disabled={busyId === v.id}
+                      onClick={() => sendPortalLink(v)}
+                    >
+                      Vendor portal ↗
+                    </button>
+                    {v.settlementStatus === "PENDING" && (
+                      <button
+                        className="text-xs font-medium text-accent-hover hover:underline disabled:opacity-50"
+                        disabled={busyId === v.id}
+                        onClick={() => startSettlementProcessing(v)}
+                      >
+                        Start settlement
+                      </button>
+                    )}
+                    {v.settlementStatus !== "SETTLED" && (
+                      <button
+                        className="text-xs font-medium text-ok hover:underline disabled:opacity-50"
+                        disabled={busyId === v.id}
+                        onClick={() => settleVendor(v)}
+                      >
+                        Mark settled
+                      </button>
+                    )}
+                    <button
+                      className="text-xs font-medium text-danger hover:underline disabled:opacity-50"
+                      disabled={busyId === v.id}
+                      onClick={() => regenerateBadge(v)}
+                    >
+                      Mark lost & issue new code
+                    </button>
+                  </>
                 )}
               </div>
             </div>

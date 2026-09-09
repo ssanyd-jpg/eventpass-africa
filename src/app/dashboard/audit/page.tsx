@@ -25,6 +25,9 @@ const ACTION_LABEL: Record<string, string> = {
   CREDENTIAL_PROVISIONED: "Wristband provisioned",
   WITHDRAWAL_APPROVED: "Withdrawal approved",
   WITHDRAWAL_REJECTED: "Withdrawal rejected",
+  VENDOR_PORTAL_LINK_SENT: "Vendor portal link sent",
+  VENDOR_SETTLEMENT_PROCESSING: "Vendor settlement marked processing",
+  VENDOR_SETTLEMENT_PROCESSED: "Vendor settlement paid out",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:

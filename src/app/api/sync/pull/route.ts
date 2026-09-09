@@ -171,6 +171,9 @@ export async function GET(request: Request) {
       badgeCode: v.badgeCode,
       checkedIn: v.checkedIn,
       checkedInAt: v.checkedInAt ? v.checkedInAt.toISOString() : null,
+      settlementStatus: v.settlementStatus,
+      settlementAmountCents: v.settlementAmountCents,
+      settlementProcessedAt: v.settlementProcessedAt ? v.settlementProcessedAt.toISOString() : null,
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString(),
     }));

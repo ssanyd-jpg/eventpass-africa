@@ -319,6 +319,10 @@ export const payloadSchemas = {
     eventId: z.string().min(1),
     eventClientId: z.string().nullable().optional(),
     scannedAt: z.string().optional(),
+    // Optional and nullable — an already-offline-queued charge from before
+    // this field existed has no `item` key at all and must still parse (see
+    // WalletTransaction.item in prisma/schema.prisma).
+    item: z.string().trim().max(120).nullable().optional(),
   }),
   SPONSOR_TAP: z.object({
     clientId: z.string().min(1),
@@ -1827,6 +1831,7 @@ export function shapeWalletTransaction(t: any) {
     phoneNumber: t.phoneNumber,
     mobileNetwork: t.mobileNetwork ?? null,
     note: t.note ?? null,
+    item: t.item ?? null,
     vendorId: t.vendorId,
     vendorName: t.vendor?.name ?? null,
     sponsorId: t.sponsorId,
@@ -2359,6 +2364,7 @@ export async function handleChargeWallet(userId: string, organizationId: string,
   }
 
   const amountCents = Number(payload.amountCents);
+  const item = payload.item ? String(payload.item).trim() || null : null;
 
   // Compare-and-swap + audit log, atomically paired — same $transaction
   // discipline handleSellTickets/handleRefundOrder use for inventory, and
@@ -2386,6 +2392,7 @@ export async function handleChargeWallet(userId: string, organizationId: string,
           currency: wallet.currency,
           walletId: wallet.id,
           vendorId: vendor.id,
+          item,
           providerMessage: "Insufficient balance",
         },
         include: walletTxInclude,
@@ -2403,6 +2410,7 @@ export async function handleChargeWallet(userId: string, organizationId: string,
         currency: wallet.currency,
         walletId: wallet.id,
         vendorId: vendor.id,
+        item,
       },
       include: walletTxInclude,
     });

@@ -45,6 +45,13 @@ export default function Navbar() {
   const { user } = useAppSession();
   const router = useRouter();
   const { t } = useTranslation();
+  const pathname = usePathname();
+
+  // The vendor portal (Session 8) is a separate, mobile-first, minimal-
+  // chrome surface built for a phone in bright outdoor light — it has its
+  // own sign-out control and no use for this organiser/buyer nav (whose own
+  // useAppSession() cache doesn't even model a VENDOR session's fields).
+  if (pathname?.startsWith("/vendor")) return null;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">

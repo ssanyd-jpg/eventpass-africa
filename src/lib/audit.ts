@@ -28,7 +28,10 @@ export type AuditAction =
   | "ORDER_CANCELLED"
   | "ORDER_MARKED_PAID"
   | "WITHDRAWAL_APPROVED"
-  | "WITHDRAWAL_REJECTED";
+  | "WITHDRAWAL_REJECTED"
+  | "VENDOR_PORTAL_LINK_SENT"
+  | "VENDOR_SETTLEMENT_PROCESSING"
+  | "VENDOR_SETTLEMENT_PROCESSED";
 
 interface LogAuditInput {
   organizationId: string;

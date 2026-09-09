@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { authConfig } from "@/auth.config";
 import { deriveSessionLabel } from "@/lib/session-label";
 import { createUserSession, isSessionRevoked } from "@/lib/session-handlers";
+import { consumeVendorMagicLinkToken } from "@/lib/vendor-auth";
 
 const SESSION_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -52,6 +53,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           organizationRole: membership?.role,
           organizationName: membership?.organization.name,
           sessionId: userSession.id,
+        };
+      },
+    }),
+    // Vendor portal login (Session 8) — no password, a Vendor isn't a User.
+    // The magic link's own request/verify routes do all real validation
+    // (rate limiting, generic anti-enumeration responses); this authorize()
+    // just consumes an already-issued token. Deliberately a SEPARATE
+    // provider from "credentials" above rather than a branch inside it —
+    // the two return completely different session shapes (vendorId/eventId,
+    // no organizationId/organizationRole at all) and mixing them risks a
+    // vendor session accidentally picking up an organizer-shaped field.
+    Credentials({
+      id: "vendor-magic-link",
+      name: "vendor-magic-link",
+      credentials: { token: { label: "Token", type: "text" } },
+      authorize: async (credentials) => {
+        const token = credentials?.token as string | undefined;
+        if (!token) return null;
+
+        const result = await consumeVendorMagicLinkToken(token);
+        if (!result.ok) return null;
+
+        return {
+          id: result.vendor.id,
+          name: result.vendor.name,
+          email: result.vendor.contactEmail,
+          role: "VENDOR",
+          vendorId: result.vendor.id,
+          eventId: result.vendor.eventId,
         };
       },
     }),

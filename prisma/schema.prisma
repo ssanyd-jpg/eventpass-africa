@@ -738,6 +738,19 @@ model Vendor {
   badgeCode     String?   @unique
   checkedIn     Boolean   @default(false)
   checkedInAt   DateTime?
+  // Vendor-portal self-service settlement — PENDING | PROCESSING | SETTLED.
+  // Entirely separate from Settlement/SettlementItem above: those settle the
+  // ORGANIZER's ticket-order proceeds out to a mobile money account; this is
+  // what the organizer owes a VENDOR for their wallet sales at this event,
+  // which had no tracked concept before Session 8's vendor portal. Amount is
+  // a snapshot taken at the moment an organizer marks a vendor settled (see
+  // markVendorSettlementProcessed) — not live-recomputed afterward, so a
+  // later refund/adjustment doesn't silently rewrite a payout that already
+  // happened, same "freeze at the moment of action" discipline runSettlement
+  // itself uses for organizer settlements.
+  settlementStatus      String    @default("PENDING")
+  settlementAmountCents Int       @default(0)
+  settlementProcessedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -747,8 +760,25 @@ model Vendor {
   ownerUserId String?
   owner       User?   @relation(fields: [ownerUserId], references: [id])
 
-  walletSales WalletTransaction[]
-  credentials Credential[]
+  walletSales      WalletTransaction[]
+  credentials      Credential[]
+  magicLinkTokens  VendorMagicLinkToken[]
+}
+
+// Same hashed-token + expiry shape as PasswordResetToken/OrganizationInvite
+// — a vendor has no password at all (Vendor isn't a User), so this is the
+// entire login mechanism for the Session 8 vendor portal, not a recovery
+// path for one. Expires 24h after issue OR at first use, whichever is
+// first (see consumeVendorMagicLinkToken in src/lib/vendor-auth.ts).
+model VendorMagicLinkToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 }
 
 // Organizer-managed sponsor entity — same shape as Vendor, simplified: no
@@ -860,6 +890,12 @@ model WalletTransaction {
   // posture rather than adding new linkage — a considered choice, not an
   // oversight (see the Sponsors lead-capture plan).
   note              String?  // SPONSOR_TAP only
+  // SALE only — what was sold (staff-typed at the wallet charge terminal).
+  // Nullable/optional so every pre-existing SALE row and every non-SALE type
+  // parses fine with no value — see Session 8's vendor portal plan for why
+  // this exists (the vendor dashboard's "top items sold" needs real
+  // per-sale data that nothing in this model tracked before).
+  item              String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

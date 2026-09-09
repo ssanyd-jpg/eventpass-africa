@@ -41,6 +41,7 @@ export default function WalletChargeTerminalPage() {
   const [mode, setMode] = useState<"sale" | "tap">("sale");
   const [code, setCode] = useState("");
   const [amountMajor, setAmountMajor] = useState("");
+  const [item, setItem] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [sponsorId, setSponsorId] = useState("");
   const [campaignId, setCampaignId] = useState("");
@@ -132,6 +133,8 @@ export default function WalletChargeTerminalPage() {
   vendorIdRef.current = vendorId;
   const amountMajorRef = useRef(amountMajor);
   amountMajorRef.current = amountMajor;
+  const itemRef = useRef(item);
+  itemRef.current = item;
   const sponsorIdRef = useRef(sponsorId);
   sponsorIdRef.current = sponsorId;
   const campaignIdRef = useRef(campaignId);
@@ -174,6 +177,7 @@ export default function WalletChargeTerminalPage() {
       eventId: event.id,
       eventClientId: event.clientId,
       amountCents,
+      item: itemRef.current.trim() || undefined,
     });
     await flushOutbox();
     const tx = await db.walletTransactions.where("clientId").equals(clientId).first();
@@ -321,6 +325,17 @@ export default function WalletChargeTerminalPage() {
               className="input"
               value={amountMajor}
               onChange={(e) => setAmountMajor(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="item">What&rsquo;s being sold? (optional)</label>
+            <input
+              id="item"
+              className="input"
+              placeholder="e.g. Grilled maize"
+              maxLength={120}
+              value={item}
+              onChange={(e) => setItem(e.target.value)}
             />
           </div>
         </div>

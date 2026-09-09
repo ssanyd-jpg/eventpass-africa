@@ -242,6 +242,14 @@ export interface LocalVendor {
   badgeCode: string | null;
   checkedIn: boolean;
   checkedInAt: string | null;
+  // Session 8's vendor portal settlement — see the matching comment on the
+  // Vendor model in prisma/schema.prisma. Set via the organiser's
+  // markVendorSettlementProcessing/Processed Server Actions, not an outbox
+  // op (same reasoning as badgeCode replacement above — an online-only
+  // organiser action, optimistically merged in locally after it resolves).
+  settlementStatus: "PENDING" | "PROCESSING" | "SETTLED";
+  settlementAmountCents: number;
+  settlementProcessedAt: string | null;
   createdAt: string;
   updatedAt: string;
   syncStatus: "synced" | "pending";
@@ -327,6 +335,9 @@ export interface LocalWalletTransaction {
   // SPONSOR_TAP only — a staff-entered lead note, see WalletTransaction.note
   // in prisma/schema.prisma.
   note: string | null;
+  // SALE only — what was sold, staff-typed at the wallet charge terminal
+  // (see WalletTransaction.item in prisma/schema.prisma).
+  item: string | null;
   vendorId: string | null;
   vendorName: string | null;
   sponsorId: string | null;
@@ -658,6 +669,28 @@ class EventPassAfricaDB extends Dexie {
     // so this bump is purely a changelog marker; no .upgrade() transform
     // needed, same reasoning as every prior field-addition bump.
     this.version(14).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+    });
+    // Session 8's vendor portal: new `item` field on LocalWalletTransaction
+    // and new settlementStatus/settlementAmountCents/settlementProcessedAt
+    // fields on LocalVendor (see prisma/schema.prisma) — no indexed-key
+    // change, same no-.upgrade()-needed reasoning as version 14.
+    this.version(15).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

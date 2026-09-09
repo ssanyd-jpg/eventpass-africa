@@ -15,7 +15,9 @@ export type NotificationType =
   | "WITHDRAWAL_DECIDED"
   | "ORDER_PAYMENT_FAILED"
   | "WRISTBAND_PROVISIONED"
-  | "LOW_WALLET_BALANCE";
+  | "LOW_WALLET_BALANCE"
+  | "VENDOR_MAGIC_LINK"
+  | "VENDOR_SETTLEMENT_PROCESSED";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 
