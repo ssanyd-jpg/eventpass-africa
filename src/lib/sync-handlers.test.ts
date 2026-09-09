@@ -377,8 +377,10 @@ describe("handleSellTickets — discount codes", () => {
   // transactions don't reliably interleave the way the race assertion below
   // needs — this has been observed failing with "Transaction already
   // closed" even in full isolation, immediately after a fresh schema push,
-  // with no other load on the database (see vitest.global-setup.ts's
-  // standing-flaky-test-investigation comment for the broader context).
+  // with no other load on the database. (This is a separate issue from the
+  // Neon cold-start latency that vitest.global-setup.ts's warm-up query
+  // mitigates — that comment doesn't cover transaction interleaving, only
+  // the first-query delay.)
   // The CAS logic itself (DiscountCode.redemptionCount guarded by an
   // updateMany WHERE clause) is real production code, not test-only — run
   // this test manually against a local Postgres instance (low, consistent

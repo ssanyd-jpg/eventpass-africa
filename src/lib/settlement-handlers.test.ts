@@ -27,7 +27,9 @@ describe("runSettlement", () => {
   // setup calls plus runSettlement's own transaction and has been observed
   // timing out at the default 60s under sustained load; 120s gives it room
   // without masking a genuine hang (see vitest.global-setup.ts's own
-  // standing-flaky-test-investigation comment for the broader context).
+  // warm-up-query comment, which explains why Neon's compute can add
+  // several seconds of cold-start latency to the first real query against
+  // it).
   it("aggregates unsettled orders, applies the 8% platform fee, and marks them paid out", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     await prisma.mobileMoneyAccount.create({
