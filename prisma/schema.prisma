@@ -36,6 +36,8 @@ model User {
   wallets                Wallet[]
   userSessions           UserSession[]
   ticketTransfersSent    TicketTransfer[]         @relation("TicketTransfersSent")
+  floatDeclarationsAsOperator FloatDeclaration[]  @relation("FloatDeclarationOperator")
+  floatDeclarationsMade       FloatDeclaration[]  @relation("FloatDeclarationDeclaredBy")
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -585,6 +587,7 @@ model Event {
   discountCodes         DiscountCode[]
   supportTickets        SupportTicket[]
   surveyQuestions       SurveyQuestion[]
+  floatDeclarations     FloatDeclaration[]
 }
 
 model TicketType {
@@ -918,4 +921,38 @@ model WalletTransaction {
 
   @@index([sponsorId, type, createdAt])
   @@unique([campaignId, walletId])
+}
+
+// End-of-event cash float reconciliation (Session 9). One row per staff
+// operator who recorded OFFLINE_DEFERRED (cash / in-person) ticket orders
+// for an event — the organiser declares the physical cash that operator
+// handed in, and this records the resulting variance against the system's
+// own total. There is no operator identity on wallet top-ups (those are
+// buyer self-service, digital only), so "cash collected by staff" maps to
+// OFFLINE_DEFERRED Order.userId — see src/lib/reconciliation.ts.
+//
+// declaredAmountCents / varianceCents are stored in minor units, same
+// convention as every other *Cents field. varianceCents = system total
+// minus declaredAmountCents (positive = operator handed in less than the
+// system recorded). status is BALANCED | MINOR_VARIANCE | INVESTIGATE,
+// classified against a TZS 5,000 threshold (see classifyVariance).
+model FloatDeclaration {
+  id                 String   @id @default(cuid())
+  declaredAmountCents Int
+  varianceCents       Int
+  status              String
+  declaredAt          DateTime @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  operatorId String
+  operator   User   @relation("FloatDeclarationOperator", fields: [operatorId], references: [id])
+
+  declaredByUserId String
+  declaredBy       User   @relation("FloatDeclarationDeclaredBy", fields: [declaredByUserId], references: [id])
+
+  // One declaration per operator per event — a re-submission updates this
+  // same row (idempotent upsert, see saveFloatDeclarationCore).
+  @@unique([eventId, operatorId])
 }

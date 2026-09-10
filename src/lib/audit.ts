@@ -31,7 +31,8 @@ export type AuditAction =
   | "WITHDRAWAL_REJECTED"
   | "VENDOR_PORTAL_LINK_SENT"
   | "VENDOR_SETTLEMENT_PROCESSING"
-  | "VENDOR_SETTLEMENT_PROCESSED";
+  | "VENDOR_SETTLEMENT_PROCESSED"
+  | "FLOAT_DECLARED";
 
 interface LogAuditInput {
   organizationId: string;

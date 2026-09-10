@@ -28,6 +28,7 @@ const ACTION_LABEL: Record<string, string> = {
   VENDOR_PORTAL_LINK_SENT: "Vendor portal link sent",
   VENDOR_SETTLEMENT_PROCESSING: "Vendor settlement marked processing",
   VENDOR_SETTLEMENT_PROCESSED: "Vendor settlement paid out",
+  FLOAT_DECLARED: "Cash float declared",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:

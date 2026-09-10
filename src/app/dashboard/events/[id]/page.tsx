@@ -201,6 +201,25 @@ export default function ManageEventPage() {
   }
 
   async function cancelEvent() {
+    // Session 9: warn if cash operators still have unreconciled floats.
+    // Best-effort — a failed/offline check never blocks cancellation, it
+    // just falls through to the normal confirm.
+    try {
+      const res = await fetch(`/api/dashboard/events/${event!.id}/reconciliation`, { cache: "no-store" });
+      const body = await res.json();
+      if (body.ok && body.unreconciledOperatorCount > 0) {
+        const n = body.unreconciledOperatorCount;
+        if (
+          !confirm(
+            `${n} cash ${n === 1 ? "operator has" : "operators have"} not been reconciled — reconcile before closing?\n\nOK to cancel the event anyway, or Cancel to go reconcile first.`
+          )
+        ) {
+          return;
+        }
+      }
+    } catch {
+      // ignore — proceed to the normal confirm below
+    }
     if (!confirm(`Cancel "${event!.title}"? Ticket holders will be notified. This cannot be undone.`)) return;
     await db.events.put({ ...event!, status: "CANCELLED", syncStatus: "pending" });
     await queueOp("CANCEL_EVENT", { eventId: event!.id, eventClientId: event!.clientId });
@@ -232,6 +251,9 @@ export default function ManageEventPage() {
           </Link>
           <Link href={`/scan/${event.id}/replace`} target="_blank" rel="noopener noreferrer" className="btn-secondary">
             Wristband replacement ↗
+          </Link>
+          <Link href={`/dashboard/events/${event.id}/reconciliation`} className="btn-secondary">
+            Reconciliation ↗
           </Link>
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
