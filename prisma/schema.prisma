@@ -38,6 +38,7 @@ model User {
   ticketTransfersSent    TicketTransfer[]         @relation("TicketTransfersSent")
   floatDeclarationsAsOperator FloatDeclaration[]  @relation("FloatDeclarationOperator")
   floatDeclarationsMade       FloatDeclaration[]  @relation("FloatDeclarationDeclaredBy")
+  eventForecastsSaved         EventForecast[]     @relation("EventForecastSavedBy")
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -588,6 +589,7 @@ model Event {
   supportTickets        SupportTicket[]
   surveyQuestions       SurveyQuestion[]
   floatDeclarations     FloatDeclaration[]
+  forecast              EventForecast?
 }
 
 model TicketType {
@@ -955,4 +957,30 @@ model FloatDeclaration {
   // One declaration per operator per event — a re-submission updates this
   // same row (idempotent upsert, see saveFloatDeclarationCore).
   @@unique([eventId, operatorId])
+}
+
+// Pre-event revenue forecast inputs (Session 10). One saved forecast per
+// event (eventId @unique) — "Save forecast" upserts this row so the
+// organiser's assumptions restore on the next page load. The projected
+// figures themselves are never stored: they're pure functions of these
+// inputs plus the event's ticket tiers (see src/lib/revenue-forecast.ts),
+// re-derived on every render so a later ticket-price edit is reflected.
+//
+// cashlessAdoptionRate is a 0..1 fraction. avgSpendCents is in minor
+// units, same convention as every other *Cents field. durationDays isn't
+// in the original spec's field list but is one of the four pre-event
+// inputs, so it's persisted here too so all four restore together.
+model EventForecast {
+  id                   String   @id @default(cuid())
+  expectedAttendance   Int
+  cashlessAdoptionRate Float
+  avgSpendCents         Int
+  durationDays          Int      @default(1)
+  savedAt              DateTime @default(now())
+
+  eventId String @unique
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  savedByUserId String
+  savedBy       User   @relation("EventForecastSavedBy", fields: [savedByUserId], references: [id])
 }

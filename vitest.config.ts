@@ -9,6 +9,19 @@ export default defineConfig({
     globalSetup: ["./vitest.global-setup.ts"],
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL,
+      // Neutralise real notification credentials for the test run. Once a
+      // real RESEND_API_KEY / AT_API_KEY / AT_USERNAME exist in .env (added
+      // for a one-off provider verification), sendNotification would
+      // otherwise make a real external API round-trip per notifying test —
+      // the Resend one 403s (unverified sender domain) after a network
+      // delay, adding latency and flakiness across the suite. An empty
+      // string is falsy, so sendEmail/sendSMS/sendNotification all fall
+      // back to their instant console-log path, exactly as before those
+      // keys were added. test.env overrides the --env-file=.env values the
+      // same way the DATABASE_URL line above already does.
+      RESEND_API_KEY: "",
+      AT_API_KEY: "",
+      AT_USERNAME: "",
     },
     // integration tests share one disposable Postgres database — parallel
     // test files would race on writes/schema, so run them one at a time.

@@ -32,7 +32,8 @@ export type AuditAction =
   | "VENDOR_PORTAL_LINK_SENT"
   | "VENDOR_SETTLEMENT_PROCESSING"
   | "VENDOR_SETTLEMENT_PROCESSED"
-  | "FLOAT_DECLARED";
+  | "FLOAT_DECLARED"
+  | "FORECAST_SAVED";
 
 interface LogAuditInput {
   organizationId: string;

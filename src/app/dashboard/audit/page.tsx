@@ -29,6 +29,7 @@ const ACTION_LABEL: Record<string, string> = {
   VENDOR_SETTLEMENT_PROCESSING: "Vendor settlement marked processing",
   VENDOR_SETTLEMENT_PROCESSED: "Vendor settlement paid out",
   FLOAT_DECLARED: "Cash float declared",
+  FORECAST_SAVED: "Revenue forecast saved",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:

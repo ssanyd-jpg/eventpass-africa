@@ -255,6 +255,9 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/reconciliation`} className="btn-secondary">
             Reconciliation ↗
           </Link>
+          <Link href={`/dashboard/events/${event.id}/forecast`} className="btn-secondary">
+            Revenue forecast ↗
+          </Link>
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>
