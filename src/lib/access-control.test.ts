@@ -5,6 +5,7 @@ import { payloadSchemas } from "@/lib/sync-handlers";
 const GATE_CREW_ALLOWED = [
   "CHECK_IN",
   "CHECK_IN_VENDOR",
+  "RECORD_CHIP_TIME",
   "SELL_TICKETS",
   "APPLY_VENDOR",
   "CREATE_WALLET",
@@ -20,6 +21,10 @@ describe("isOpAllowedForRole", () => {
   it("allows GATE_CREW to check tickets and vendor badges in", () => {
     expect(isOpAllowedForRole("GATE_CREW", "CHECK_IN")).toBe(true);
     expect(isOpAllowedForRole("GATE_CREW", "CHECK_IN_VENDOR")).toBe(true);
+  });
+
+  it("allows GATE_CREW to operate a marathon timing point", () => {
+    expect(isOpAllowedForRole("GATE_CREW", "RECORD_CHIP_TIME")).toBe(true);
   });
 
   it("allows GATE_CREW the personal/self-scoped ops", () => {

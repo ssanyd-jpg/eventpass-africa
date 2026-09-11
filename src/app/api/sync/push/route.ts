@@ -17,6 +17,7 @@ import {
   handleCheckInVendor,
   handleCreateWallet,
   handleCarryOverWallet,
+  handleRecordChipTime,
   handleProvisionCredential,
   handleReplaceCredential,
   handleTopupWallet,
@@ -127,6 +128,9 @@ export async function POST(request: Request) {
         break;
       case "CARRY_OVER_WALLET":
         result = await handleCarryOverWallet(session.user.id, body.payload);
+        break;
+      case "RECORD_CHIP_TIME":
+        result = await handleRecordChipTime(session.user.organizationId, body.payload);
         break;
       case "PROVISION_CREDENTIAL":
         result = await handleProvisionCredential(session.user.id, session.user.organizationId, body.payload);

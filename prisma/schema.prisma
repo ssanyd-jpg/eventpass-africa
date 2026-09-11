@@ -275,6 +275,8 @@ model Credential {
   vendorId String?
   vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
+  chipTimes ChipTime[]
+
   @@index([organizationId, ticketId])
   @@index([organizationId, walletId])
   @@index([organizationId, vendorId])
@@ -566,6 +568,16 @@ model Event {
   endsAt      DateTime?
   imageUrl    String
   status      String   @default("LIVE")
+  // Session 12 — GENERAL | MARATHON | CONFERENCE. Plain-string convention,
+  // same as every other enum-shaped field in this schema (see
+  // MobileMoneyAccount.provider). MARATHON unlocks the timing setup section
+  // on the event dashboard, the timing scanner, and the public leaderboard.
+  eventType   String   @default("GENERAL")
+  // When the race officially started — set once via the "Start gun" action
+  // (irreversible; see startGun in src/app/dashboard/events/[id]/timing/
+  // actions.ts) and never null again afterward. Every ChipTime's
+  // gunTimeOffsetSeconds is computed from this.
+  gunStartAt  DateTime?
   // Session 11: organiser opt-in, per event. When true, an attendee
   // registering a wallet here can carry over a positive balance from a
   // wallet they hold at an already-ended event by the same organisation
@@ -600,6 +612,74 @@ model Event {
   surveyQuestions       SurveyQuestion[]
   floatDeclarations     FloatDeclaration[]
   forecast              EventForecast?
+  timingPoints          TimingPoint[]
+  chipTimes             ChipTime[]
+}
+
+// Session 12 — one checkpoint along a marathon course (Start, 5km, 10km,
+// Finish, etc.). sequenceOrder is the course order, not creation order —
+// what "the previous timing point" means for split-time calculation (see
+// handleRecordChipTime). distanceMeters is optional (organisers may not
+// know/care about intermediate distances) and is only used for the
+// leaderboard's pace-per-km column; a point with no distance just shows no
+// pace. isStart/isFinish flag the two points every other calculation
+// anchors on — gun time and finish ranking respectively.
+model TimingPoint {
+  id             String   @id @default(cuid())
+  clientId       String?  @unique
+  name           String
+  location       String   @default("")
+  sequenceOrder  Int
+  isStart        Boolean  @default(false)
+  isFinish       Boolean  @default(false)
+  distanceMeters Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  chipTimes ChipTime[]
+
+  @@index([eventId, sequenceOrder])
+}
+
+// Session 12 — one NFC/QR tap of an athlete's wristband at a timing point.
+// clientId is the usual offline-outbox idempotency key (every
+// outbox-created entity has one — see the Credential model's own comment
+// for the one deliberate exception, which this isn't). recordedAt is the
+// SCANNING DEVICE's clock at the moment of the tap (may be well before
+// syncedAt if the device was offline) — every downstream calculation
+// (gunTimeOffsetSeconds, splitTimeSeconds, leaderboard ranking) is based on
+// recordedAt, never syncedAt, so a delayed sync never skews a result.
+model ChipTime {
+  id                    String    @id @default(cuid())
+  clientId              String?   @unique
+  recordedAt            DateTime
+  // null only when the event has no gunStartAt yet (race hasn't started —
+  // shouldn't normally happen, since taps before the start gun aren't
+  // meaningful, but never crashes on it).
+  gunTimeOffsetSeconds  Int?
+  // null at the course's first timing point (nothing before it to split
+  // from), or if this athlete has no recorded tap at the previous point.
+  splitTimeSeconds      Int?
+  syncedAt              DateTime?
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  timingPointId String
+  timingPoint   TimingPoint @relation(fields: [timingPointId], references: [id], onDelete: Cascade)
+
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  // One tap per athlete per timing point — a re-scan (tag held too long,
+  // staff double-tap) must never create a second row for the same
+  // credential at the same point (see handleRecordChipTime's own
+  // find-before-create guard, which this backs at the DB level too).
+  @@unique([credentialId, timingPointId])
+  @@index([eventId, timingPointId])
 }
 
 model TicketType {

@@ -45,6 +45,11 @@ export interface LocalEvent {
   currency: string;
   // Session 11 — organiser opt-in for wristband balance carry-over.
   carryOverEnabled: boolean;
+  // Session 12 — GENERAL | MARATHON | CONFERENCE. MARATHON unlocks the
+  // timing scanner, timing dashboard, and public leaderboard.
+  eventType: "GENERAL" | "MARATHON" | "CONFERENCE";
+  // ISO, or null before the race's "Start gun" action has run.
+  gunStartAt: string | null;
   vendorApplicationsOpen: boolean;
   vendorStallFeeCents: number;
   organizationId: string;
@@ -329,6 +334,50 @@ export interface LocalCredential {
   supersededAt?: string | null;
 }
 
+// Session 12 — synced down to any device that needs to know a marathon's
+// course layout: the timing scanner (picking which point this device
+// operates) and the timing dashboard/leaderboard (labels, sequence,
+// distance for pace). Organiser-authored via a Server Action (race setup
+// is a desk job before race day, not a field outbox op), but read
+// everywhere via the normal pull sync like any other event sub-resource.
+export interface LocalTimingPoint {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  eventClientId?: string | null;
+  name: string;
+  location: string;
+  sequenceOrder: number;
+  isStart: boolean;
+  isFinish: boolean;
+  distanceMeters: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Session 12 — a timing operator's own recent taps at THEIR device, for the
+// scanner page's "last 10 recorded times" feed. Deliberately NOT synced
+// down from the server for every athlete/event (that could be tens of
+// thousands of rows for a large marathon, and no page needs someone else's
+// device's history) — populated only by this device's own successful
+// RECORD_CHIP_TIME results, same as how the wallet terminal's own tap
+// history stays local-only.
+export interface LocalChipTime {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  timingPointId: string;
+  timingPointName: string;
+  credentialId: string;
+  athleteName: string;
+  bib: string;
+  ticketTypeName: string;
+  recordedAt: string;
+  gunTimeOffsetSeconds: number | null;
+  splitTimeSeconds: number | null;
+  syncStatus: "synced" | "pending";
+}
+
 export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
@@ -416,7 +465,8 @@ export type OutboxOpType =
   | "REPLACE_CREDENTIAL"
   | "CANCEL_PENDING_ORDER"
   | "MARK_ORDER_PAID"
-  | "CARRY_OVER_WALLET";
+  | "CARRY_OVER_WALLET"
+  | "RECORD_CHIP_TIME";
 
 export interface OutboxEntry {
   id?: number;
@@ -450,6 +500,8 @@ class EventPassAfricaDB extends Dexie {
   sponsorCampaigns!: Table<LocalSponsorCampaign, string>;
   recommendedEvents!: Table<LocalRecommendedEvent, string>;
   credentials!: Table<LocalCredential, string>;
+  timingPoints!: Table<LocalTimingPoint, string>;
+  chipTimes!: Table<LocalChipTime, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -741,6 +793,31 @@ class EventPassAfricaDB extends Dexie {
       sponsorCampaigns: "id, clientId, sponsorId, code",
       recommendedEvents: "id",
       credentials: "id, nfcUid, ticketId, walletId, status",
+    });
+    // Session 12: new eventType/gunStartAt fields on LocalEvent (no
+    // indexed-key change), plus two genuinely new stores — timingPoints
+    // (full-replaced on every pull, same as credentials/pendingSurveys) and
+    // chipTimes (local-only device activity feed, never pulled — see
+    // LocalChipTime's own comment).
+    this.version(17).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+      timingPoints: "id, clientId, eventId, sequenceOrder",
+      chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
     });
   }
 }

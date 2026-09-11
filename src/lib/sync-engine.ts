@@ -16,6 +16,7 @@ import {
   type LocalPendingSurvey,
   type LocalSponsorCampaign,
   type LocalCredential,
+  type LocalTimingPoint,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -180,6 +181,14 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
     if (Array.isArray(data.credentials)) {
       await db.credentials.clear();
       await db.credentials.bulkPut(data.credentials as LocalCredential[]);
+    }
+
+    // Session 12 — same full-replace discipline as credentials above: a
+    // small, organiser/staff-scoped dataset with no per-item merge
+    // complexity worth doing.
+    if (Array.isArray(data.myTimingPoints)) {
+      await db.timingPoints.clear();
+      await db.timingPoints.bulkPut(data.myTimingPoints as LocalTimingPoint[]);
     }
 
     if (Array.isArray(data.myWallets)) {
@@ -388,6 +397,17 @@ async function applyCarryOverWalletResult(payload: any, result: any) {
   }
 }
 
+// Session 12 — replaces the optimistic local chip-time row (if the scanner
+// wrote one) with the server-authoritative one, carrying the real
+// gunTimeOffsetSeconds/splitTimeSeconds. See LocalChipTime's own comment
+// for why this table is local-activity-feed-only, never pull-synced.
+async function applyRecordChipTimeResult(payload: any, result: any) {
+  if (!result?.ok || !result.chipTime) return;
+  const localId = payload.clientId as string;
+  await db.chipTimes.delete(localId);
+  await db.chipTimes.put({ ...result.chipTime, syncStatus: "synced" });
+}
+
 // Replaces the two optimistic LocalCredential rows written under the
 // clientId-derived keys (see the provisioning page) with the
 // server-authoritative rows, and reconciles the wallet the same way
@@ -593,6 +613,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CARRY_OVER_WALLET":
           await applyCarryOverWalletResult(entry.payload, result);
+          break;
+        case "RECORD_CHIP_TIME":
+          await applyRecordChipTimeResult(entry.payload, result);
           break;
         case "PROVISION_CREDENTIAL":
           await applyProvisionCredentialResult(entry.payload, result);

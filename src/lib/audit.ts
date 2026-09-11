@@ -33,7 +33,9 @@ export type AuditAction =
   | "VENDOR_SETTLEMENT_PROCESSING"
   | "VENDOR_SETTLEMENT_PROCESSED"
   | "FLOAT_DECLARED"
-  | "FORECAST_SAVED";
+  | "FORECAST_SAVED"
+  | "TIMING_POINTS_SAVED"
+  | "GUN_STARTED";
 
 interface LogAuditInput {
   organizationId: string;

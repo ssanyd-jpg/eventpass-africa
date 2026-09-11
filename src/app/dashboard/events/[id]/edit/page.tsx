@@ -101,6 +101,7 @@ export default function EditEventPage() {
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [carryOverEnabled, setCarryOverEnabled] = useState(false);
+  const [eventType, setEventType] = useState<"GENERAL" | "MARATHON" | "CONFERENCE">("GENERAL");
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
@@ -198,6 +199,7 @@ export default function EditEventPage() {
       setStartsAt(isoToLocalInput(event.startsAt));
       setEndsAt(event.endsAt ? isoToLocalInput(event.endsAt) : "");
       setCarryOverEnabled(event.carryOverEnabled);
+      setEventType(event.eventType);
       setVendorApplicationsOpen(event.vendorApplicationsOpen);
       setVendorStallFeeMajor(String(event.vendorStallFeeCents / 100));
       setWaiverText(event.waiverText ?? "");
@@ -472,6 +474,7 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: endsAt ? new Date(endsAt).toISOString() : null,
       carryOverEnabled,
+      eventType,
       vendorApplicationsOpen,
       vendorStallFeeCents,
       waiverText: waiverText.trim() || null,
@@ -495,6 +498,7 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: endsAt ? new Date(endsAt).toISOString() : null,
       carryOverEnabled,
+      eventType,
       vendorApplicationsOpen,
       vendorStallFeeCents,
       waiverText: waiverText.trim() || null,
@@ -607,6 +611,23 @@ export default function EditEventPage() {
           />
           <p className="mt-1 text-xs text-muted">
             When the event is over. Used to decide when a wristband balance can carry over to a later event.
+          </p>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="eventType">Event type</label>
+          <select
+            id="eventType"
+            className="input"
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value as typeof eventType)}
+          >
+            <option value="GENERAL">General</option>
+            <option value="MARATHON">Marathon / running race</option>
+            <option value="CONFERENCE">Conference</option>
+          </select>
+          <p className="mt-1 text-xs text-muted">
+            Marathon unlocks timing setup, a timing scanner, and a public live leaderboard.
           </p>
         </div>
 

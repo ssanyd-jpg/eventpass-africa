@@ -133,6 +133,10 @@ export default function NewEventPage() {
       status: "LIVE",
       currency,
       carryOverEnabled: false,
+      // Race type/timing are configurable via Edit once the event exists —
+      // same reasoning as endsAt above.
+      eventType: "GENERAL",
+      gunStartAt: null,
       // Vendor applications are off by default — configurable via Edit
       // once the event exists.
       vendorApplicationsOpen: false,

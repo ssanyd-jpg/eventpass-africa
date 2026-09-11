@@ -36,6 +36,8 @@ export async function GET(request: Request) {
     status: e.status,
     currency: e.currency,
     carryOverEnabled: e.carryOverEnabled,
+    eventType: e.eventType,
+    gunStartAt: e.gunStartAt ? e.gunStartAt.toISOString() : null,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
     organizationId: e.organizationId,
@@ -333,6 +335,31 @@ export async function GET(request: Request) {
       campaignName: t.campaign?.name ?? null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
+    }));
+
+    // Session 12 — a marathon's course layout. Organiser/scanning-staff
+    // scoped, same reasoning as myVendors/myWallets above: the timing
+    // scanner and dashboard both need it, but it never rides in the public
+    // `events` field (the public leaderboard is its own unauthenticated
+    // route with its own data fetch, not Dexie-backed).
+    const myTimingPoints = await prisma.timingPoint.findMany({
+      where: { event: { organizationId } },
+      include: { event: { select: { id: true, clientId: true } } },
+      orderBy: [{ eventId: "asc" }, { sequenceOrder: "asc" }],
+    });
+    payload.myTimingPoints = myTimingPoints.map((p) => ({
+      id: p.id,
+      clientId: p.clientId,
+      eventId: p.eventId,
+      eventClientId: p.event.clientId,
+      name: p.name,
+      location: p.location,
+      sequenceOrder: p.sequenceOrder,
+      isStart: p.isStart,
+      isFinish: p.isFinish,
+      distanceMeters: p.distanceMeters,
+      createdAt: p.createdAt.toISOString(),
+      updatedAt: p.updatedAt.toISOString(),
     }));
 
     const accounts = await prisma.mobileMoneyAccount.findMany({

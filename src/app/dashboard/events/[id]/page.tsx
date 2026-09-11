@@ -12,6 +12,7 @@ import { predictSellOut, forecastEventRevenue, type SellOutStatus } from "@/lib/
 import { detectOrderAnomalies } from "@/lib/anomaly";
 import { scoreOrderRisk, type RiskBand } from "@/lib/risk";
 import BarSeries from "@/components/charts/BarSeries";
+import TimingSetupSection from "@/components/TimingSetupSection";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -258,6 +259,11 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/forecast`} className="btn-secondary">
             Revenue forecast ↗
           </Link>
+          {event.eventType === "MARATHON" && (
+            <Link href={`/dashboard/events/${event.id}/timing`} className="btn-secondary">
+              Timing ↗
+            </Link>
+          )}
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>
@@ -267,6 +273,10 @@ export default function ManageEventPage() {
         <button onClick={cancelEvent} className="mt-3 text-xs font-medium text-danger hover:underline">
           Cancel this event
         </button>
+      )}
+
+      {event.eventType === "MARATHON" && (
+        <TimingSetupSection eventId={event.id} eventTitle={event.title} gunStartAt={event.gunStartAt} />
       )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

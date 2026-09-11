@@ -9,6 +9,7 @@ import { getActivePaymentProvider } from "@/lib/payments";
 import { verifyAirpayOrder } from "@/lib/payments/airpay";
 import { normalizeTanzaniaPhone } from "@/lib/sms";
 import { buildOrderConfirmationHtml } from "@/lib/email";
+import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timing";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -144,6 +145,8 @@ export const payloadSchemas = {
     // Session 11 — optional end datetime and the carry-over opt-in toggle.
     endsAt: z.string().nullable().optional(),
     carryOverEnabled: z.boolean().optional(),
+    // Session 12 — GENERAL | MARATHON | CONFERENCE.
+    eventType: z.enum(["GENERAL", "MARATHON", "CONFERENCE"]).optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
     discountCodes: z.array(discountCodeInputSchema).optional(),
     // Same exact shape as registrationQuestions — post-event survey
@@ -372,6 +375,30 @@ export const payloadSchemas = {
     campaignId: z.string().min(1),
     campaignClientId: z.string().nullable().optional(),
   }),
+  // Session 12 — a timing operator's tap at one timing point. Either nfcUid
+  // (wristband tap) or ticketCode (QR/manual bib scan) must resolve to the
+  // SAME thing server-side: the athlete's ACTIVE, ticket-linked Credential
+  // (see resolveCredentialForTiming) — a QR scan is just an alternate input
+  // path onto the same credential a wristband tap would hit, not a
+  // different kind of record. recordedAt is the scanning device's own
+  // clock, not the server's — see ChipTime's schema comment for why that
+  // matters for an offline tap synced later.
+  RECORD_CHIP_TIME: z
+    .object({
+      clientId: z.string().min(1),
+      eventId: z.string().min(1),
+      eventClientId: z.string().nullable().optional(),
+      timingPointId: z.string().min(1),
+      timingPointClientId: z.string().nullable().optional(),
+      nfcUid: z.string().min(1).optional(),
+      ticketCode: z.string().min(1).max(40).optional(),
+      recordedAt: z.string().min(1),
+    })
+    .superRefine((val, ctx) => {
+      if (!val.nfcUid && !val.ticketCode) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either nfcUid or ticketCode is required." });
+      }
+    }),
 } as const;
 
 async function resolveEventId(eventId: string, eventClientId?: string | null) {
@@ -946,6 +973,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
   if (payload.startsAt !== undefined) data.startsAt = new Date(payload.startsAt);
   if (payload.endsAt !== undefined) data.endsAt = payload.endsAt ? new Date(payload.endsAt) : null;
   if (payload.carryOverEnabled !== undefined) data.carryOverEnabled = Boolean(payload.carryOverEnabled);
+  if (payload.eventType !== undefined) data.eventType = String(payload.eventType);
   if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
   if (payload.vendorStallFeeCents !== undefined) data.vendorStallFeeCents = Number(payload.vendorStallFeeCents);
   if (payload.waiverText !== undefined) {
@@ -2912,4 +2940,171 @@ export async function handleSponsorTap(userId: string, organizationId: string, p
     campaignRedeemed: result.campaignRedeemed,
     campaignRejectReason: result.campaignRejectReason,
   };
+}
+
+// ---------- Session 12: marathon chip timing ----------
+
+function shapeChipTime(c: any, extra: { athleteName: string; bib: string; ticketTypeName: string; timingPointName: string }) {
+  return {
+    id: c.id,
+    clientId: c.clientId,
+    eventId: c.eventId,
+    timingPointId: c.timingPointId,
+    credentialId: c.credentialId,
+    recordedAt: c.recordedAt.toISOString(),
+    gunTimeOffsetSeconds: c.gunTimeOffsetSeconds,
+    splitTimeSeconds: c.splitTimeSeconds,
+    syncedAt: c.syncedAt ? c.syncedAt.toISOString() : null,
+    athleteName: extra.athleteName,
+    bib: extra.bib,
+    ticketTypeName: extra.ticketTypeName,
+    timingPointName: extra.timingPointName,
+  };
+}
+
+// A QR/manual ticket-code scan and an NFC wristband tap both have to land
+// on the exact same thing: the athlete's ACTIVE, ticket-linked Credential —
+// see the RECORD_CHIP_TIME payload's own comment for why. Scoped to the
+// scanning organisation on both paths, same as every other cross-tenant
+// lookup in this file.
+async function resolveCredentialForTiming(
+  organizationId: string,
+  payload: { nfcUid?: string; ticketCode?: string }
+) {
+  const credentialInclude = {
+    ticket: {
+      include: {
+        ticketType: { select: { name: true } },
+        order: { select: { userId: true, user: { select: { name: true } } } },
+      },
+    },
+  } as const;
+
+  if (payload.nfcUid) {
+    return prisma.credential.findFirst({
+      where: { organizationId, nfcUid: String(payload.nfcUid), status: "ACTIVE", ticketId: { not: null } },
+      include: credentialInclude,
+    });
+  }
+  if (payload.ticketCode) {
+    const ticket = await prisma.ticket.findUnique({ where: { code: String(payload.ticketCode) } });
+    if (!ticket) return null;
+    return prisma.credential.findFirst({
+      where: { organizationId, ticketId: ticket.id, status: "ACTIVE" },
+      include: credentialInclude,
+    });
+  }
+  return null;
+}
+
+export async function handleRecordChipTime(organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.chipTime.findUnique({ where: { clientId } });
+  if (existing) {
+    // Idempotent replay — re-shape from scratch rather than trust a stale
+    // cached name, same reasoning every other handler's early-return takes.
+    return recordedChipTimeResult(existing.id);
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const timingPoint =
+    (await prisma.timingPoint.findUnique({ where: { id: String(payload.timingPointId) } })) ??
+    (payload.timingPointClientId
+      ? await prisma.timingPoint.findUnique({ where: { clientId: String(payload.timingPointClientId) } })
+      : null);
+  if (!timingPoint || timingPoint.eventId !== event.id) {
+    return { ok: false, retry: true, reason: "TIMING_POINT_NOT_SYNCED_YET" };
+  }
+
+  const credential = await resolveCredentialForTiming(organizationId, payload);
+  if (!credential) {
+    return { ok: false, reason: "CREDENTIAL_NOT_FOUND" };
+  }
+
+  // One tap per athlete per point — a re-scan of the same wristband at the
+  // same mat returns the existing row rather than erroring or duplicating
+  // (the @@unique([credentialId, timingPointId]) constraint backs this at
+  // the DB level too).
+  const existingAtPoint = await prisma.chipTime.findUnique({
+    where: { credentialId_timingPointId: { credentialId: credential.id, timingPointId: timingPoint.id } },
+  });
+  if (existingAtPoint) {
+    return recordedChipTimeResult(existingAtPoint.id);
+  }
+
+  const recordedAt = new Date(payload.recordedAt);
+  const gunTimeOffsetSeconds = computeGunTimeOffsetSeconds(event.gunStartAt, recordedAt);
+
+  // "The previous timing point" is course order (sequenceOrder), not
+  // creation order — the highest sequenceOrder strictly below this point's.
+  const previousPoint = await prisma.timingPoint.findFirst({
+    where: { eventId: event.id, sequenceOrder: { lt: timingPoint.sequenceOrder } },
+    orderBy: { sequenceOrder: "desc" },
+  });
+  const previousChipTime = previousPoint
+    ? await prisma.chipTime.findUnique({
+        where: { credentialId_timingPointId: { credentialId: credential.id, timingPointId: previousPoint.id } },
+      })
+    : null;
+  const splitTimeSeconds = computeSplitTimeSeconds(recordedAt, previousChipTime?.recordedAt ?? null);
+
+  const created = await prisma.chipTime.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      timingPointId: timingPoint.id,
+      credentialId: credential.id,
+      recordedAt,
+      gunTimeOffsetSeconds,
+      splitTimeSeconds,
+      syncedAt: new Date(),
+    },
+  });
+
+  return recordedChipTimeResult(created.id);
+
+  // Re-fetches by id with the athlete-display joins — one shared shaping
+  // path for the fresh-create, replay, and already-at-this-point cases
+  // above, so all three return an identically-shaped ChipTime.
+  async function recordedChipTimeResult(chipTimeId: string) {
+    const fresh = await prisma.chipTime.findUniqueOrThrow({
+      where: { id: chipTimeId },
+      include: {
+        timingPoint: { select: { name: true } },
+        credential: {
+          include: {
+            ticket: {
+              include: {
+                ticketType: { select: { name: true } },
+                order: { select: { userId: true, user: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const ticket = fresh.credential.ticket;
+    const athleteName = ticket
+      ? ticket.currentHolderUserId
+        ? (await prisma.user.findUnique({ where: { id: ticket.currentHolderUserId }, select: { name: true } }))?.name ?? ticket.order.user.name
+        : ticket.order.user.name
+      : "Unknown athlete";
+    return {
+      ok: true as const,
+      chipTime: shapeChipTime(fresh, {
+        athleteName,
+        bib: (fresh.credential.nfcUid ?? fresh.credential.id).slice(-4).toUpperCase(),
+        ticketTypeName: ticket?.ticketType.name ?? "",
+        timingPointName: fresh.timingPoint.name,
+      }),
+    };
+  }
 }

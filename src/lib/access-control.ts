@@ -11,6 +11,9 @@ type OpType = keyof typeof payloadSchemas;
 const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   "CHECK_IN",
   "CHECK_IN_VENDOR",
+  // Session 12 — timing operators at each mat are GATE_CREW, same
+  // event-day-door-staff role as everyone else scanning at the gate.
+  "RECORD_CHIP_TIME",
   "SELL_TICKETS",
   "APPLY_VENDOR",
   "CREATE_WALLET",
