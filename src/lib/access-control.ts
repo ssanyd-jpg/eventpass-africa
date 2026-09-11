@@ -14,6 +14,9 @@ const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   "SELL_TICKETS",
   "APPLY_VENDOR",
   "CREATE_WALLET",
+  // Buyer self-action, same as CREATE_WALLET — registering a wallet at a
+  // new event, just carrying a prior balance into it (Session 11).
+  "CARRY_OVER_WALLET",
   "TOPUP_WALLET",
   "CHECK_TOPUP_STATUS",
   "WITHDRAW_WALLET",

@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalDiscountCode } from "@/lib/db";
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
+import { eventHasEnded } from "@/lib/carry-over";
 
 interface DraftTicketType {
   key: string;
@@ -80,6 +81,17 @@ export default function EditEventPage() {
     return db.surveyQuestions.where("eventId").equals(event.id).toArray();
   }, [event?.id]);
 
+  // Session 11 — the carry-over toggle is only meaningful once the
+  // organisation has run at least one event that has ended (a wallet from
+  // it could carry a balance forward).
+  const hasPastCompletedEvent = useLiveQuery(async () => {
+    if (!event) return false;
+    const all = await db.events.toArray();
+    return all.some(
+      (e) => e.organizationId === event.organizationId && e.id !== event.id && e.status !== "CANCELLED" && eventHasEnded(e)
+    );
+  }, [event?.id, event?.organizationId]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -87,6 +99,8 @@ export default function EditEventPage() {
   const [venue, setVenue] = useState("");
   const [city, setCity] = useState("");
   const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [carryOverEnabled, setCarryOverEnabled] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
@@ -182,6 +196,8 @@ export default function EditEventPage() {
       setVenue(event.venue);
       setCity(event.city);
       setStartsAt(isoToLocalInput(event.startsAt));
+      setEndsAt(event.endsAt ? isoToLocalInput(event.endsAt) : "");
+      setCarryOverEnabled(event.carryOverEnabled);
       setVendorApplicationsOpen(event.vendorApplicationsOpen);
       setVendorStallFeeMajor(String(event.vendorStallFeeCents / 100));
       setWaiverText(event.waiverText ?? "");
@@ -454,6 +470,8 @@ export default function EditEventPage() {
       venue: venue.trim(),
       city: city.trim(),
       startsAt: new Date(startsAt).toISOString(),
+      endsAt: endsAt ? new Date(endsAt).toISOString() : null,
+      carryOverEnabled,
       vendorApplicationsOpen,
       vendorStallFeeCents,
       waiverText: waiverText.trim() || null,
@@ -475,6 +493,8 @@ export default function EditEventPage() {
       venue: venue.trim(),
       city: city.trim(),
       startsAt: new Date(startsAt).toISOString(),
+      endsAt: endsAt ? new Date(endsAt).toISOString() : null,
+      carryOverEnabled,
       vendorApplicationsOpen,
       vendorStallFeeCents,
       waiverText: waiverText.trim() || null,
@@ -576,6 +596,20 @@ export default function EditEventPage() {
           </div>
         </div>
 
+        <div>
+          <label className="label" htmlFor="endsAt">Ends at (optional)</label>
+          <input
+            id="endsAt"
+            type="datetime-local"
+            className="input"
+            value={endsAt}
+            onChange={(e) => setEndsAt(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-muted">
+            When the event is over. Used to decide when a wristband balance can carry over to a later event.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label" htmlFor="venue">Venue</label>
@@ -665,6 +699,23 @@ export default function EditEventPage() {
             ))}
           </div>
         </div>
+
+        {hasPastCompletedEvent && (
+          <div className="border-t border-border pt-5">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={carryOverEnabled}
+                onChange={(e) => setCarryOverEnabled(e.target.checked)}
+              />
+              <span className="label !mb-0">Allow wristband balance carry-over</span>
+            </label>
+            <p className="mt-1 text-xs text-muted">
+              An attendee registering a wallet here can bring a leftover balance from a wallet at one of your
+              past events, instead of requesting a refund and topping up again.
+            </p>
+          </div>
+        )}
 
         <div className="border-t border-border pt-5">
           <label className="flex items-center gap-2">

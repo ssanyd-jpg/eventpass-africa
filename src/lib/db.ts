@@ -37,9 +37,14 @@ export interface LocalEvent {
   venue: string;
   city: string;
   startsAt: string; // ISO
+  // ISO, or null when not set — Session 11. Carry-over treats an event as
+  // "ended" once (endsAt ?? startsAt) is in the past.
+  endsAt: string | null;
   imageUrl: string;
   status: "LIVE" | "CANCELLED";
   currency: string;
+  // Session 11 — organiser opt-in for wristband balance carry-over.
+  carryOverEnabled: boolean;
   vendorApplicationsOpen: boolean;
   vendorStallFeeCents: number;
   organizationId: string;
@@ -288,6 +293,12 @@ export interface LocalWallet {
   ownerEmail: string | null;
   balanceCents: number;
   currency: string;
+  // Session 11 — set on a wallet created by carrying a balance over from a
+  // previous event's wallet. The source event's title for the "Carried over
+  // from …" note is resolved client-side (source wallet → its event), not
+  // stored here.
+  carryOverSourceWalletId: string | null;
+  carryOverredAt: string | null;
   createdAt: string;
   updatedAt: string;
   syncStatus: "synced" | "pending";
@@ -322,7 +333,7 @@ export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
   walletId: string;
-  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL";
+  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL" | "CARRY_OVER";
   status: "PENDING" | "COMPLETED" | "FAILED";
   amountCents: number | null;
   currency: string;
@@ -404,7 +415,8 @@ export type OutboxOpType =
   | "PROVISION_CREDENTIAL"
   | "REPLACE_CREDENTIAL"
   | "CANCEL_PENDING_ORDER"
-  | "MARK_ORDER_PAID";
+  | "MARK_ORDER_PAID"
+  | "CARRY_OVER_WALLET";
 
 export interface OutboxEntry {
   id?: number;
@@ -691,6 +703,28 @@ class EventPassAfricaDB extends Dexie {
     // fields on LocalVendor (see prisma/schema.prisma) — no indexed-key
     // change, same no-.upgrade()-needed reasoning as version 14.
     this.version(15).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+    });
+    // Session 11: new endsAt/carryOverEnabled fields on LocalEvent and
+    // carryOverSourceWalletId/carryOverredAt on LocalWallet (see
+    // prisma/schema.prisma) — no indexed-key change, same
+    // no-.upgrade()-needed reasoning as version 15.
+    this.version(16).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

@@ -16,6 +16,7 @@ import {
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
 import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
+import { summarizeCarryOverVolume } from "@/lib/carry-over";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -57,6 +58,7 @@ export default async function OrganizerAnalyticsPage() {
   const revenueCurrencies = Object.keys(revenueByCurrency).sort();
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
+  const carryOverVolumeByCurrency = summarizeCarryOverVolume(walletTxs);
   const vendorSpend = spendByVendor(walletTxs);
   const tapsByZone = sponsorTapsBySponsor(walletTxs);
 
@@ -155,7 +157,7 @@ export default async function OrganizerAnalyticsPage() {
       </div>
 
       <h2 className="mb-3 mt-8 font-semibold">Cashless wallets</h2>
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card p-5">
           <p className="text-xs uppercase tracking-wide text-muted">Top-up volume</p>
           {Object.keys(walletActivityStats.topupVolumeByCurrency).length === 0 ? (
@@ -186,6 +188,17 @@ export default async function OrganizerAnalyticsPage() {
             ))
           )}
           <p className="mt-1 text-xs text-muted">{walletBalanceStats.walletCount} wallet(s) registered</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Carry-over volume</p>
+          {Object.keys(carryOverVolumeByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(carryOverVolumeByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">Balance carried in from your past events</p>
         </div>
       </div>
 

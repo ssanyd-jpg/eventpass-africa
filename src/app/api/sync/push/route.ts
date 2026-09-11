@@ -16,6 +16,7 @@ import {
   handleRejectVendor,
   handleCheckInVendor,
   handleCreateWallet,
+  handleCarryOverWallet,
   handleProvisionCredential,
   handleReplaceCredential,
   handleTopupWallet,
@@ -123,6 +124,9 @@ export async function POST(request: Request) {
         break;
       case "CREATE_WALLET":
         result = await handleCreateWallet(session.user.id, body.payload);
+        break;
+      case "CARRY_OVER_WALLET":
+        result = await handleCarryOverWallet(session.user.id, body.payload);
         break;
       case "PROVISION_CREDENTIAL":
         result = await handleProvisionCredential(session.user.id, session.user.organizationId, body.payload);

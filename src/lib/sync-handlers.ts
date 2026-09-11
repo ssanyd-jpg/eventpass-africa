@@ -64,6 +64,7 @@ export const payloadSchemas = {
     venue: z.string().min(1).max(120),
     city: z.string().min(1).max(120),
     startsAt: z.string().min(1),
+    endsAt: z.string().nullable().optional(),
     imageUrl: z.string().min(1),
     currency: z.enum(CURRENCY_CODES).optional(),
     ticketTypes: z.array(ticketTypeInputSchema).min(1),
@@ -140,6 +141,9 @@ export const payloadSchemas = {
     vendorApplicationsOpen: z.boolean().optional(),
     vendorStallFeeCents: z.number().int().min(0).optional(),
     waiverText: z.string().max(8000).nullable().optional(),
+    // Session 11 — optional end datetime and the carry-over opt-in toggle.
+    endsAt: z.string().nullable().optional(),
+    carryOverEnabled: z.boolean().optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
     discountCodes: z.array(discountCodeInputSchema).optional(),
     // Same exact shape as registrationQuestions — post-event survey
@@ -215,6 +219,19 @@ export const payloadSchemas = {
     code: z.string().min(1).max(40),
     eventId: z.string().min(1),
     eventClientId: z.string().nullable().optional(),
+  }),
+  // Session 11: register a wallet for a new event by carrying a positive
+  // balance over from a wallet at a previous, already-ended event by the
+  // same organisation. Same shape as CREATE_WALLET plus the source wallet
+  // id — the server re-verifies every eligibility condition (see
+  // handleCarryOverWallet), the client's own findCarryOverCandidate check
+  // is only what decides whether to offer the prompt.
+  CARRY_OVER_WALLET: z.object({
+    clientId: z.string().min(1),
+    code: z.string().min(1).max(40),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    sourceWalletId: z.string().min(1),
   }),
   // Either userId (an already-resolved attendee) or email+name (a walk-up
   // attendee with no account yet) must be present — never both trusted at
@@ -400,6 +417,7 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
       venue: String(payload.venue),
       city: String(payload.city),
       startsAt: new Date(payload.startsAt),
+      endsAt: payload.endsAt ? new Date(payload.endsAt) : null,
       imageUrl: String(payload.imageUrl),
       currency: String(payload.currency ?? DEFAULT_CURRENCY),
       organizationId,
@@ -435,9 +453,11 @@ export function shapeEvent(e: any, organizerName: string) {
     venue: e.venue,
     city: e.city,
     startsAt: e.startsAt.toISOString(),
+    endsAt: e.endsAt ? e.endsAt.toISOString() : null,
     imageUrl: e.imageUrl,
     status: e.status,
     currency: e.currency,
+    carryOverEnabled: e.carryOverEnabled ?? false,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
     organizationId: e.organizationId,
@@ -924,6 +944,8 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
     if (payload[key] !== undefined) data[key] = String(payload[key]);
   }
   if (payload.startsAt !== undefined) data.startsAt = new Date(payload.startsAt);
+  if (payload.endsAt !== undefined) data.endsAt = payload.endsAt ? new Date(payload.endsAt) : null;
+  if (payload.carryOverEnabled !== undefined) data.carryOverEnabled = Boolean(payload.carryOverEnabled);
   if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
   if (payload.vendorStallFeeCents !== undefined) data.vendorStallFeeCents = Number(payload.vendorStallFeeCents);
   if (payload.waiverText !== undefined) {
@@ -1812,6 +1834,8 @@ export function shapeWallet(w: any) {
     ownerEmail: w.owner?.email ?? null,
     balanceCents: w.balanceCents,
     currency: w.currency,
+    carryOverSourceWalletId: w.carryOverSourceWalletId ?? null,
+    carryOverredAt: w.carryOverredAt ? w.carryOverredAt.toISOString() : null,
     createdAt: w.createdAt.toISOString(),
     updatedAt: w.updatedAt.toISOString(),
   };
@@ -1901,6 +1925,135 @@ export async function handleCreateWallet(userId: string, payload: any) {
   });
 
   return { ok: true, wallet: shapeWallet(created) };
+}
+
+// Session 11: register a wallet for a new event AND move a positive balance
+// into it from a wallet the buyer holds at a previous, already-ended event
+// by the same organisation. The client's findCarryOverCandidate
+// (src/lib/carry-over.ts) decides whether to OFFER this; every eligibility
+// condition is re-checked here against the database and none is trusted
+// from the payload — a "declined" carry-over just queues a plain
+// CREATE_WALLET instead, leaving the source untouched.
+export async function handleCarryOverWallet(userId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.wallet.findUnique({ where: { clientId }, include: walletInclude });
+  if (existing) {
+    return { ok: true, wallet: shapeWallet(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+  if (!event.carryOverEnabled) {
+    return { ok: false, reason: "CARRY_OVER_NOT_ENABLED" };
+  }
+
+  // Already has a wallet here — carry-over can't apply on top of an
+  // existing balance; return the existing wallet unchanged (same
+  // idempotency posture as handleCreateWallet).
+  const existingForUser = await prisma.wallet.findUnique({
+    where: { eventId_ownerUserId: { eventId: event.id, ownerUserId: userId } },
+    include: walletInclude,
+  });
+  if (existingForUser) {
+    return { ok: true, wallet: shapeWallet(existingForUser) };
+  }
+
+  const source = await prisma.wallet.findUnique({
+    where: { id: String(payload.sourceWalletId) },
+    include: { event: { select: { organizationId: true, startsAt: true, endsAt: true } } },
+  });
+  if (!source) {
+    return { ok: false, retry: true, reason: "SOURCE_WALLET_NOT_SYNCED_YET" };
+  }
+  if (source.ownerUserId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (source.event.organizationId !== event.organizationId) {
+    return { ok: false, reason: "DIFFERENT_ORGANIZATION" };
+  }
+  if (source.currency !== event.currency) {
+    return { ok: false, reason: "CURRENCY_MISMATCH" };
+  }
+  const sourceEnd = source.event.endsAt ?? source.event.startsAt;
+  if (sourceEnd.getTime() >= Date.now()) {
+    return { ok: false, reason: "SOURCE_EVENT_NOT_ENDED" };
+  }
+  if (source.balanceCents <= 0) {
+    return { ok: false, reason: "SOURCE_BALANCE_ZERO" };
+  }
+
+  const carriedCents = source.balanceCents;
+
+  const result = await prisma.$transaction(async (tx) => {
+    // CAS-zero the source on its exact current balance — if a charge or
+    // withdrawal landed between the read above and here, count is 0 and we
+    // bail out so the client retries with the fresh figure.
+    const zeroed = await tx.wallet.updateMany({
+      where: { id: source.id, balanceCents: carriedCents },
+      data: { balanceCents: 0 },
+    });
+    if (zeroed.count === 0) {
+      return { raced: true as const };
+    }
+
+    const newWallet = await tx.wallet.create({
+      data: {
+        clientId,
+        code: String(payload.code),
+        eventId: event.id,
+        ownerUserId: userId,
+        currency: event.currency,
+        balanceCents: carriedCents,
+        carryOverSourceWalletId: source.id,
+        carryOverredAt: new Date(),
+      },
+      include: walletInclude,
+    });
+
+    // Signed amounts — see the CARRY_OVER note on WalletTransaction in
+    // prisma/schema.prisma. Source row is the debit (negative), the new
+    // wallet's row is the credit (positive).
+    await tx.walletTransaction.create({
+      data: {
+        type: "CARRY_OVER",
+        status: "COMPLETED",
+        amountCents: -carriedCents,
+        currency: source.currency,
+        walletId: source.id,
+        providerMessage: `Carried over to ${event.title}`,
+      },
+    });
+    await tx.walletTransaction.create({
+      data: {
+        type: "CARRY_OVER",
+        status: "COMPLETED",
+        amountCents: carriedCents,
+        currency: event.currency,
+        walletId: newWallet.id,
+        providerMessage: `Carried over from a previous event`,
+      },
+    });
+
+    const zeroedSource = await tx.wallet.findUniqueOrThrow({ where: { id: source.id }, include: walletInclude });
+    return { raced: false as const, newWallet, zeroedSource };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  if (result.raced) {
+    return { ok: false, retry: true, reason: "SOURCE_BALANCE_CHANGED" };
+  }
+
+  return {
+    ok: true,
+    wallet: shapeWallet(result.newWallet),
+    sourceWallet: shapeWallet(result.zeroedSource),
+    carriedCents,
+  };
 }
 
 const provisionUserSelect = { id: true, name: true, email: true, phone: true } as const;

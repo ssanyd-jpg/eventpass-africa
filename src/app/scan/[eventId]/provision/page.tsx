@@ -151,6 +151,8 @@ export default function ProvisionPage() {
           ownerEmail: attendee.email || null,
           balanceCents: 0,
           currency: event.currency,
+          carryOverSourceWalletId: null,
+          carryOverredAt: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           syncStatus: "pending",

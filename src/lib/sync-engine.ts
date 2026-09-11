@@ -372,6 +372,22 @@ async function applyCreateWalletResult(payload: any, result: any) {
   await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
 }
 
+// Session 11: swaps the optimistic local wallet for the server row (same as
+// applyCreateWalletResult) AND writes back the now-zeroed source wallet, so
+// the buyer's wallet list reflects the moved balance immediately without
+// waiting for the next pull. On a soft-fail (carry-over declined
+// server-side, or a mid-flight balance change), result.wallet is absent —
+// leave the optimistic rows for flushOutbox's normal retry/conflict path.
+async function applyCarryOverWalletResult(payload: any, result: any) {
+  if (!result?.ok || !result.wallet) return;
+  const localId = payload.clientId as string;
+  await db.wallets.delete(localId);
+  await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  if (result.sourceWallet) {
+    await db.wallets.put({ ...result.sourceWallet, syncStatus: "synced" });
+  }
+}
+
 // Replaces the two optimistic LocalCredential rows written under the
 // clientId-derived keys (see the provisioning page) with the
 // server-authoritative rows, and reconciles the wallet the same way
@@ -574,6 +590,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CREATE_WALLET":
           await applyCreateWalletResult(entry.payload, result);
+          break;
+        case "CARRY_OVER_WALLET":
+          await applyCarryOverWalletResult(entry.payload, result);
           break;
         case "PROVISION_CREDENTIAL":
           await applyProvisionCredentialResult(entry.payload, result);

@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalWallet } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, generateTicketCode } from "@/lib/format";
+import { findCarryOverCandidate } from "@/lib/carry-over";
 
 export default function WalletListPage() {
   const { user, status } = useAppSession();
@@ -19,10 +20,13 @@ export default function WalletListPage() {
     return db.wallets.where("ownerUserId").equals(user.id).toArray();
   }, [user?.id]);
 
-  const liveEvents = useLiveQuery(async () => {
-    const all = await db.events.toArray();
-    return all.filter((e) => e.status === "LIVE").sort((a, b) => (a.startsAt < b.startsAt ? -1 : 1));
-  }, []);
+  const allEvents = useLiveQuery(() => db.events.toArray(), []);
+  const liveEvents =
+    allEvents === undefined
+      ? undefined
+      : allEvents
+          .filter((e) => e.status === "LIVE")
+          .sort((a, b) => (a.startsAt < b.startsAt ? -1 : 1));
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push("/login?callbackUrl=/account/wallet");
@@ -37,7 +41,30 @@ export default function WalletListPage() {
     setRegistering(eventId);
     const clientId = newLocalId();
     const code = generateTicketCode();
-    const event = (liveEvents ?? []).find((e) => e.id === eventId);
+    const event = (allEvents ?? []).find((e) => e.id === eventId);
+
+    // Session 11 — offer to carry a positive balance over from a wallet at
+    // a previous, already-ended event by the same organiser. Everything
+    // needed to decide is already in the buyer's local Dexie (their own
+    // wallets + every event); the server re-verifies on sync regardless.
+    let carryOver: { sourceWalletId: string } | null = null;
+    if (event?.carryOverEnabled) {
+      const candidate = findCarryOverCandidate({
+        targetEvent: event,
+        wallets: (wallets ?? [])
+          .map((w) => {
+            const wEvent = (allEvents ?? []).find((e) => e.id === w.eventId);
+            return wEvent ? { wallet: w, event: wEvent } : null;
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null),
+      });
+      if (candidate) {
+        const accepted = window.confirm(
+          `You have ${formatCents(candidate.balanceCents, candidate.currency)} remaining from ${candidate.sourceEventTitle}. Would you like to use it at this event?`
+        );
+        if (accepted) carryOver = { sourceWalletId: candidate.sourceWalletId };
+      }
+    }
 
     const wallet: LocalWallet = {
       id: clientId,
@@ -48,14 +75,30 @@ export default function WalletListPage() {
       ownerUserId: user.id,
       ownerName: user.name ?? null,
       ownerEmail: user.email ?? null,
+      // Optimistically a plain zero-balance wallet either way — the real
+      // carried figure and the source wallet's zeroing land via
+      // applyCarryOverWalletResult once the op syncs, so a server-side
+      // decline can't leave a phantom balance showing locally.
       balanceCents: 0,
       currency: event?.currency ?? "TZS",
+      carryOverSourceWalletId: carryOver?.sourceWalletId ?? null,
+      carryOverredAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",
     };
     await db.wallets.put(wallet);
-    await queueOp("CREATE_WALLET", { clientId, code, eventId, eventClientId });
+    if (carryOver) {
+      await queueOp("CARRY_OVER_WALLET", {
+        clientId,
+        code,
+        eventId,
+        eventClientId,
+        sourceWalletId: carryOver.sourceWalletId,
+      });
+    } else {
+      await queueOp("CREATE_WALLET", { clientId, code, eventId, eventClientId });
+    }
     setRegistering(null);
   }
 

@@ -126,9 +126,13 @@ export default function NewEventPage() {
       venue: venue.trim(),
       city: city.trim(),
       startsAt: new Date(startsAt).toISOString(),
+      // End date and wristband carry-over are configurable via Edit once
+      // the event exists — same reasoning as vendorApplicationsOpen below.
+      endsAt: null,
       imageUrl,
       status: "LIVE",
       currency,
+      carryOverEnabled: false,
       // Vendor applications are off by default — configurable via Edit
       // once the event exists.
       vendorApplicationsOpen: false,

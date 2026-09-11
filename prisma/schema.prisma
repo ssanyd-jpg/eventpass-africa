@@ -559,8 +559,18 @@ model Event {
   venue       String
   city        String
   startsAt    DateTime
+  // Optional end datetime (Session 11). null = not set — carry-over
+  // eligibility then falls back to treating startsAt as the end, so a
+  // single-day event still works with no end date entered. Used to decide
+  // whether a PREVIOUS event has "ended" for wristband balance carry-over.
+  endsAt      DateTime?
   imageUrl    String
   status      String   @default("LIVE")
+  // Session 11: organiser opt-in, per event. When true, an attendee
+  // registering a wallet here can carry over a positive balance from a
+  // wallet they hold at an already-ended event by the same organisation
+  // (see handleCarryOverWallet in src/lib/sync-handlers.ts).
+  carryOverEnabled Boolean @default(false)
   // ISO 4217 code. All ticket types on an event share its currency — see
   // CURRENCIES in src/lib/currency.ts for the supported set.
   currency    String   @default("TZS")
@@ -854,6 +864,13 @@ model Wallet {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Session 11: set on a wallet that was created by carrying a balance over
+  // from a previous event's wallet. carryOverSourceWalletId is a plain id
+  // (not a relation) pointing at that source Wallet; carryOverredAt is when
+  // the carry-over ran. Both null for a normally-registered wallet.
+  carryOverSourceWalletId String?
+  carryOverredAt          DateTime?
+
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
@@ -866,10 +883,18 @@ model Wallet {
   @@unique([eventId, ownerUserId])
 }
 
-// type is TOPUP | SALE | SPONSOR_TAP. status is PENDING | COMPLETED | FAILED
-// (plain-string convention — see MobileMoneyAccount.provider). Only TOPUP is
-// ever PENDING (waiting on an async mobile-money charge); SALE/SPONSOR_TAP
-// always resolve synchronously.
+// type is TOPUP | SALE | SPONSOR_TAP | WITHDRAWAL | CARRY_OVER. status is
+// PENDING | COMPLETED | FAILED (plain-string convention — see
+// MobileMoneyAccount.provider). Only TOPUP/WITHDRAWAL are ever PENDING
+// (waiting on an async mobile-money charge / an organiser payout review);
+// SALE/SPONSOR_TAP/CARRY_OVER always resolve synchronously.
+//
+// CARRY_OVER (Session 11) is the one type where amountCents is signed: the
+// source wallet's row is negative (balance moved out), the destination
+// wallet's row is positive (balance moved in). Every other type stores a
+// positive magnitude and lets the type carry the direction — CARRY_OVER
+// has two directional halves of one transfer, so the sign disambiguates
+// them (e.g. "sum of CARRY_OVER credits" = positive rows only).
 model WalletTransaction {
   id                String   @id @default(cuid())
   clientId          String?  @unique

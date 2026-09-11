@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   SALE: "Purchase",
   SPONSOR_TAP: "Sponsor tap",
   WITHDRAWAL: "Withdrawal",
+  CARRY_OVER: "Carry-over",
 };
 
 interface NDEFWriterLike {
@@ -50,6 +51,16 @@ export default function WalletDetailPage() {
     const all = await db.walletTransactions.where("walletId").equals(walletId).toArray();
     return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [walletId]);
+
+  // Session 11 — if this wallet was created by carrying a balance over,
+  // resolve the previous event's name for the "Carried over from …" note.
+  // The source wallet + its event are already in the buyer's local Dexie.
+  const carryOverSourceEventTitle = useLiveQuery(async () => {
+    if (!wallet?.carryOverSourceWalletId) return null;
+    const src = await db.wallets.get(wallet.carryOverSourceWalletId);
+    if (!src) return null;
+    return (await db.events.get(src.eventId))?.title ?? null;
+  }, [wallet?.carryOverSourceWalletId]);
 
   const [amountMajor, setAmountMajor] = useState("");
   const [phone, setPhone] = useState("");
@@ -246,6 +257,9 @@ export default function WalletDetailPage() {
         {wallet.syncStatus === "pending" && (
           <span className="pill border-warn/40 bg-warn/10 text-warn">Pending sync</span>
         )}
+        {wallet.carryOverSourceWalletId && carryOverSourceEventTitle && (
+          <p className="text-xs text-muted">Carried over from {carryOverSourceEventTitle}</p>
+        )}
         {nfcSupported && (
           <button className="btn-secondary mt-2 w-full" onClick={bindNfc}>
             Bind to NFC wristband
@@ -387,7 +401,11 @@ export default function WalletDetailPage() {
               <div className="text-right">
                 {t.amountCents !== null && (
                   <p className="font-semibold">
-                    {t.type === "TOPUP" ? "+" : "-"}{formatCents(t.amountCents, t.currency)}
+                    {/* CARRY_OVER is the one signed type — a credit on the
+                        new wallet, a debit on the old one (see the
+                        WalletTransaction note in prisma/schema.prisma). */}
+                    {t.type === "TOPUP" || (t.type === "CARRY_OVER" && t.amountCents > 0) ? "+" : "-"}
+                    {formatCents(Math.abs(t.amountCents), t.currency)}
                   </p>
                 )}
                 <span className={`pill ${STATUS_STYLE[t.status] ?? ""}`}>{t.status}</span>
