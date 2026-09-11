@@ -33,6 +33,14 @@ export default function EventDetailPage() {
   const [phone, setPhone] = useState("");
   const [network, setNetwork] = useState(NETWORKS[0].value);
 
+  // Session 13 — group/family checkout. One name per ticket being bought,
+  // in the same order tickets get flattened below — kept in sync with
+  // totalQty as the buyer adjusts quantities, preserving names already
+  // typed for the tickets that are still there.
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [memberNames, setMemberNames] = useState<string[]>([]);
+
   const selection = useMemo(() => {
     if (!event) return [];
     return event.ticketTypes
@@ -42,6 +50,18 @@ export default function EventDetailPage() {
 
   const totalCents = selection.reduce((sum, s) => sum + s.tt.priceCents * s.qty, 0);
   const totalQty = selection.reduce((sum, s) => sum + s.qty, 0);
+
+  // Padded/truncated to the current totalQty for rendering and validation —
+  // memberNames itself only grows via setMemberName, so a quantity change
+  // (up or down) is reflected here without a separate effect to keep it in
+  // sync.
+  const displayedMemberNames = Array.from({ length: totalQty }, (_, i) => memberNames[i] ?? "");
+  function setMemberName(index: number, name: string) {
+    const next = displayedMemberNames.slice();
+    next[index] = name;
+    setMemberNames(next);
+  }
+  const groupReady = !isGroup || (groupName.trim().length > 0 && displayedMemberNames.every((n) => n.trim().length > 0));
 
   // Skip the questions step entirely when there's nothing to ask — no empty
   // screen between selecting tickets and confirming.
@@ -79,6 +99,11 @@ export default function EventDetailPage() {
     setPlacing(true);
 
     const clientId = newLocalId();
+    // Session 13 — when buying for a group, memberNames maps 1:1 onto
+    // these tickets in this exact flattened order (items are sent to
+    // SELL_TICKETS in the same order below, and the server expands each
+    // item by quantity the same way — see handleSellTickets).
+    let memberIndex = 0;
     const tickets = selection.flatMap((s) =>
       Array.from({ length: s.qty }).map(() => ({
         id: newLocalId(),
@@ -88,6 +113,7 @@ export default function EventDetailPage() {
         ticketTypeName: s.tt.name,
         checkedIn: false,
         checkedInAt: null,
+        groupMemberName: isGroup ? displayedMemberNames[memberIndex++]?.trim() || null : null,
       }))
     );
 
@@ -161,6 +187,9 @@ export default function EventDetailPage() {
       paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
       phoneNumber: online ? phone.trim() : undefined,
       mobileNetwork: online ? network : undefined,
+      group: isGroup
+        ? { name: groupName.trim(), memberNames: displayedMemberNames.map((n) => n.trim()) }
+        : undefined,
     });
 
     // /orders/[id] live-queries this exact order out of Dexie, so it picks
@@ -245,6 +274,32 @@ export default function EventDetailPage() {
           {step === "select" && (
             <>
               <h2 className="mb-4 font-semibold">Select tickets</h2>
+
+              <label className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface2 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isGroup}
+                  onChange={(e) => setIsGroup(e.target.checked)}
+                />
+                Buying for a group?
+              </label>
+              {isGroup && (
+                <div className="mb-4">
+                  <label className="label" htmlFor="groupName">Group name</label>
+                  <input
+                    id="groupName"
+                    className="input"
+                    placeholder="e.g. The Okonkwo Family"
+                    maxLength={120}
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted">
+                    Every ticket below will be named for one member and share one cashless wallet you top up and control.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {event.ticketTypes.map((tt) => {
                   const remaining = tt.quantityTotal - tt.quantitySold;
@@ -282,13 +337,32 @@ export default function EventDetailPage() {
                 })}
               </div>
 
+              {isGroup && totalQty > 0 && (
+                <div className="mt-5 border-t border-border pt-4">
+                  <p className="label">Member names</p>
+                  <p className="mb-2 text-xs text-muted">One name per ticket — each gets its own wristband.</p>
+                  <div className="space-y-2">
+                    {displayedMemberNames.map((name, i) => (
+                      <input
+                        key={i}
+                        className="input"
+                        placeholder={`Ticket ${i + 1} — e.g. Asha`}
+                        maxLength={80}
+                        value={name}
+                        onChange={(e) => setMemberName(i, e.target.value)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-5 flex items-center justify-between text-sm">
                 <span className="text-muted">Total</span>
                 <span className="font-semibold">{formatCents(totalCents, event.currency)}</span>
               </div>
               <button
                 className="btn-primary mt-4 w-full"
-                disabled={totalQty === 0}
+                disabled={totalQty === 0 || !groupReady}
                 onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
               >
                 Continue
@@ -342,6 +416,14 @@ export default function EventDetailPage() {
           {step === "confirm" && (
             <>
               <h2 className="mb-4 font-semibold">Confirm & pay</h2>
+              {isGroup && (
+                <div className="mb-4 rounded-lg border border-border bg-surface2 p-3 text-sm">
+                  <p className="font-medium">{groupName.trim()}</p>
+                  <p className="text-xs text-muted">
+                    {displayedMemberNames.join(", ")} — one shared wallet you top up and control.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2 text-sm">
                 {selection.map((s) => (
                   <div key={s.tt.id} className="flex justify-between">

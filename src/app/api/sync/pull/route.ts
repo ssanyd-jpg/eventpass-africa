@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       },
       include: {
         items: { include: { ticketType: true } },
-        tickets: { include: { ticketType: true } },
+        tickets: { include: { ticketType: true, ticketGroup: { select: { name: true } } } },
         event: { select: { id: true, clientId: true, title: true } },
         registrationAnswers: { include: { question: true } },
         user: { select: { createdAt: true } },
@@ -135,6 +135,9 @@ export async function GET(request: Request) {
         checkedIn: t.checkedIn,
         checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
         currentHolderUserId: t.currentHolderUserId ?? null,
+        ticketGroupId: t.ticketGroupId ?? null,
+        ticketGroupName: t.ticketGroup?.name ?? null,
+        groupMemberName: t.groupMemberName ?? null,
       })),
       waiverText: o.waiverText ?? null,
       waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
@@ -285,7 +288,11 @@ export async function GET(request: Request) {
 
     const myWallets = await prisma.wallet.findMany({
       where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
-      include: { event: { select: { id: true, clientId: true } }, owner: { select: { name: true, email: true } } },
+      include: {
+        event: { select: { id: true, clientId: true } },
+        owner: { select: { name: true, email: true } },
+        ticketGroup: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
     payload.myWallets = myWallets.map((w) => ({
@@ -301,6 +308,8 @@ export async function GET(request: Request) {
       currency: w.currency,
       carryOverSourceWalletId: w.carryOverSourceWalletId ?? null,
       carryOverredAt: w.carryOverredAt ? w.carryOverredAt.toISOString() : null,
+      isGroupWallet: w.isGroupWallet,
+      groupName: w.ticketGroup?.name ?? null,
       createdAt: w.createdAt.toISOString(),
       updatedAt: w.updatedAt.toISOString(),
     }));
@@ -327,6 +336,8 @@ export async function GET(request: Request) {
       phoneNumber: t.phoneNumber,
       mobileNetwork: t.mobileNetwork,
       note: t.note ?? null,
+      spentByTicketId: t.spentByTicketId ?? null,
+      spentByMemberName: t.spentByMemberName ?? null,
       vendorId: t.vendorId,
       vendorName: t.vendor?.name ?? null,
       sponsorId: t.sponsorId,

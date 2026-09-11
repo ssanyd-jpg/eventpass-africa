@@ -300,6 +300,14 @@ async function applySellTicketsResult(payload: any, result: any) {
       await db.events.put(updated);
     }
   }
+
+  // Session 13 — group checkout creates (or reuses) a shared Wallet
+  // transparently, with no separate CREATE_WALLET op of its own: write it
+  // into the buyer's local wallets table now so its code/balance are
+  // available on this device immediately, without waiting for the next pull.
+  if (result.sharedWallet) {
+    await db.wallets.put({ ...result.sharedWallet, syncStatus: "synced" });
+  }
 }
 
 // Mirrors applyRefundOrderResult — acts on an already-synced order id (no

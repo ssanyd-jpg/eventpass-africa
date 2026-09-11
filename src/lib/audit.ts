@@ -86,8 +86,14 @@ export function buildSyncAuditEntry(
       return { action: "WITHDRAWAL_APPROVED", summary: `Approved a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
     case "REJECT_WITHDRAWAL":
       return { action: "WITHDRAWAL_REJECTED", summary: `Rejected a withdrawal of ${formatCents(result.transaction.amountCents, result.transaction.currency)}` };
-    case "PROVISION_CREDENTIAL":
-      return { action: "CREDENTIAL_PROVISIONED", summary: `Provisioned a wristband for ${result.user?.name ?? "an attendee"} at "${result.eventTitle}"` };
+    case "PROVISION_CREDENTIAL": {
+      // Session 13: a group member has no user account to name — fall back
+      // to the ticket's own groupMemberName (and its group) instead.
+      const who = result.groupMemberName
+        ? `${result.groupMemberName}${result.groupName ? ` (${result.groupName})` : ""}`
+        : result.user?.name ?? "an attendee";
+      return { action: "CREDENTIAL_PROVISIONED", summary: `Provisioned a wristband for ${who} at "${result.eventTitle}"` };
+    }
     case "REPLACE_CREDENTIAL":
       return {
         action: "WRISTBAND_REPLACED",

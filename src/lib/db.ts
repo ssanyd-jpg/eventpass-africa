@@ -86,6 +86,13 @@ export interface LocalTicket {
   // TicketTransfer to this ticket is accepted — see currentHolderUserId in
   // prisma/schema.prisma.
   currentHolderUserId?: string | null;
+  // Session 13 — set when this ticket was purchased as part of a group/
+  // family checkout (see Ticket.ticketGroupId/groupMemberName in
+  // prisma/schema.prisma). groupMemberName is never a real account, just
+  // the label the lead buyer typed for this specific wristband at checkout.
+  ticketGroupId?: string | null;
+  ticketGroupName?: string | null;
+  groupMemberName?: string | null;
 }
 
 export type OrderSyncStatus = "synced" | "pending" | "conflict";
@@ -304,6 +311,11 @@ export interface LocalWallet {
   // stored here.
   carryOverSourceWalletId: string | null;
   carryOverredAt: string | null;
+  // Session 13 — true when this is a group/family's shared wallet rather
+  // than a personal one (see Wallet.isGroupWallet). groupName is the
+  // group's display name, present whenever isGroupWallet is true.
+  isGroupWallet?: boolean;
+  groupName?: string | null;
   createdAt: string;
   updatedAt: string;
   syncStatus: "synced" | "pending";
@@ -398,6 +410,12 @@ export interface LocalWalletTransaction {
   // SALE only — what was sold, staff-typed at the wallet charge terminal
   // (see WalletTransaction.item in prisma/schema.prisma).
   item: string | null;
+  // Session 13 — SALE only, and only when the charge was resolved via an
+  // NFC tap on a group wallet (see handleChargeWallet's attendeeTicketId).
+  // Null otherwise, including for a charge on the same wallet made by typed
+  // code/QR scan instead of a tap.
+  spentByTicketId: string | null;
+  spentByMemberName: string | null;
   vendorId: string | null;
   vendorName: string | null;
   sponsorId: string | null;
@@ -800,6 +818,31 @@ class EventPassAfricaDB extends Dexie {
     // chipTimes (local-only device activity feed, never pulled — see
     // LocalChipTime's own comment).
     this.version(17).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+      timingPoints: "id, clientId, eventId, sequenceOrder",
+      chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
+    });
+    // Session 13: new ticketGroupId/ticketGroupName/groupMemberName fields
+    // on LocalTicket (embedded in LocalOrder.tickets), isGroupWallet/
+    // groupName on LocalWallet, and spentByTicketId/spentByMemberName on
+    // LocalWalletTransaction — no indexed-key change, same no-.upgrade()-
+    // needed reasoning as version 15/16.
+    this.version(18).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

@@ -39,6 +39,7 @@ model User {
   floatDeclarationsAsOperator FloatDeclaration[]  @relation("FloatDeclarationOperator")
   floatDeclarationsMade       FloatDeclaration[]  @relation("FloatDeclarationDeclaredBy")
   eventForecastsSaved         EventForecast[]     @relation("EventForecastSavedBy")
+  ticketGroupsLed             TicketGroup[]       @relation("TicketGroupLead")
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -614,6 +615,41 @@ model Event {
   forecast              EventForecast?
   timingPoints          TimingPoint[]
   chipTimes             ChipTime[]
+  ticketGroups          TicketGroup[]
+}
+
+// Session 13 — group/family ticketing: one buyer (the lead) purchases
+// several tickets in one order, names each ticket for a specific member (who
+// may have no Chaap account at all — see Ticket.groupMemberName), and every
+// member's provisioned wristband draws from ONE shared Wallet that the lead
+// alone owns and tops up. Deliberately reuses Wallet's existing single-owner
+// shape as-is (see Wallet's own "v1 scope cut" comment) rather than
+// introducing multi-owner wallets: "sharing" is achieved by letting many
+// Credential rows (one per member's wristband) point at the same walletId —
+// exactly how a single attendee's own ticket+wallet credentials already
+// share one walletId today.
+// sharedWalletId is unique — a lead can run at most one active group per
+// event, matching Wallet's own @@unique([eventId, ownerUserId]): the lead
+// only has one wallet per event to share in the first place. Buying a
+// second batch of group tickets for the same event reuses this existing
+// group rather than creating a second one (see handleSellTickets).
+model TicketGroup {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  leadUserId String
+  leadUser   User   @relation("TicketGroupLead", fields: [leadUserId], references: [id])
+
+  sharedWalletId String @unique
+  sharedWallet   Wallet @relation(fields: [sharedWalletId], references: [id])
+
+  tickets Ticket[]
+
+  @@index([eventId, leadUserId])
 }
 
 // Session 12 — one checkpoint along a marathon course (Start, 5km, 10km,
@@ -800,6 +836,15 @@ model Ticket {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Session 13 — set when this ticket was purchased as part of a group/
+  // family checkout (see TicketGroup). groupMemberName is the individual
+  // member's name as the lead buyer typed it at checkout — never a User
+  // account (they may not have one at all), just a label so staff and the
+  // lead buyer's own group page can tell whose wristband is whose.
+  ticketGroupId   String?
+  ticketGroup     TicketGroup? @relation(fields: [ticketGroupId], references: [id])
+  groupMemberName String?
+
   orderId String
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -932,9 +977,11 @@ model SponsorCampaign {
   @@unique([sponsorId, code])
 }
 
-// One wallet per user per event (v1 scope cut — no multi-wristband/family
-// sharing). currency snapshots Event.currency at creation, same discipline
-// as Order.currency/Vendor.currency.
+// One wallet per user per event — still true even for a group/family's
+// shared wallet (Session 13's isGroupWallet below): it's one wallet OWNED
+// by the lead buyer, just linked from many members' wristbands via
+// Credential.walletId. currency snapshots Event.currency at creation, same
+// discipline as Order.currency/Vendor.currency.
 model Wallet {
   id           String   @id @default(cuid())
   clientId     String?  @unique
@@ -951,6 +998,13 @@ model Wallet {
   carryOverSourceWalletId String?
   carryOverredAt          DateTime?
 
+  // Session 13 — true when this wallet is a group/family's shared pool
+  // rather than one person's own wallet. Still owned by exactly one User
+  // (the group's lead buyer, per @@unique below) — every group member's
+  // wristband Credential just points at this same walletId. See
+  // TicketGroup's own header comment for the full design reasoning.
+  isGroupWallet Boolean @default(false)
+
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
@@ -959,6 +1013,7 @@ model Wallet {
 
   transactions WalletTransaction[]
   credentials  Credential[]
+  ticketGroup  TicketGroup?
 
   @@unique([eventId, ownerUserId])
 }
@@ -1006,6 +1061,17 @@ model WalletTransaction {
   // this exists (the vendor dashboard's "top items sold" needs real
   // per-sale data that nothing in this model tracked before).
   item              String?
+  // Session 13 — SALE only, and only when the tap that triggered the charge
+  // was identified via NFC (see handleChargeWallet's attendeeTicketId): a
+  // group wallet has no single "owner" spending it, so this attributes an
+  // individual charge to the specific member's ticket/name, snapshotted at
+  // charge time (a plain id, not a relation, same discipline as
+  // carryOverSourceWalletId above — the ticket is never deleted, but this
+  // avoids an extra join every time the group's spend history is displayed).
+  // Null for a non-group wallet, or a charge resolved by typed/QR code
+  // rather than an NFC tap (no specific member's tag was read).
+  spentByTicketId   String?
+  spentByMemberName String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

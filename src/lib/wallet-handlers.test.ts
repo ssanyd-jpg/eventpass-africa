@@ -178,6 +178,31 @@ describe("handleTopupWallet", () => {
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(5000);
   });
+
+  it("Session 13: rejects a top-up attempt by anyone other than a group wallet's lead buyer/owner", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const lead = await createTestUser();
+    const someoneElse = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, lead.id, { currency: event.currency });
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { isGroupWallet: true } });
+    await prisma.ticketGroup.create({
+      data: { name: "Squad", eventId: event.id, leadUserId: lead.id, sharedWalletId: wallet.id },
+    });
+
+    const result = await handleTopupWallet(someoneElse.id, {
+      clientId: "group-topup-forbidden",
+      walletId: wallet.id,
+      amountCents: 5000,
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as any).reason).toBe("FORBIDDEN");
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(0);
+  });
 });
 
 describe("handleCheckTopupStatus", () => {
@@ -365,6 +390,76 @@ describe("handleChargeWallet", () => {
     const result = await handleChargeWallet(someoneElse.id, someoneElseOrg.id, payload);
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("FORBIDDEN");
+  });
+
+  it("Session 13: attributes a charge on a group wallet to the specific member via attendeeTicketId, still deducting from the shared balance", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const lead = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, lead.id, { balanceCents: 10000, currency: event.currency });
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { isGroupWallet: true } });
+    const group = await prisma.ticketGroup.create({
+      data: { name: "Squad", eventId: event.id, leadUserId: lead.id, sharedWalletId: wallet.id },
+    });
+    const tt = await prisma.ticketType.findFirstOrThrow({ where: { eventId: event.id } });
+    const order = await prisma.order.create({
+      data: { clientId: "group-charge-order", status: "PAID", totalCents: 0, currency: event.currency, userId: lead.id, eventId: event.id },
+    });
+    const ticket = await prisma.ticket.create({
+      data: { code: "MEMBER-TICKET-1", eventId: event.id, ticketTypeId: tt.id, orderId: order.id, ticketGroupId: group.id, groupMemberName: "Kesi" },
+    });
+    const vendor = await createTestVendor(event.id);
+
+    const result: any = await handleChargeWallet(organizer.id, organization.id, {
+      clientId: "group-charge-1",
+      walletCode: wallet.code,
+      vendorId: vendor.id,
+      amountCents: 3000,
+      eventId: event.id,
+      attendeeTicketId: ticket.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.transaction.status).toBe("COMPLETED");
+    expect(result.transaction.spentByTicketId).toBe(ticket.id);
+    expect(result.transaction.spentByMemberName).toBe("Kesi");
+    expect(result.wallet.balanceCents).toBe(7000);
+  });
+
+  it("Session 13: ignores an attendeeTicketId that doesn't belong to this wallet's group", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const lead = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, lead.id, { balanceCents: 10000, currency: event.currency });
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { isGroupWallet: true } });
+    await prisma.ticketGroup.create({
+      data: { name: "Squad", eventId: event.id, leadUserId: lead.id, sharedWalletId: wallet.id },
+    });
+    const tt = await prisma.ticketType.findFirstOrThrow({ where: { eventId: event.id } });
+    const otherOrder = await prisma.order.create({
+      data: { clientId: "unrelated-order", status: "PAID", totalCents: 0, currency: event.currency, userId: lead.id, eventId: event.id },
+    });
+    const unrelatedTicket = await prisma.ticket.create({
+      data: { code: "UNRELATED-1", eventId: event.id, ticketTypeId: tt.id, orderId: otherOrder.id },
+    });
+    const vendor = await createTestVendor(event.id);
+
+    const result: any = await handleChargeWallet(organizer.id, organization.id, {
+      clientId: "group-charge-2",
+      walletCode: wallet.code,
+      vendorId: vendor.id,
+      amountCents: 3000,
+      eventId: event.id,
+      attendeeTicketId: unrelatedTicket.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.transaction.spentByTicketId).toBeNull();
+    expect(result.transaction.spentByMemberName).toBeNull();
   });
 });
 

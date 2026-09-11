@@ -127,7 +127,10 @@ export default function WalletListPage() {
             return (
               <div key={event.id} className="card flex items-center justify-between p-4">
                 <div>
-                  <p className="font-semibold">{event.title}</p>
+                  <p className="font-semibold">
+                    {event.title}
+                    {wallet?.isGroupWallet && <span className="pill ml-2">Group</span>}
+                  </p>
                   {wallet ? (
                     <p className="text-sm text-muted">{formatCents(wallet.balanceCents, wallet.currency)} balance</p>
                   ) : (

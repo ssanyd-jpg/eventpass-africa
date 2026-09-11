@@ -248,6 +248,61 @@ describe("handleSellTickets", () => {
   });
 });
 
+describe("handleSellTickets — group checkout (Session 13)", () => {
+  it("creates a TicketGroup and a shared wallet, naming and linking every ticket to a member", async () => {
+    const { organizationId } = await newOrganizer();
+    const lead = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 50000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(lead.id, {
+      clientId: "group-order-1",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 3, codes: ["G1-1", "G1-2", "G1-3"] }],
+      group: { name: "The Okonkwo Family", memberNames: ["Asha", "Juma", "Fatuma"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.sharedWallet).toBeTruthy();
+    expect(result.sharedWallet.ownerUserId).toBe(lead.id);
+    expect(result.sharedWallet.isGroupWallet).toBe(true);
+    expect(result.order.tickets.map((t: any) => t.groupMemberName).sort()).toEqual(["Asha", "Fatuma", "Juma"]);
+    const groupIds = new Set(result.order.tickets.map((t: any) => t.ticketGroupId));
+    expect(groupIds.size).toBe(1);
+
+    const group = await prisma.ticketGroup.findUniqueOrThrow({ where: { sharedWalletId: result.sharedWallet.id } });
+    expect(group.name).toBe("The Okonkwo Family");
+    expect(group.leadUserId).toBe(lead.id);
+  });
+
+  it("reuses the existing group/shared wallet when the lead buys a second batch for the same event", async () => {
+    const { organizationId } = await newOrganizer();
+    const lead = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 50000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const first = await handleSellTickets(lead.id, {
+      clientId: "group-order-2a",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["G2-1"] }],
+      group: { name: "Team Alpha", memberNames: ["Amina"] },
+    });
+    const second = await handleSellTickets(lead.id, {
+      clientId: "group-order-2b",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["G2-2"] }],
+      group: { name: "Team Alpha", memberNames: ["Baraka"] },
+    });
+
+    expect(second.sharedWallet.id).toBe(first.sharedWallet.id);
+    const groupCount = await prisma.ticketGroup.count({ where: { sharedWalletId: first.sharedWallet.id } });
+    expect(groupCount).toBe(1);
+    const group = await prisma.ticketGroup.findUniqueOrThrow({ where: { sharedWalletId: first.sharedWallet.id } });
+    const totalMembers = await prisma.ticket.count({ where: { ticketGroupId: group.id } });
+    expect(totalMembers).toBe(2);
+  });
+});
+
 describe("handleSellTickets — discount codes", () => {
   it("applies a PERCENT_OFF code to the matching ticket type's line only", async () => {
     const { organizationId } = await newOrganizer();
@@ -2059,6 +2114,57 @@ describe("handleProvisionCredential", () => {
     const rows = await prisma.credential.findMany({ where: { clientId } });
     expect(rows).toHaveLength(2); // wallet-linked + ticket-linked, none superseded on replay
     expect(rows.every((r) => r.status === "ACTIVE")).toBe(true);
+  });
+
+  it("Session 13: provisions a group member via ticketId, linking to the group's shared wallet without creating a User", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const lead = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 50000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const sale: any = await handleSellTickets(lead.id, {
+      clientId: "group-provision-order",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["GP-1"] }],
+      group: { name: "The Provisioners", memberNames: ["Neo"] },
+    });
+    const ticketId = sale.order.tickets[0].id;
+    const usersBefore = await prisma.user.count();
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      ticketId,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.user).toBeNull();
+    expect(result.groupMemberName).toBe("Neo");
+    expect(result.groupName).toBe("The Provisioners");
+    expect(result.wallet.id).toBe(sale.sharedWallet.id);
+    expect(await prisma.user.count()).toBe(usersBefore); // no User created for the member
+
+    const rows = await prisma.credential.findMany({ where: { organizationId, status: "ACTIVE", nfcUid: result.credentials[0].nfcUid } });
+    expect(rows).toHaveLength(2);
+    expect(rows.some((r) => r.walletId === sale.sharedWallet.id)).toBe(true);
+    expect(rows.some((r) => r.ticketId === ticketId)).toBe(true);
+  });
+
+  it("Session 13: rejects a ticketId that isn't part of any group", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const { event, order } = await createPaidOrder(organizationId, buyer.id, 100000);
+
+    const result: any = await handleProvisionCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      nfcUid: uniqueUid(),
+      ticketId: order.tickets[0].id,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("NOT_A_GROUP_TICKET");
   });
 });
 

@@ -71,6 +71,7 @@ export default function Navbar() {
           {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
           {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
           {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
+          {user && <NavLink href="/account/groups">{t("nav.myGroups")}</NavLink>}
           {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
           {user && <NavLink href="/account/loyalty">{t("nav.myStatus")}</NavLink>}
           {user && <NavLink href="/account/support">{t("nav.support")}</NavLink>}

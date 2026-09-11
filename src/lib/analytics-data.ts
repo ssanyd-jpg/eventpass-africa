@@ -28,6 +28,7 @@ export interface OrganizerAnalyticsRawData {
     sponsor: { id: string; name: string } | null;
     vendor: { id: string; name: string } | null;
   }[];
+  ticketGroups: { ticketCount: number }[];
 }
 
 export async function getOrganizerAnalyticsData(organizationId: string): Promise<OrganizerAnalyticsRawData> {
@@ -39,7 +40,7 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
   const eventIds = myEvents.map((e) => e.id);
   const windowStart = trendWindowStart();
 
-  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs] = await Promise.all([
+  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups] = await Promise.all([
     prisma.order.findMany({
       where: { eventId: { in: eventIds }, status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
       select: { createdAt: true, totalCents: true, currency: true },
@@ -74,9 +75,22 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
         vendor: { select: { id: true, name: true } },
       },
     }),
+    prisma.ticketGroup.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { _count: { select: { tickets: true } } },
+    }),
   ]);
 
-  return { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs };
+  return {
+    myEvents,
+    revenueOrders,
+    ticketTypes,
+    tickets,
+    vendors,
+    wallets,
+    walletTxs,
+    ticketGroups: ticketGroups.map((g) => ({ ticketCount: g._count.tickets })),
+  };
 }
 
 export interface PlatformAnalyticsRawData {

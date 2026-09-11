@@ -159,6 +159,8 @@ export default function WalletDetailPage() {
       campaignId: null,
       campaignName: null,
       item: null,
+      spentByTicketId: null,
+      spentByMemberName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -225,6 +227,8 @@ export default function WalletDetailPage() {
       campaignId: null,
       campaignName: null,
       item: null,
+      spentByTicketId: null,
+      spentByMemberName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -259,6 +263,11 @@ export default function WalletDetailPage() {
         )}
         {wallet.carryOverSourceWalletId && carryOverSourceEventTitle && (
           <p className="text-xs text-muted">Carried over from {carryOverSourceEventTitle}</p>
+        )}
+        {wallet.isGroupWallet && (
+          <Link href="/account/groups" className="text-xs font-medium text-accent-hover">
+            {wallet.groupName ? `${wallet.groupName} — ` : ""}Manage group →
+          </Link>
         )}
         {nfcSupported && (
           <button className="btn-secondary mt-2 w-full" onClick={bindNfc}>

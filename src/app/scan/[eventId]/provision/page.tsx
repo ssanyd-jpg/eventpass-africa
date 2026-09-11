@@ -12,8 +12,9 @@ import { formatCents, generateTicketCode } from "@/lib/format";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import CameraScanner from "@/components/CameraScanner";
 import { findAttendeeCandidates } from "./actions";
+import type { AttendeeCandidate } from "@/lib/wristband-handlers";
 
-type Candidate = { id: string; name: string; email: string };
+type Candidate = AttendeeCandidate;
 type FoundTicket = { id: string; code: string } | null;
 type Confirmation = {
   attendeeLabel: string;
@@ -22,6 +23,10 @@ type Confirmation = {
   currency: string;
   ticket: FoundTicket;
   queuedOffline: boolean;
+  // Session 13 — present only for a group member's wristband.
+  groupName?: string | null;
+  provisionedCount?: number;
+  totalMembers?: number;
 };
 
 export default function ProvisionPage() {
@@ -101,7 +106,38 @@ export default function ProvisionPage() {
         for (const order of orders) {
           const ticket = order.tickets.find((tk) => tk.code.toLowerCase() === trimmed.toLowerCase());
           if (ticket) {
-            match = { id: order.userId, name: `${ticket.ticketTypeName} — ${ticket.code}`, email: "" };
+            // Session 13 — a group-member ticket has no attendee account at
+            // all; offline, we only know what this ticket itself carries
+            // (name/group name, both synced down with the order) — live
+            // shared-balance/provisioned-count figures need connectivity,
+            // same as the online path's richer AttendeeCandidate.
+            if (ticket.ticketGroupId) {
+              // Local wallets table already includes every wallet for this
+              // organiser's events (see myWallets in pull/route.ts) — if
+              // this device has synced since the group's wallet was
+              // created, its real code/balance are already known even
+              // offline; otherwise these stay unknown until the next pull.
+              const knownWallet = await db.wallets
+                .where("eventId").equals(event.id)
+                .filter((w) => w.isGroupWallet === true && w.groupName === ticket.ticketGroupName)
+                .first();
+              match = {
+                kind: "groupMember",
+                ticketId: ticket.id,
+                ticketCode: ticket.code,
+                groupId: ticket.ticketGroupId,
+                groupName: ticket.ticketGroupName ?? "Group",
+                memberName: ticket.groupMemberName ?? "Group member",
+                provisionedCount: -1,
+                totalMembers: -1,
+                sharedWalletId: knownWallet?.id ?? "",
+                sharedWalletCode: knownWallet?.code ?? "",
+                sharedWalletBalanceCents: knownWallet?.balanceCents ?? -1,
+                currency: event.currency,
+              };
+            } else {
+              match = { kind: "user", id: order.userId, name: `${ticket.ticketTypeName} — ${ticket.code}`, email: "" };
+            }
             setFoundTicket({ id: ticket.id, code: ticket.code });
             break;
           }
@@ -127,6 +163,61 @@ export default function ProvisionPage() {
     setError(null);
     try {
       const clientId = newLocalId();
+
+      // Session 13 — a group member is identified directly by their own
+      // ticket, never by a User (see handleProvisionCredential's ticketId
+      // path) — skip the whole find-or-create-attendee/wallet dance below
+      // entirely and link straight to the group's already-existing shared
+      // wallet.
+      if ("kind" in attendee && attendee.kind === "groupMember") {
+        const credentials: LocalCredential[] = [
+          {
+            id: `${clientId}-ticket`,
+            nfcUid: scannedUid,
+            status: "ACTIVE",
+            ticketId: attendee.ticketId,
+            walletId: null,
+            code: attendee.ticketCode,
+          },
+        ];
+        // Only write an optimistic wallet-linked credential if this device
+        // already knows the shared wallet's real code (see runSearch's
+        // offline fallback) — fabricating one would resolve to nothing at
+        // the wallet terminal until the next pull anyway.
+        if (attendee.sharedWalletId && attendee.sharedWalletCode) {
+          credentials.push({
+            id: `${clientId}-wallet`,
+            nfcUid: scannedUid,
+            status: "ACTIVE",
+            ticketId: null,
+            walletId: attendee.sharedWalletId,
+            code: attendee.sharedWalletCode,
+          });
+        }
+        await db.credentials.bulkPut(credentials);
+
+        await queueOp("PROVISION_CREDENTIAL", {
+          clientId,
+          eventId: event.id,
+          eventClientId: event.clientId ?? null,
+          nfcUid: scannedUid,
+          ticketId: attendee.ticketId,
+        });
+
+        setConfirmation({
+          attendeeLabel: attendee.memberName,
+          walletCode: attendee.sharedWalletCode || "—",
+          balanceCents: attendee.sharedWalletBalanceCents >= 0 ? attendee.sharedWalletBalanceCents : 0,
+          currency: attendee.currency,
+          ticket: { id: attendee.ticketId, code: attendee.ticketCode },
+          queuedOffline: !online,
+          groupName: attendee.groupName,
+          provisionedCount: attendee.provisionedCount >= 0 ? attendee.provisionedCount + 1 : undefined,
+          totalMembers: attendee.totalMembers >= 0 ? attendee.totalMembers : undefined,
+        });
+        return;
+      }
+
       const isExistingUser = "id" in attendee;
       const userId = isExistingUser ? attendee.id : undefined;
 
@@ -248,7 +339,9 @@ export default function ProvisionPage() {
   }
 
   const maskedWalletCode = confirmation
-    ? `••••${confirmation.walletCode.replace(/-/g, "").slice(-4)}`
+    ? confirmation.walletCode === "—"
+      ? t("provision.walletUnknownOffline")
+      : `••••${confirmation.walletCode.replace(/-/g, "").slice(-4)}`
     : "";
   const uidLast4 = scannedUid ? scannedUid.replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase() : "";
 
@@ -266,10 +359,18 @@ export default function ProvisionPage() {
           {confirmation.queuedOffline && (
             <p className="mt-1 text-sm text-warn">{t("provision.queuedOffline")}</p>
           )}
-          <p className="mt-1 text-sm text-muted">{confirmation.attendeeLabel}</p>
+          <p className="mt-1 text-sm text-muted">
+            {confirmation.groupName ? `${confirmation.groupName} — ${confirmation.attendeeLabel}` : confirmation.attendeeLabel}
+          </p>
           <div className="mt-4 space-y-2 text-sm">
+            {confirmation.groupName && confirmation.totalMembers != null && (
+              <div className="flex justify-between">
+                <span className="text-muted">{t("provision.groupProvisioned")}</span>
+                <span className="font-mono">{confirmation.provisionedCount}/{confirmation.totalMembers}</span>
+              </div>
+            )}
             <div className="flex justify-between">
-              <span className="text-muted">{t("provision.walletCode")}</span>
+              <span className="text-muted">{confirmation.groupName ? t("provision.sharedWallet") : t("provision.walletCode")}</span>
               <span className="font-mono">{maskedWalletCode}</span>
             </div>
             <div className="flex justify-between">
@@ -340,18 +441,35 @@ export default function ProvisionPage() {
 
           {candidates && candidates.length > 0 && (
             <div className="card mt-3 divide-y divide-border">
-              {candidates.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  disabled={busy}
-                  className="flex w-full items-center justify-between p-3 text-left text-sm hover:bg-surface2 disabled:opacity-50"
-                  onClick={() => runProvision(c)}
-                >
-                  <span>{c.name}</span>
-                  <span className="text-muted">{c.email}</span>
-                </button>
-              ))}
+              {candidates.map((c) =>
+                c.kind === "groupMember" ? (
+                  <button
+                    key={c.ticketId}
+                    type="button"
+                    disabled={busy}
+                    className="flex w-full items-center justify-between p-3 text-left text-sm hover:bg-surface2 disabled:opacity-50"
+                    onClick={() => runProvision(c)}
+                  >
+                    <span>
+                      <span className="font-medium">{c.groupName}</span> — {c.memberName}
+                    </span>
+                    <span className="text-muted">
+                      {c.totalMembers >= 0 ? `${c.provisionedCount}/${c.totalMembers} provisioned` : "Group ticket"}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={busy}
+                    className="flex w-full items-center justify-between p-3 text-left text-sm hover:bg-surface2 disabled:opacity-50"
+                    onClick={() => runProvision(c)}
+                  >
+                    <span>{c.name}</span>
+                    <span className="text-muted">{c.email}</span>
+                  </button>
+                )
+              )}
             </div>
           )}
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/analytics";
 import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
 import { summarizeCarryOverVolume } from "@/lib/carry-over";
+import { summarizeGroupSales } from "@/lib/ticket-groups";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -31,7 +32,7 @@ export default async function OrganizerAnalyticsPage() {
     redirect("/dashboard");
   }
 
-  const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs } =
+  const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups } =
     await getOrganizerAnalyticsData(session.user.organizationId);
 
   if (myEvents.length === 0) {
@@ -59,6 +60,7 @@ export default async function OrganizerAnalyticsPage() {
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
   const carryOverVolumeByCurrency = summarizeCarryOverVolume(walletTxs);
+  const groupSales = summarizeGroupSales(ticketGroups);
   const vendorSpend = spendByVendor(walletTxs);
   const tapsByZone = sponsorTapsBySponsor(walletTxs);
 
@@ -199,6 +201,22 @@ export default async function OrganizerAnalyticsPage() {
             ))
           )}
           <p className="mt-1 text-xs text-muted">Balance carried in from your past events</p>
+        </div>
+      </div>
+
+      <h2 className="mb-3 mt-8 font-semibold">Group ticketing</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Group tickets sold</p>
+          <p className="mt-1 text-2xl font-bold">{groupSales.totalGroupTickets}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Groups</p>
+          <p className="mt-1 text-2xl font-bold">{groupSales.groupCount}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Average group size</p>
+          <p className="mt-1 text-2xl font-bold">{groupSales.averageGroupSize ?? "—"}</p>
         </div>
       </div>
 

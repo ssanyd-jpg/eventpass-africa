@@ -12,8 +12,17 @@ import type { TranslationKey } from "@/lib/i18n";
 import { formatCents } from "@/lib/format";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { findAttendeeCandidates } from "../provision/actions";
+import type { AttendeeCandidate } from "@/lib/wristband-handlers";
 
 type Candidate = { id: string; name: string; email: string };
+// Session 13: findAttendeeCandidates can also return a group-member ticket
+// match with no attendee account at all (see AttendeeCandidate's
+// "groupMember" variant). Replacing a group member's own wristband isn't
+// part of this flow yet, so those matches are excluded before they ever
+// reach this page's own (unrelated, pre-Session-13) Candidate shape.
+function isUserCandidate(c: AttendeeCandidate): c is Extract<AttendeeCandidate, { kind: "user" }> {
+  return c.kind === "user";
+}
 type Reason = "LOST" | "DAMAGED" | "STOLEN";
 const REASON_LABEL_KEY: Record<Reason, TranslationKey> = {
   LOST: "replace.reasonLost",
@@ -123,7 +132,7 @@ export default function ReplaceWristbandPage() {
       setSearching(true);
       try {
         const found = await findAttendeeCandidates(event.id, trimmed);
-        setCandidates(found);
+        setCandidates(found.filter(isUserCandidate));
       } catch {
         setError("Couldn't search right now.");
       } finally {

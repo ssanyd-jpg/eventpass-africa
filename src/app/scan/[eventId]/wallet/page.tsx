@@ -10,7 +10,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
-import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
+import { resolveCodeFromUid, isUidSuperseded, resolveTicketIdFromUid } from "@/lib/credentials";
 
 type TerminalResult = {
   kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned" | "wristbandReplaced";
@@ -144,7 +144,7 @@ export default function WalletChargeTerminalPage() {
   const onlineRef = useRef(online);
   onlineRef.current = online;
 
-  const chargeWallet = useCallback(async (rawCode: string) => {
+  const chargeWallet = useCallback(async (rawCode: string, attendeeTicketId?: string) => {
     const normalized = rawCode.trim().toUpperCase();
     const event = eventRef.current;
     if (!normalized || !event) return;
@@ -178,6 +178,7 @@ export default function WalletChargeTerminalPage() {
       eventClientId: event.clientId,
       amountCents,
       item: itemRef.current.trim() || undefined,
+      attendeeTicketId,
     });
     await flushOutbox();
     const tx = await db.walletTransactions.where("clientId").equals(clientId).first();
@@ -187,18 +188,28 @@ export default function WalletChargeTerminalPage() {
       setResult({ kind: "invalid", message: "Couldn't reach the server — check your connection and try again.", code: normalized });
       return;
     }
+    // Session 13 — a group wallet's confirmation names the group so staff
+    // know it's a shared pool, not one person's own balance.
+    const wallet = tx.walletId ? await db.wallets.get(tx.walletId) : undefined;
+    const groupSuffix = wallet?.isGroupWallet
+      ? ` — ${wallet.groupName ?? "group"} shared wallet${tx.spentByMemberName ? ` (${tx.spentByMemberName})` : ""}`
+      : "";
     if (tx.status === "FAILED") {
-      setResult({ kind: "declined", message: "Declined — insufficient balance.", code: normalized });
+      setResult({ kind: "declined", message: `Declined — insufficient balance.${groupSuffix}`, code: normalized });
       return;
     }
     if (tx.status === "COMPLETED") {
-      setResult({ kind: "valid", message: `Charged ${formatCents(amountCents, tx.currency)}.`, code: normalized });
+      setResult({ kind: "valid", message: `Charged ${formatCents(amountCents, tx.currency)}.${groupSuffix}`, code: normalized });
       return;
     }
     setResult({ kind: "invalid", message: "Couldn't confirm this charge — try again.", code: normalized });
   }, []);
 
-  const recordTap = useCallback(async (rawCode: string) => {
+  // Second parameter unused here — recordTap has no member-attribution
+  // concept — but kept so activeHandler's two branches share one call
+  // signature (see chargeWallet's own attendeeTicketId).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const recordTap = useCallback(async (rawCode: string, _attendeeTicketId?: string) => {
     const normalized = rawCode.trim().toUpperCase();
     const event = eventRef.current;
     const sponsorId = sponsorIdRef.current;
@@ -240,7 +251,13 @@ export default function WalletChargeTerminalPage() {
     async (reading: NFCReading) => {
       const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "wallet") : null) ?? reading.text;
       if (code) {
-        activeHandler(code);
+        // Session 13 — this same uid may also have a sibling ticket-linked
+        // Credential row (every wristband provisioned with a ticket gets
+        // both) — pass it along so a charge on a group wallet can be
+        // attributed to this specific member (see CHARGE_WALLET's
+        // attendeeTicketId). Harmless/unused for a non-group wallet.
+        const attendeeTicketId = reading.uid ? await resolveTicketIdFromUid(reading.uid) : null;
+        activeHandler(code, attendeeTicketId ?? undefined);
         return;
       }
       if (reading.uid) {

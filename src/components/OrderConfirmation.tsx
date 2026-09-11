@@ -329,7 +329,9 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
               <div className="flex items-center justify-between border-b border-dashed border-border p-4">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">{t.ticketTypeName}</p>
-                  <p className="text-sm text-muted">Ticket {i + 1} of {order.tickets.length}</p>
+                  <p className="text-sm text-muted">
+                    {t.groupMemberName ? t.groupMemberName : `Ticket ${i + 1} of ${order.tickets.length}`}
+                  </p>
                 </div>
                 {t.checkedIn ? (
                   <span className="pill border-ok/40 bg-ok/10 text-ok">Checked in</span>
@@ -381,6 +383,12 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
           <p className="mt-2 text-xs text-muted">Waiver accepted at checkout.</p>
         )}
       </div>
+
+      {order.tickets.some((t) => t.ticketGroupId) && (
+        <Link href="/account/groups" className="mt-4 inline-flex text-sm font-medium text-accent-hover">
+          Manage your group ({order.tickets.find((t) => t.ticketGroupName)?.ticketGroupName}) →
+        </Link>
+      )}
 
       <div className="mt-6 flex gap-3">
         <Link href="/account/tickets" className="btn-secondary flex-1 text-center">My Tickets</Link>

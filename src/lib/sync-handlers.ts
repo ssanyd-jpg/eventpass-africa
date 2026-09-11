@@ -99,9 +99,25 @@ export const payloadSchemas = {
     paymentMethod: z.enum(["AIRPAY_ONLINE", "OFFLINE_DEFERRED"]).optional(),
     phoneNumber: z.string().min(6).max(20).optional(),
     mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+    // Session 13 — group/family checkout. When present, every ticket being
+    // purchased in this order is named for one member and linked to one
+    // shared wallet (see handleSellTickets). memberNames maps 1:1 onto the
+    // flattened tickets this order creates, in the same order items are
+    // listed/expanded — enforced below, since a mismatch would silently
+    // misattribute wristbands to the wrong person.
+    group: z.object({
+      name: z.string().min(1).max(120),
+      memberNames: z.array(z.string().min(1).max(80)).min(1).max(50),
+    }).optional(),
   }).superRefine((val, ctx) => {
     if (val.paymentMethod === "AIRPAY_ONLINE" && !val.phoneNumber) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phoneNumber"], message: "phoneNumber is required for AIRPAY_ONLINE." });
+    }
+    if (val.group) {
+      const totalQty = val.items.reduce((sum, i) => sum + i.quantity, 0);
+      if (val.group.memberNames.length !== totalQty) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["group", "memberNames"], message: "memberNames must have exactly one name per ticket." });
+      }
     }
   }),
   CHECK_IN: z.object({
@@ -236,9 +252,11 @@ export const payloadSchemas = {
     eventClientId: z.string().nullable().optional(),
     sourceWalletId: z.string().min(1),
   }),
-  // Either userId (an already-resolved attendee) or email+name (a walk-up
-  // attendee with no account yet) must be present — never both trusted at
-  // once, enforced below.
+  // Exactly one of: userId (an already-resolved attendee), email+name (a
+  // walk-up attendee with no account yet), or ticketId (Session 13 — a
+  // group-member ticket, identified directly by its own id rather than any
+  // User at all, since the member may have no account — see
+  // handleProvisionCredential's ticketId branch) must be present.
   PROVISION_CREDENTIAL: z.object({
     clientId: z.string().min(1),
     eventId: z.string().min(1),
@@ -247,6 +265,7 @@ export const payloadSchemas = {
     userId: z.string().min(1).optional(),
     email: z.string().email().optional(),
     name: z.string().min(1).max(120).optional(),
+    ticketId: z.string().min(1).optional(),
     // Set only when the provisioning page had to optimistically create a
     // brand-new local Wallet (no existing wallet found for this attendee) —
     // lets the new server-side Wallet row carry the same clientId that
@@ -254,8 +273,8 @@ export const payloadSchemas = {
     // delete-then-replace it the same way applyCreateWalletResult does.
     walletClientId: z.string().min(1).optional(),
   }).superRefine((val, ctx) => {
-    if (!val.userId && !(val.email && val.name)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either userId or email+name is required." });
+    if (!val.userId && !val.ticketId && !(val.email && val.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "One of userId, ticketId, or email+name is required." });
     }
   }),
   // Wristband replacement — identifies the attendee by their CURRENT
@@ -343,6 +362,13 @@ export const payloadSchemas = {
     // this field existed has no `item` key at all and must still parse (see
     // WalletTransaction.item in prisma/schema.prisma).
     item: z.string().trim().max(120).nullable().optional(),
+    // Session 13 — set by the wallet terminal only when the tap that
+    // resolved this walletCode was an NFC read (see resolveCodeFromUid):
+    // the terminal also looks up that same uid's ticket-linked Credential
+    // row locally, so a group wallet's charge can be attributed to the
+    // specific member's ticket rather than just the shared wallet. Ignored
+    // (harmless) for a non-group wallet or a charge entered/scanned by code.
+    attendeeTicketId: z.string().min(1).optional(),
   }),
   SPONSOR_TAP: z.object({
     clientId: z.string().min(1),
@@ -551,6 +577,9 @@ export function shapeOrder(o: any) {
       checkedIn: t.checkedIn,
       checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
       currentHolderUserId: t.currentHolderUserId ?? null,
+      ticketGroupId: t.ticketGroupId ?? null,
+      ticketGroupName: t.ticketGroup?.name ?? null,
+      groupMemberName: t.groupMemberName ?? null,
     })),
     waiverText: o.waiverText ?? null,
     waiverAcceptedAt: o.waiverAcceptedAt ? o.waiverAcceptedAt.toISOString() : null,
@@ -578,7 +607,7 @@ export function shapeOrder(o: any) {
 // for shapeOrder to work on the result.
 const fullOrderInclude = {
   items: { include: { ticketType: true } },
-  tickets: { include: { ticketType: true } },
+  tickets: { include: { ticketType: true, ticketGroup: { select: { name: true } } } },
   // organizationId added for handleMarkOrderPaid's ownership check, slug
   // for the retry links in PAYMENT_FAILED notifications — shapeOrder itself
   // reads neither, so this is a no-op for every other existing caller.
@@ -594,7 +623,20 @@ export async function handleSellTickets(userId: string, payload: any) {
     include: fullOrderInclude,
   });
   if (existing) {
-    return { ok: true, order: shapeOrder(existing), oversold: existing.status === "NEEDS_REVIEW", ticketTypeUpdates: [] };
+    // Session 13 replay: re-resolve the shared wallet so a dropped-response
+    // retry still gets applySellTicketsResult's local wallet write, same as
+    // the first successful call did.
+    const existingGroupTicket = existing.tickets.find((t: any) => t.ticketGroupId);
+    const existingGroup = existingGroupTicket
+      ? await prisma.ticketGroup.findUnique({ where: { id: existingGroupTicket.ticketGroupId! }, include: { sharedWallet: { include: walletInclude } } })
+      : null;
+    return {
+      ok: true,
+      order: shapeOrder(existing),
+      oversold: existing.status === "NEEDS_REVIEW",
+      ticketTypeUpdates: [],
+      sharedWallet: existingGroup ? shapeWallet(existingGroup.sharedWallet) : null,
+    };
   }
 
   const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
@@ -696,7 +738,7 @@ export async function handleSellTickets(userId: string, payload: any) {
   let totalCents = 0;
   const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
 
-  const { order, discountRejectReason } = await prisma.$transaction(async (tx) => {
+  const { order, discountRejectReason, sharedWallet } = await prisma.$transaction(async (tx) => {
     const orderItemsData: any[] = [];
     const ticketsData: any[] = [];
 
@@ -731,6 +773,57 @@ export async function handleSellTickets(userId: string, payload: any) {
           ticketTypeId: tt.id,
         });
       }
+    }
+
+    // Session 13 — group/family checkout: every ticket just built above gets
+    // linked to one TicketGroup and named for one member, sharing one Wallet
+    // (the lead buyer's own wallet for this event, flagged isGroupWallet)
+    // that every member's later-provisioned wristband will draw from — see
+    // handleProvisionCredential's ticketId path. Reuses an existing group
+    // for this lead+event if one already exists (buying a second batch of
+    // group tickets just adds more members) rather than trying to create a
+    // second one — TicketGroup.sharedWalletId is unique, mirroring Wallet's
+    // own one-per-user-per-event constraint, so there's at most one group
+    // per lead per event to find or create.
+    let sharedWalletFull: any = null;
+    if (payload.group) {
+      const memberNames = (payload.group.memberNames as string[]).map((n) => String(n).trim());
+
+      let sharedWallet = await tx.wallet.findUnique({
+        where: { eventId_ownerUserId: { eventId: event.id, ownerUserId: userId } },
+      });
+      if (!sharedWallet) {
+        sharedWallet = await tx.wallet.create({
+          data: {
+            code: generateTicketCode(),
+            eventId: event.id,
+            ownerUserId: userId,
+            currency: event.currency,
+            isGroupWallet: true,
+          },
+        });
+      } else if (!sharedWallet.isGroupWallet) {
+        sharedWallet = await tx.wallet.update({ where: { id: sharedWallet.id }, data: { isGroupWallet: true } });
+      }
+
+      let group = await tx.ticketGroup.findUnique({ where: { sharedWalletId: sharedWallet.id } });
+      if (!group) {
+        group = await tx.ticketGroup.create({
+          data: {
+            name: String(payload.group.name).trim(),
+            eventId: event.id,
+            leadUserId: userId,
+            sharedWalletId: sharedWallet.id,
+          },
+        });
+      }
+
+      ticketsData.forEach((t, i) => {
+        t.ticketGroupId = group!.id;
+        t.groupMemberName = memberNames[i] ?? null;
+      });
+
+      sharedWalletFull = await tx.wallet.findUniqueOrThrow({ where: { id: sharedWallet.id }, include: walletInclude });
     }
 
     // Filtered against this event's real questions, defensive against a
@@ -824,7 +917,7 @@ export async function handleSellTickets(userId: string, payload: any) {
       include: fullOrderInclude,
     });
 
-    return { order: created, discountRejectReason };
+    return { order: created, discountRejectReason, sharedWallet: sharedWalletFull };
     // Neon's pooled connection needs `pgbouncer=true` for interactive
     // transactions to commit correctly at all (see DEPLOYMENT.md) — that
     // makes Prisma hold one connection for the whole transaction, which
@@ -873,7 +966,17 @@ export async function handleSellTickets(userId: string, payload: any) {
   // — attached onto the shaped order here rather than threaded as a new
   // shapeOrder parameter, since every other call site (pull/idempotent
   // replay/refund) has no such context and must not fabricate one.
-  return { ok: true, order: { ...shapeOrder(order), discountRejectReason }, oversold, ticketTypeUpdates };
+  // sharedWallet (Session 13, group checkout only) rides the same way —
+  // applySellTicketsResult writes it into the buyer's local wallets table so
+  // the shared wallet/its code is available on this device immediately,
+  // without waiting for the next pull.
+  return {
+    ok: true,
+    order: { ...shapeOrder(order), discountRejectReason },
+    oversold,
+    ticketTypeUpdates,
+    sharedWallet: sharedWallet ? shapeWallet(sharedWallet) : null,
+  };
 }
 
 const ticketInclude = {
@@ -891,6 +994,8 @@ export function shapeTicket(t: any) {
     orderId: t.orderId,
     eventId: t.eventId,
     ticketTypeId: t.ticketTypeId,
+    ticketGroupId: t.ticketGroupId ?? null,
+    groupMemberName: t.groupMemberName ?? null,
   };
 }
 
@@ -1864,6 +1969,11 @@ export function shapeWallet(w: any) {
     currency: w.currency,
     carryOverSourceWalletId: w.carryOverSourceWalletId ?? null,
     carryOverredAt: w.carryOverredAt ? w.carryOverredAt.toISOString() : null,
+    // Session 13 — isGroupWallet is a plain column, always present; groupName
+    // only resolves when the caller's query included the ticketGroup relation
+    // (see walletInclude) — absent (undefined) otherwise, never a false null.
+    isGroupWallet: w.isGroupWallet ?? false,
+    groupName: w.ticketGroup?.name ?? null,
     createdAt: w.createdAt.toISOString(),
     updatedAt: w.updatedAt.toISOString(),
   };
@@ -1884,6 +1994,8 @@ export function shapeWalletTransaction(t: any) {
     mobileNetwork: t.mobileNetwork ?? null,
     note: t.note ?? null,
     item: t.item ?? null,
+    spentByTicketId: t.spentByTicketId ?? null,
+    spentByMemberName: t.spentByMemberName ?? null,
     vendorId: t.vendorId,
     vendorName: t.vendor?.name ?? null,
     sponsorId: t.sponsorId,
@@ -1898,6 +2010,9 @@ export function shapeWalletTransaction(t: any) {
 const walletInclude = {
   event: { select: { id: true, clientId: true, status: true, currency: true, organizationId: true } },
   owner: { select: { name: true, email: true, phone: true } },
+  // Session 13 — present only on a group wallet (see Wallet.isGroupWallet);
+  // shapeWallet reads just the name for display ("Okonkwo Family").
+  ticketGroup: { select: { name: true } },
 } as const;
 const walletTxInclude = {
   vendor: { select: { name: true } },
@@ -2115,20 +2230,31 @@ export async function handleProvisionCredential(userId: string, organizationId: 
 
   const existingCredentials = await prisma.credential.findMany({ where: { clientId } });
   if (existingCredentials.length > 0) {
-    const wallet = await prisma.wallet.findUnique({
-      where: { id: existingCredentials.find((c) => c.walletId)?.walletId ?? "" },
-      include: walletInclude,
-    });
-    const [user, event] = await Promise.all([
-      wallet ? prisma.user.findUnique({ where: { id: wallet.ownerUserId }, select: provisionUserSelect }) : null,
+    const walletId = existingCredentials.find((c) => c.walletId)?.walletId ?? "";
+    const ticketId = existingCredentials.find((c) => c.ticketId)?.ticketId ?? null;
+    const [walletRow, ticketRow, event] = await Promise.all([
+      prisma.wallet.findUnique({ where: { id: walletId }, include: walletInclude }),
+      ticketId ? prisma.ticket.findUnique({ where: { id: ticketId }, select: { groupMemberName: true } }) : null,
       prisma.event.findUnique({ where: { id: String(payload.eventId) }, select: { title: true } }),
     ]);
+    const wallet = walletRow ? shapeWallet(walletRow) : null;
+    // Session 13: a group member's ticket has no attendee User account
+    // resolved at all (see the ticketId branch below) — showing the lead
+    // buyer's own name here on a replay would misattribute it, so user
+    // stays null for that case instead.
+    const user = ticketRow?.groupMemberName
+      ? null
+      : walletRow
+        ? await prisma.user.findUnique({ where: { id: walletRow.ownerUserId }, select: provisionUserSelect })
+        : null;
     return {
       ok: true,
       credentials: existingCredentials.map(shapeCredential),
-      wallet: wallet ? shapeWallet(wallet) : null,
+      wallet,
       user,
       eventTitle: event?.title,
+      groupMemberName: ticketRow?.groupMemberName ?? null,
+      groupName: wallet?.groupName ?? null,
     };
   }
 
@@ -2147,6 +2273,78 @@ export async function handleProvisionCredential(userId: string, organizationId: 
   // in its own wrapper), so this handler looks it up itself instead.
   const actor = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
   const actorName = actor?.name ?? actor?.email ?? "Unknown";
+
+  // Session 13 — a group member's wristband, identified directly by their
+  // own ticket rather than any User at all (they may have none — see
+  // Ticket.groupMemberName). Skips the whole find-or-create-attendee/wallet
+  // dance below entirely: the credentials just link straight to the ticket
+  // and the group's already-existing shared wallet.
+  if (payload.ticketId) {
+    const ticket = await prisma.ticket.findUnique({ where: { id: String(payload.ticketId) } });
+    if (!ticket) {
+      return { ok: false, retry: true, reason: "TICKET_NOT_SYNCED_YET" };
+    }
+    if (!ticket.ticketGroupId) {
+      return { ok: false, reason: "NOT_A_GROUP_TICKET" };
+    }
+    const group = await prisma.ticketGroup.findUniqueOrThrow({
+      where: { id: ticket.ticketGroupId },
+      include: { sharedWallet: { include: walletInclude } },
+    });
+    if (group.sharedWallet.event.organizationId !== organizationId) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+
+    const credentials = await prisma.$transaction(async (tx) => {
+      // Same "a physical tag belongs to one person at a time" supersede
+      // rule as the attendee path below — colliding on this uid, OR on the
+      // shared wallet/this specific ticket we're about to (re-)link.
+      await tx.credential.updateMany({
+        where: {
+          organizationId,
+          status: "ACTIVE",
+          OR: [{ nfcUid }, { walletId: group.sharedWallet.id }, { ticketId: ticket.id }],
+        },
+        data: { status: "SUPERSEDED", supersededAt: new Date(), supersededByUserId: userId },
+      });
+
+      const walletCredential = await tx.credential.create({
+        data: {
+          clientId,
+          organizationId,
+          nfcUid,
+          walletId: group.sharedWallet.id,
+          code: group.sharedWallet.code,
+          createdByUserId: userId,
+          createdByName: actorName,
+        },
+      });
+      const ticketCredential = await tx.credential.create({
+        data: {
+          clientId,
+          organizationId,
+          nfcUid,
+          ticketId: ticket.id,
+          code: ticket.code,
+          createdByUserId: userId,
+          createdByName: actorName,
+        },
+      });
+      return [walletCredential, ticketCredential];
+    }, { timeout: 15000, maxWait: 10000 });
+
+    // No attendee User/phone to notify — a group member may have no
+    // account at all.
+    return {
+      ok: true,
+      credentials: credentials.map(shapeCredential),
+      wallet: shapeWallet(group.sharedWallet),
+      user: null,
+      eventTitle: event.title,
+      groupMemberName: ticket.groupMemberName,
+      groupName: group.name,
+    };
+  }
 
   const outcome = await prisma.$transaction(
     async (tx) => {
@@ -2547,6 +2745,23 @@ export async function handleChargeWallet(userId: string, organizationId: string,
   const amountCents = Number(payload.amountCents);
   const item = payload.item ? String(payload.item).trim() || null : null;
 
+  // Session 13 — attribute this charge to a specific group member, only
+  // when the tap really was that member's own ticket on this exact shared
+  // wallet (never trust the client's claim otherwise — a stray/forged
+  // attendeeTicketId for an unrelated ticket or wallet is simply ignored).
+  let spentByTicketId: string | null = null;
+  let spentByMemberName: string | null = null;
+  if (wallet.isGroupWallet && payload.attendeeTicketId) {
+    const attendeeTicket = await prisma.ticket.findUnique({ where: { id: String(payload.attendeeTicketId) } });
+    if (attendeeTicket?.ticketGroupId) {
+      const group = await prisma.ticketGroup.findUnique({ where: { id: attendeeTicket.ticketGroupId } });
+      if (group?.sharedWalletId === wallet.id) {
+        spentByTicketId = attendeeTicket.id;
+        spentByMemberName = attendeeTicket.groupMemberName;
+      }
+    }
+  }
+
   // Compare-and-swap + audit log, atomically paired — same $transaction
   // discipline handleSellTickets/handleRefundOrder use for inventory, and
   // the same Neon-pooled-connection timeout every $transaction here needs.
@@ -2574,6 +2789,8 @@ export async function handleChargeWallet(userId: string, organizationId: string,
           walletId: wallet.id,
           vendorId: vendor.id,
           item,
+          spentByTicketId,
+          spentByMemberName,
           providerMessage: "Insufficient balance",
         },
         include: walletTxInclude,
@@ -2592,6 +2809,8 @@ export async function handleChargeWallet(userId: string, organizationId: string,
         walletId: wallet.id,
         vendorId: vendor.id,
         item,
+        spentByTicketId,
+        spentByMemberName,
       },
       include: walletTxInclude,
     });
