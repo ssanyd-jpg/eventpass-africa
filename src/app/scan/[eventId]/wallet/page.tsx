@@ -11,6 +11,32 @@ import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { resolveCodeFromUid, isUidSuperseded, resolveTicketIdFromUid } from "@/lib/credentials";
+import { resolveOfflineChargeMessage } from "@/lib/wallet-charge";
+
+// Same network list as the buyer's own top-up form (account/wallet/[walletId]/page.tsx) —
+// Session 15's split payment needs the same phone+network pair to STK-push
+// the shortfall.
+const NETWORKS = [
+  { value: "MPESA", label: "M-Pesa" },
+  { value: "TIGO", label: "Tigo Pesa" },
+  { value: "AIRTEL", label: "Airtel Money" },
+  { value: "HALOTEL", label: "HaloPesa" },
+];
+
+// Session 15 — shown instead of a flat decline when a charge's balance is
+// insufficient: offers topping up the shortfall via AirPay and applying the
+// charge in one step. Set from chargeWallet's decline branch (it already
+// has the current balance from the just-synced wallet), cleared on confirm,
+// cancel, or the next scan.
+type SplitPrompt = {
+  code: string;
+  walletId: string;
+  balanceCents: number;
+  totalAmountCents: number;
+  topUpAmountCents: number;
+  currency: string;
+  attendeeTicketId?: string;
+};
 
 type TerminalResult = {
   kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned" | "wristbandReplaced";
@@ -49,6 +75,10 @@ export default function WalletChargeTerminalPage() {
   const [showNoteField, setShowNoteField] = useState(false);
   const [result, setResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [splitPrompt, setSplitPrompt] = useState<SplitPrompt | null>(null);
+  const [splitPhone, setSplitPhone] = useState("");
+  const [splitNetwork, setSplitNetwork] = useState(NETWORKS[0].value);
+  const [splitBusy, setSplitBusy] = useState(false);
   // Tracks the most recent tap that redeemed a campaign, so the result
   // banner can reactively upgrade from "Tap recorded." to the actual
   // redemption outcome once the outbox flushes and the server's answer
@@ -149,12 +179,29 @@ export default function WalletChargeTerminalPage() {
     const event = eventRef.current;
     if (!normalized || !event) return;
 
-    if (!onlineRef.current) {
-      setResult({ kind: "offline", message: "Charging requires an online connection.", code: normalized });
-      return;
-    }
+    // A new scan always supersedes whatever split prompt was showing —
+    // staff moved on to a different attendee/amount.
+    setSplitPrompt(null);
+    setSplitPhone("");
+
     const vendorId = vendorIdRef.current;
     const amountCents = Math.round(parseFloat(amountMajorRef.current || "0") * 100);
+
+    if (!onlineRef.current) {
+      // Session 15 — split payment needs a live AirPay STK push and can
+      // never work offline. The locally-synced wallet balance is already
+      // on this device (periodic pull), so if it shows this charge WOULD
+      // need a split, say so specifically rather than the generic offline
+      // message — staff shouldn't think the whole terminal is down over a
+      // case the feature was never going to support offline anyway.
+      const localWallet = amountCents > 0 ? await db.wallets.where("code").equals(normalized).first() : undefined;
+      setResult({
+        kind: "offline",
+        message: resolveOfflineChargeMessage(localWallet?.balanceCents ?? null, amountCents),
+        code: normalized,
+      });
+      return;
+    }
     if (!vendorId) {
       setResult({ kind: "invalid", message: "Pick which vendor you're charging for first.", code: normalized });
       return;
@@ -195,6 +242,24 @@ export default function WalletChargeTerminalPage() {
       ? ` — ${wallet.groupName ?? "group"} shared wallet${tx.spentByMemberName ? ` (${tx.spentByMemberName})` : ""}`
       : "";
     if (tx.status === "FAILED") {
+      // Session 15 — a plain insufficient-balance decline (the one exact
+      // message handleChargeWallet ever sets for this) offers a split
+      // payment instead of just declining, as long as the wallet actually
+      // resolved (never for an unknown/unresolved code). Group wallets are
+      // included — the shortfall math and the eventual SPLIT_PAYMENT charge
+      // both work the same way regardless of whose wallet it is.
+      if (tx.providerMessage === "Insufficient balance" && wallet) {
+        setSplitPrompt({
+          code: normalized,
+          walletId: wallet.id,
+          balanceCents: wallet.balanceCents,
+          totalAmountCents: amountCents,
+          topUpAmountCents: amountCents - wallet.balanceCents,
+          currency: tx.currency,
+          attendeeTicketId,
+        });
+        return;
+      }
       setResult({ kind: "declined", message: `Declined — insufficient balance.${groupSuffix}`, code: normalized });
       return;
     }
@@ -203,6 +268,64 @@ export default function WalletChargeTerminalPage() {
       return;
     }
     setResult({ kind: "invalid", message: "Couldn't confirm this charge — try again.", code: normalized });
+  }, []);
+
+  const confirmSplitPayment = useCallback(async () => {
+    const prompt = splitPrompt;
+    const event = eventRef.current;
+    if (!prompt || !event) return;
+    if (!splitPhone.trim()) {
+      setResult({ kind: "invalid", message: "Enter the attendee's phone number for the top-up.", code: prompt.code });
+      return;
+    }
+
+    setSplitBusy(true);
+    const clientId = newLocalId();
+    // Non-optimistic, same reasoning as chargeWallet — wait for the real
+    // result before telling staff the purchase went through.
+    await queueOp("SPLIT_PAYMENT", {
+      clientId,
+      walletCode: prompt.code,
+      vendorId: vendorIdRef.current,
+      eventId: event.id,
+      eventClientId: event.clientId,
+      totalAmountCents: prompt.totalAmountCents,
+      walletContributionCents: prompt.balanceCents,
+      topUpAmountCents: prompt.topUpAmountCents,
+      phoneNumber: splitPhone.trim(),
+      mobileNetwork: splitNetwork,
+      item: itemRef.current.trim() || undefined,
+      attendeeTicketId: prompt.attendeeTicketId,
+    });
+    await flushOutbox();
+    const tx = await db.walletTransactions.where("clientId").equals(clientId).first();
+    setSplitBusy(false);
+    setSplitPrompt(null);
+    setSplitPhone("");
+
+    if (!tx) {
+      setResult({ kind: "invalid", message: "Couldn't reach the server — check your connection and try again.", code: prompt.code });
+      return;
+    }
+    if (tx.status === "COMPLETED") {
+      const networkLabel = NETWORKS.find((n) => n.value === splitNetwork)?.label ?? splitNetwork;
+      setResult({
+        kind: "valid",
+        message: `Split payment complete — ${formatCents(prompt.balanceCents, tx.currency)} from wristband + ${formatCents(prompt.topUpAmountCents, tx.currency)} via AirPay ${networkLabel}.`,
+        code: prompt.code,
+      });
+      return;
+    }
+    setResult({
+      kind: "declined",
+      message: tx.providerMessage ?? "Split payment didn't complete — try again.",
+      code: prompt.code,
+    });
+  }, [splitPrompt, splitPhone, splitNetwork]);
+
+  const cancelSplitPayment = useCallback(() => {
+    setSplitPrompt(null);
+    setSplitPhone("");
   }, []);
 
   // Second parameter unused here — recordTap has no member-attribution
@@ -305,13 +428,13 @@ export default function WalletChargeTerminalPage() {
       <div className="mt-4 flex gap-2">
         <button
           className={mode === "sale" ? "btn-primary" : "btn-secondary"}
-          onClick={() => { setMode("sale"); setResult(null); }}
+          onClick={() => { setMode("sale"); setResult(null); setSplitPrompt(null); }}
         >
           Vendor sale
         </button>
         <button
           className={mode === "tap" ? "btn-primary" : "btn-secondary"}
-          onClick={() => { setMode("tap"); setResult(null); }}
+          onClick={() => { setMode("tap"); setResult(null); setSplitPrompt(null); }}
         >
           Sponsor tap
         </button>
@@ -421,7 +544,48 @@ export default function WalletChargeTerminalPage() {
         </button>
       </form>
 
-      {result && (
+      {splitPrompt && (
+        <div className="mt-5 rounded-xl border border-warn/40 bg-warn/10 p-5">
+          <p className="font-mono text-sm font-bold tracking-widest">{splitPrompt.code}</p>
+          <p className="mt-2 text-sm">
+            Your balance: <strong>{formatCents(splitPrompt.balanceCents, splitPrompt.currency)}</strong>. Amount due:{" "}
+            <strong>{formatCents(splitPrompt.totalAmountCents, splitPrompt.currency)}</strong>.
+          </p>
+          <p className="mt-1 text-sm font-semibold text-warn">
+            Top up {formatCents(splitPrompt.topUpAmountCents, splitPrompt.currency)} to complete this purchase?
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="splitNetwork">Network</label>
+              <select id="splitNetwork" className="input" value={splitNetwork} onChange={(e) => setSplitNetwork(e.target.value)}>
+                {NETWORKS.map((n) => (
+                  <option key={n.value} value={n.value}>{n.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="splitPhone">Attendee&rsquo;s phone</label>
+              <input
+                id="splitPhone"
+                className="input"
+                placeholder="+255 7XX XXX XXX"
+                value={splitPhone}
+                onChange={(e) => setSplitPhone(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button type="button" disabled={splitBusy} className="btn-primary flex-1" onClick={confirmSplitPayment}>
+              {splitBusy ? "…" : "Top up and pay"}
+            </button>
+            <button type="button" disabled={splitBusy} className="btn-secondary flex-1" onClick={cancelSplitPayment}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!splitPrompt && result && (
         <div
           className={`mt-5 rounded-xl border p-5 text-center ${
             result.kind === "valid" || result.kind === "recorded"

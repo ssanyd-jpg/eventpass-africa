@@ -26,6 +26,7 @@ import {
   handleCancelPendingOrder,
   handleMarkOrderPaid,
   handleChargeWallet,
+  handleSplitPayment,
   handleWithdrawWallet,
   handleApproveWithdrawal,
   handleRejectWithdrawal,
@@ -155,6 +156,9 @@ export async function POST(request: Request) {
         break;
       case "CHARGE_WALLET":
         result = await handleChargeWallet(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "SPLIT_PAYMENT":
+        result = await handleSplitPayment(session.user.id, session.user.organizationId, body.payload);
         break;
       case "WITHDRAW_WALLET":
         result = await handleWithdrawWallet(session.user.id, body.payload);

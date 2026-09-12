@@ -373,6 +373,29 @@ export const payloadSchemas = {
     // (harmless) for a non-group wallet or a charge entered/scanned by code.
     attendeeTicketId: z.string().min(1).optional(),
   }),
+  // Session 15 — split payment: the wallet's existing balance covers part
+  // of the charge, an AirPay top-up for the shortfall covers the rest.
+  // walletContributionCents rides along for the audit trail only — the
+  // authoritative split is always recomputed server-side in
+  // handleSplitPayment against the wallet's actual current balance, never
+  // trusted from the client (see the re-verification there). phoneNumber is
+  // required (not optional like TOPUP_WALLET's) since there's no split
+  // payment without a real STK push to charge.
+  SPLIT_PAYMENT: z.object({
+    clientId: z.string().min(1),
+    walletCode: z.string().min(1).max(40),
+    vendorId: z.string().min(1),
+    vendorClientId: z.string().nullable().optional(),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    totalAmountCents: z.number().int().min(1),
+    walletContributionCents: z.number().int().min(0),
+    topUpAmountCents: z.number().int().min(1),
+    phoneNumber: z.string().min(6).max(20),
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+    item: z.string().trim().max(120).nullable().optional(),
+    attendeeTicketId: z.string().min(1).optional(),
+  }),
   SPONSOR_TAP: z.object({
     clientId: z.string().min(1),
     walletCode: z.string().min(1).max(40),
@@ -2865,6 +2888,230 @@ export async function handleChargeWallet(userId: string, organizationId: string,
   }
 
   return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.wallet) };
+}
+
+// Session 15 — split payment: charge a wallet whose balance can't cover the
+// full amount by topping it up via AirPay for exactly the shortfall, then
+// applying the full charge. Two WalletTransactions come out of a completed
+// split: a TOPUP (the AirPay shortfall, clientId `${clientId}-topup`) and a
+// SALE (the full charge, clientId `clientId`) — this is deliberate, not two
+// separate ops, so both land in the exact same volume/analytics buckets a
+// normal top-up and a normal sale already do (see summarizeWalletActivity/
+// liveEventStats in analytics.ts) with zero new fields anywhere.
+export async function handleSplitPayment(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+  const topupClientId = `${clientId}-topup`;
+
+  // Idempotent replay — a retried outbox entry (dropped response after the
+  // server actually committed) must return the same result rather than
+  // re-charging AirPay or touching the wallet a second time. Looked up by
+  // the SALE row alone: every completed-or-declined attempt always creates
+  // one, so its presence alone tells us this clientId was already handled.
+  const existingSale = await prisma.walletTransaction.findUnique({ where: { clientId }, include: walletTxInclude });
+  if (existingSale) {
+    const wallet = await prisma.wallet.findUnique({ where: { id: existingSale.walletId }, include: walletInclude });
+    if (!wallet || wallet.event.organizationId !== organizationId) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+    const existingTopup = await prisma.walletTransaction.findUnique({ where: { clientId: topupClientId }, include: walletTxInclude });
+    return {
+      ok: true,
+      transaction: shapeWalletTransaction(existingSale),
+      topupTransaction: existingTopup ? shapeWalletTransaction(existingTopup) : null,
+      wallet: shapeWallet(wallet),
+      declined: existingSale.status === "FAILED",
+    };
+  }
+
+  const walletCode = String(payload.walletCode);
+  const wallet = await prisma.wallet.findUnique({ where: { code: walletCode }, include: walletInclude });
+  if (!wallet) {
+    return { ok: false, retry: true, reason: "WALLET_NOT_FOUND" };
+  }
+  if (wallet.event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (wallet.event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+
+  const vendor =
+    (await prisma.vendor.findUnique({ where: { id: String(payload.vendorId) } })) ??
+    (payload.vendorClientId ? await prisma.vendor.findUnique({ where: { clientId: String(payload.vendorClientId) } }) : null);
+  if (!vendor) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
+  }
+  if (vendor.status !== "APPROVED") {
+    return { ok: false, reason: "VENDOR_NOT_APPROVED" };
+  }
+  if (vendor.eventId !== wallet.eventId) {
+    return { ok: false, reason: "VENDOR_EVENT_MISMATCH" };
+  }
+
+  const totalAmountCents = Number(payload.totalAmountCents);
+  const item = payload.item ? String(payload.item).trim() || null : null;
+
+  // Same group-wallet attribution as handleChargeWallet — only trusted when
+  // the ticket really does belong to this exact shared wallet.
+  let spentByTicketId: string | null = null;
+  let spentByMemberName: string | null = null;
+  if (wallet.isGroupWallet && payload.attendeeTicketId) {
+    const attendeeTicket = await prisma.ticket.findUnique({ where: { id: String(payload.attendeeTicketId) } });
+    if (attendeeTicket?.ticketGroupId) {
+      const group = await prisma.ticketGroup.findUnique({ where: { id: attendeeTicket.ticketGroupId } });
+      if (group?.sharedWalletId === wallet.id) {
+        spentByTicketId = attendeeTicket.id;
+        spentByMemberName = attendeeTicket.groupMemberName;
+      }
+    }
+  }
+
+  // Re-verify balance server-side — never trust the client's shortfall math,
+  // which was computed from a possibly-stale local balance (e.g. a top-up
+  // made at another terminal landed since the split prompt was shown).
+  const walletContributionCents = Math.min(wallet.balanceCents, totalAmountCents);
+  const topUpAmountCents = totalAmountCents - walletContributionCents;
+
+  // Balance alone covers it now — no AirPay charge needed, this is just a
+  // normal sale. Same CAS-decrement-then-create shape as handleChargeWallet.
+  if (topUpAmountCents <= 0) {
+    const result = await prisma.$transaction(async (tx) => {
+      const res = await tx.wallet.updateMany({
+        where: { id: wallet.id, balanceCents: { gte: totalAmountCents } },
+        data: { balanceCents: { decrement: totalAmountCents } },
+      });
+      if (res.count === 0) {
+        const declinedTx = await tx.walletTransaction.create({
+          data: {
+            clientId, type: "SALE", status: "FAILED", amountCents: totalAmountCents, currency: wallet.currency,
+            walletId: wallet.id, vendorId: vendor.id, item, spentByTicketId, spentByMemberName,
+            providerMessage: "Insufficient balance",
+          },
+          include: walletTxInclude,
+        });
+        return { declined: true as const, transaction: declinedTx, wallet };
+      }
+      const updatedWallet = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id }, include: walletInclude });
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          clientId, type: "SALE", status: "COMPLETED", amountCents: totalAmountCents, currency: wallet.currency,
+          walletId: wallet.id, vendorId: vendor.id, item, spentByTicketId, spentByMemberName,
+        },
+        include: walletTxInclude,
+      });
+      return { declined: false as const, transaction, wallet: updatedWallet };
+    }, { timeout: 15000, maxWait: 10000 });
+
+    return {
+      ok: true,
+      transaction: shapeWalletTransaction(result.transaction),
+      topupTransaction: null,
+      wallet: shapeWallet(result.wallet),
+      declined: result.declined,
+      reason: result.declined ? "INSUFFICIENT_BALANCE" : undefined,
+    };
+  }
+
+  // Genuine shortfall — STK-push the attendee for exactly the difference.
+  const provider = getActivePaymentProvider();
+  const charge = await provider.initiateCharge({
+    orderClientId: clientId,
+    amountCents: topUpAmountCents,
+    phoneNumber: String(payload.phoneNumber),
+    mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : undefined,
+    description: `Split payment top-up — ${wallet.code}`,
+  });
+
+  if (charge.status !== "PAID") {
+    // Not confirmed — the wallet is never touched. "PENDING" (real AirPay's
+    // poll-based confirmation) is treated the same as "FAILED" here: this
+    // op has no separate confirm-later step (unlike TOPUP_WALLET/
+    // CHECK_TOPUP_STATUS), so an unconfirmed charge simply doesn't complete
+    // — staff retry from the terminal with a fresh clientId once the
+    // attendee has actually confirmed on their phone. Recorded as a FAILED
+    // SALE (not silently dropped) so it shows in history and so a genuine
+    // outbox retry of THIS SAME attempt is idempotent via the replay check
+    // above, rather than firing a second STK push for the same charge.
+    const failedTx = await prisma.walletTransaction.create({
+      data: {
+        clientId, type: "SALE", status: "FAILED", amountCents: totalAmountCents, currency: wallet.currency,
+        walletId: wallet.id, vendorId: vendor.id, item, spentByTicketId, spentByMemberName,
+        providerReference: charge.reference || null,
+        providerMessage:
+          charge.status === "PENDING"
+            ? "AirPay top-up not confirmed — ask the attendee to check their phone and try again."
+            : charge.message ?? "AirPay declined the top-up.",
+      },
+      include: walletTxInclude,
+    });
+    return {
+      ok: true,
+      transaction: shapeWalletTransaction(failedTx),
+      topupTransaction: null,
+      wallet: shapeWallet(wallet),
+      declined: true,
+      reason: "AIRPAY_NOT_CONFIRMED",
+    };
+  }
+
+  // AirPay confirmed — credit the top-up FIRST (that's real money that just
+  // left the attendee's mobile money account), then attempt the full
+  // charge. Crediting before charging means that if the charge's own CAS
+  // somehow fails (a concurrent charge on this same wallet landed in the
+  // instant between the balance check above and this transaction), the
+  // topped-up amount stays credited to the attendee's wallet rather than
+  // being lost — the "refund the top-up" the spec asks for, done as a
+  // wallet credit rather than an AirPay-side reversal API this codebase has
+  // no way to call (payments/airpay.ts exposes initiateCharge and
+  // verifyAirpayOrder only — no refund endpoint).
+  const result = await prisma.$transaction(async (tx) => {
+    const topupTx = await tx.walletTransaction.create({
+      data: {
+        clientId: topupClientId, type: "TOPUP", status: "COMPLETED", amountCents: topUpAmountCents,
+        currency: wallet.currency, providerReference: charge.reference || null, providerMessage: charge.message ?? null,
+        phoneNumber: String(payload.phoneNumber), walletId: wallet.id,
+      },
+      include: walletTxInclude,
+    });
+    await tx.wallet.update({ where: { id: wallet.id }, data: { balanceCents: { increment: topUpAmountCents } } });
+
+    const chargeRes = await tx.wallet.updateMany({
+      where: { id: wallet.id, balanceCents: { gte: totalAmountCents } },
+      data: { balanceCents: { decrement: totalAmountCents } },
+    });
+
+    if (chargeRes.count === 0) {
+      const declinedTx = await tx.walletTransaction.create({
+        data: {
+          clientId, type: "SALE", status: "FAILED", amountCents: totalAmountCents, currency: wallet.currency,
+          walletId: wallet.id, vendorId: vendor.id, item, spentByTicketId, spentByMemberName,
+          providerMessage: "Top-up completed but balance still insufficient — try charging again.",
+        },
+        include: walletTxInclude,
+      });
+      const walletAfterTopup = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id }, include: walletInclude });
+      return { declined: true as const, topupTx, transaction: declinedTx, wallet: walletAfterTopup };
+    }
+
+    const finalWallet = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id }, include: walletInclude });
+    const saleTx = await tx.walletTransaction.create({
+      data: {
+        clientId, type: "SALE", status: "COMPLETED", amountCents: totalAmountCents, currency: wallet.currency,
+        walletId: wallet.id, vendorId: vendor.id, item, spentByTicketId, spentByMemberName,
+      },
+      include: walletTxInclude,
+    });
+    return { declined: false as const, topupTx, transaction: saleTx, wallet: finalWallet };
+  }, { timeout: 15000, maxWait: 10000 });
+
+  return {
+    ok: true,
+    transaction: shapeWalletTransaction(result.transaction),
+    topupTransaction: shapeWalletTransaction(result.topupTx),
+    wallet: shapeWallet(result.wallet),
+    declined: result.declined,
+    reason: result.declined ? "INSUFFICIENT_BALANCE_AFTER_TOPUP" : undefined,
+  };
 }
 
 // Buyer-initiated cash-out of a leftover wallet balance. No real

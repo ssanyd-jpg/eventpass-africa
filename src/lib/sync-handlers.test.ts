@@ -32,9 +32,11 @@ import {
   handleProvisionCredential,
   handleReplaceCredential,
   handleChargeWallet,
+  handleSplitPayment,
   payloadSchemas,
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
+import { summarizeWalletActivity, spendByVendor } from "@/lib/analytics";
 
 // No real Airpay credentials exist in the test environment, so
 // getActivePaymentProvider() always resolves to simulatedProvider (instant
@@ -2440,5 +2442,172 @@ describe("handleChargeWallet — low wallet balance SMS", () => {
     expect(result.ok).toBe(true);
     const after = await prisma.notificationLog.count({ where: { type: "LOW_WALLET_BALANCE" } });
     expect(after).toBe(before);
+  });
+});
+
+describe("handleSplitPayment", () => {
+  function uniqueClientId() {
+    return `split-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  async function setup(balanceCents: number) {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+    const attendee = await createTestUser();
+    const wallet = await createTestWallet(event.id, attendee.id, { balanceCents, currency: "TZS" });
+    const added = await handleAddVendor(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: event.id,
+      name: "Grill Stand",
+      category: "Food",
+      badgeCode: `SPLIT-${uniqueClientId()}`,
+    });
+    return { organizer, organizationId, event, wallet, vendorId: added.vendor.id as string };
+  }
+
+  it("succeeds with correct debit — tops up the shortfall via AirPay, then charges the full amount", async () => {
+    const { organizer, organizationId, event, wallet, vendorId } = await setup(30000); // TZS 300 balance
+
+    const result: any = await handleSplitPayment(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      totalAmountCents: 100000, // TZS 1,000 due
+      walletContributionCents: 30000,
+      topUpAmountCents: 70000, // TZS 700 shortfall
+      phoneNumber: "255712345678",
+      mobileNetwork: "MPESA",
+      item: "Grilled maize",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.declined).toBeFalsy();
+    expect(result.transaction.type).toBe("SALE");
+    expect(result.transaction.status).toBe("COMPLETED");
+    expect(result.transaction.amountCents).toBe(100000);
+    expect(result.transaction.vendorId).toBe(vendorId);
+    expect(result.topupTransaction.type).toBe("TOPUP");
+    expect(result.topupTransaction.status).toBe("COMPLETED");
+    expect(result.topupTransaction.amountCents).toBe(70000);
+    expect(result.wallet.balanceCents).toBe(0); // 30000 + 70000 - 100000
+
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(0);
+  });
+
+  it("leaves the wallet untouched when AirPay declines the top-up", async () => {
+    const { organizer, organizationId, event, wallet, vendorId } = await setup(30000);
+
+    mockInitiateCharge.mockResolvedValue({ status: "FAILED", reference: "", message: "Declined by network." });
+
+    const result: any = await handleSplitPayment(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      totalAmountCents: 100000,
+      walletContributionCents: 30000,
+      topUpAmountCents: 70000,
+      phoneNumber: "255712345678",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.declined).toBe(true);
+    expect(result.reason).toBe("AIRPAY_NOT_CONFIRMED");
+    expect(result.transaction.status).toBe("FAILED");
+    expect(result.topupTransaction).toBeNull();
+
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(30000); // completely untouched
+
+    const topupRows = await prisma.walletTransaction.findMany({ where: { walletId: wallet.id, type: "TOPUP" } });
+    expect(topupRows).toHaveLength(0);
+  });
+
+  // The "device is offline" branch of split payment lives entirely on the
+  // client (the wallet terminal page never even calls this handler without
+  // connectivity — see resolveOfflineChargeMessage in wallet-charge.ts,
+  // tested directly in wallet-charge.test.ts) — nothing to exercise here.
+
+  it("is idempotent on replay — a repeated clientId returns the same rows, not duplicates", async () => {
+    const { organizer, organizationId, event, wallet, vendorId } = await setup(30000);
+    const payload = {
+      clientId: uniqueClientId(),
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      totalAmountCents: 100000,
+      walletContributionCents: 30000,
+      topUpAmountCents: 70000,
+      phoneNumber: "255712345678",
+    };
+
+    const first: any = await handleSplitPayment(organizer.id, organizationId, payload);
+    const second: any = await handleSplitPayment(organizer.id, organizationId, payload);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.transaction.id).toBe(first.transaction.id);
+    expect(second.topupTransaction.id).toBe(first.topupTransaction.id);
+    expect(second.wallet.balanceCents).toBe(first.wallet.balanceCents);
+
+    const saleRows = await prisma.walletTransaction.findMany({ where: { walletId: wallet.id, type: "SALE" } });
+    const topupRows = await prisma.walletTransaction.findMany({ where: { walletId: wallet.id, type: "TOPUP" } });
+    expect(saleRows).toHaveLength(1);
+    expect(topupRows).toHaveLength(1);
+
+    const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(fresh.balanceCents).toBe(0); // charged only once, not twice
+  });
+
+  it("appears in both top-up volume and vendor sales analytics", async () => {
+    const { organizer, organizationId, event, wallet, vendorId } = await setup(30000);
+
+    await handleSplitPayment(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      totalAmountCents: 100000,
+      walletContributionCents: 30000,
+      topUpAmountCents: 70000,
+      phoneNumber: "255712345678",
+    });
+
+    const txs = await prisma.walletTransaction.findMany({ where: { walletId: wallet.id }, include: { vendor: true } });
+    const activity = summarizeWalletActivity(txs);
+    expect(activity.topupVolumeByCurrency.TZS).toBe(70000); // just the AirPay portion
+    expect(activity.spendVolumeByCurrency.TZS).toBe(100000); // the full charge
+
+    const byVendor = spendByVendor(txs);
+    expect(byVendor.TZS.find((v) => v.label === "Grill Stand")?.value).toBe(100000);
+  });
+
+  it("balance alone covering it (no shortfall) charges without any AirPay top-up", async () => {
+    const { organizer, organizationId, event, wallet, vendorId } = await setup(200000); // already enough
+
+    const result: any = await handleSplitPayment(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      walletCode: wallet.code,
+      vendorId,
+      eventId: event.id,
+      totalAmountCents: 100000,
+      walletContributionCents: 100000,
+      topUpAmountCents: 1, // stale client math — server re-verifies and finds no shortfall
+      phoneNumber: "255712345678",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.declined).toBeFalsy();
+    expect(result.topupTransaction).toBeNull();
+    expect(result.wallet.balanceCents).toBe(100000);
+    expect(mockInitiateCharge).not.toHaveBeenCalled();
+  });
+
+  it("is blocked for GATE_CREW at the access-control allowlist", () => {
+    expect(isOpAllowedForRole("GATE_CREW", "SPLIT_PAYMENT")).toBe(false);
+    expect(isOpAllowedForRole("OWNER", "SPLIT_PAYMENT")).toBe(true);
+    expect(isOpAllowedForRole("STAFF", "SPLIT_PAYMENT")).toBe(true);
   });
 });

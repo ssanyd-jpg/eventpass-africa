@@ -487,6 +487,32 @@ async function applyChargeWalletResult(payload: any, result: any) {
   }
 }
 
+// SPLIT_PAYMENT is non-optimistic (same reasoning as applyChargeWalletResult
+// — a declined-after-the-fact charge is a real loss, so the terminal waits
+// for the actual result rather than showing "approved" early) and produces
+// up to two genuine new server rows: the SALE (keyed by payload.clientId,
+// remapped the same way applyChargeWalletResult remaps its one row) and,
+// when the wallet's own balance didn't already cover it, a sibling TOPUP
+// (keyed by payload.clientId + "-topup", same suffix convention
+// handleSplitPayment uses server-side). No local-temp-id exists for the
+// TOPUP since nothing was queued optimistically under that key — this is
+// just its first-ever local write.
+async function applySplitPaymentResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({
+    ...result.transaction,
+    syncStatus: result.declined ? "conflict" : "synced",
+    syncError: result.declined ? (result.transaction.providerMessage ?? "Declined.") : null,
+  });
+  if (result.topupTransaction) {
+    await db.walletTransactions.put({ ...result.topupTransaction, syncStatus: "synced" });
+  }
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
 // WITHDRAW_WALLET creates a genuine new local-id transaction row, same
 // remap shape as applyTopupWalletResult. "declined" here means the balance
 // was insufficient (soft-decline, mirrors applyChargeWalletResult) — never
@@ -644,6 +670,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "CHARGE_WALLET":
           await applyChargeWalletResult(entry.payload, result);
+          break;
+        case "SPLIT_PAYMENT":
+          await applySplitPaymentResult(entry.payload, result);
           break;
         case "WITHDRAW_WALLET":
           await applyWithdrawWalletResult(entry.payload, result);
