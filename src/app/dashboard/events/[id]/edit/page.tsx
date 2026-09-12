@@ -18,6 +18,8 @@ interface DraftTicketType {
   priceMajor: string;
   quantity: string;
   quantitySold: number;
+  // Session 14 — explicit VIP fast-track opt-in, independent of name.
+  isFastTrack: boolean;
 }
 
 interface DraftQuestion {
@@ -101,7 +103,7 @@ export default function EditEventPage() {
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [carryOverEnabled, setCarryOverEnabled] = useState(false);
-  const [eventType, setEventType] = useState<"GENERAL" | "MARATHON" | "CONFERENCE">("GENERAL");
+  const [eventType, setEventType] = useState<"GENERAL" | "MARATHON" | "CONFERENCE" | "FOOTBALL">("GENERAL");
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
@@ -222,6 +224,7 @@ export default function EditEventPage() {
         priceMajor: String(tt.priceCents / 100),
         quantity: String(tt.quantityTotal),
         quantitySold: tt.quantitySold,
+        isFastTrack: tt.isFastTrack ?? false,
       }));
       setTicketTypes(loadedTicketTypes);
       setDiscountCodes(
@@ -397,6 +400,7 @@ export default function EditEventPage() {
       priceCents: Math.round(parseFloat(t.priceMajor) * 100),
       quantityTotal: parseInt(t.quantity, 10),
       quantitySold: t.quantitySold,
+      isFastTrack: t.isFastTrack,
     }));
 
     // The server payload keeps `id` genuinely undefined for new ticket
@@ -408,6 +412,7 @@ export default function EditEventPage() {
       description: "",
       priceCents: Math.round(parseFloat(t.priceMajor) * 100),
       quantityTotal: parseInt(t.quantity, 10),
+      isFastTrack: t.isFastTrack,
     }));
 
     const vendorStallFeeCents = Math.round(parseFloat(vendorStallFeeMajor || "0") * 100);
@@ -509,6 +514,7 @@ export default function EditEventPage() {
         description: t.description,
         priceCents: t.priceCents,
         quantityTotal: t.quantityTotal,
+        isFastTrack: t.isFastTrack,
       })),
       registrationQuestions: payloadQuestions,
       discountCodes: payloadDiscountCodes,
@@ -625,6 +631,7 @@ export default function EditEventPage() {
             <option value="GENERAL">General</option>
             <option value="MARATHON">Marathon / running race</option>
             <option value="CONFERENCE">Conference</option>
+            <option value="FOOTBALL">Football Match</option>
           </select>
           <p className="mt-1 text-xs text-muted">
             Marathon unlocks timing setup, a timing scanner, and a public live leaderboard.
@@ -671,7 +678,7 @@ export default function EditEventPage() {
               onClick={() =>
                 setTicketTypes((rows) => [
                   ...rows,
-                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0 },
+                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false },
                 ])
               }
             >
@@ -713,6 +720,14 @@ export default function EditEventPage() {
                 >
                   Remove
                 </button>
+                <label className="col-span-4 -mt-1 flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={t.isFastTrack}
+                    onChange={(e) => updateTicketType(t.key, { isFastTrack: e.target.checked })}
+                  />
+                  VIP / fast-track lane at the gate
+                </label>
                 {t.quantitySold > 0 && (
                   <p className="col-span-4 -mt-1 text-xs text-muted">{t.quantitySold} already sold</p>
                 )}

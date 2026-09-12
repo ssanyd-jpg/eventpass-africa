@@ -152,6 +152,8 @@ export const payloadSchemas = {
           description: z.string().max(500).optional(),
           priceCents: z.number().int().min(0),
           quantityTotal: z.number().int().min(1),
+          // Session 14 — explicit VIP fast-track opt-in, independent of name.
+          isFastTrack: z.boolean().optional(),
         })
       )
       .optional(),
@@ -161,8 +163,9 @@ export const payloadSchemas = {
     // Session 11 — optional end datetime and the carry-over opt-in toggle.
     endsAt: z.string().nullable().optional(),
     carryOverEnabled: z.boolean().optional(),
-    // Session 12 — GENERAL | MARATHON | CONFERENCE.
-    eventType: z.enum(["GENERAL", "MARATHON", "CONFERENCE"]).optional(),
+    // Session 12 — GENERAL | MARATHON | CONFERENCE. Session 14 added
+    // FOOTBALL (display-only, no dedicated tooling — unlike MARATHON).
+    eventType: z.enum(["GENERAL", "MARATHON", "CONFERENCE", "FOOTBALL"]).optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
     discountCodes: z.array(discountCodeInputSchema).optional(),
     // Same exact shape as registrationQuestions — post-event survey
@@ -511,6 +514,13 @@ export function shapeEvent(e: any, organizerName: string) {
     status: e.status,
     currency: e.currency,
     carryOverEnabled: e.carryOverEnabled ?? false,
+    // Session 14 fix — previously missing here, which meant
+    // applyEditOrCancelEventResult's full db.events.put(server) silently
+    // wiped a MARATHON event's eventType/gunStartAt back to undefined on
+    // every CREATE_EVENT/EDIT_EVENT/CANCEL_EVENT round-trip (the
+    // Timing-link gate and the new FOOTBALL label both depend on this).
+    eventType: e.eventType ?? "GENERAL",
+    gunStartAt: e.gunStartAt ? e.gunStartAt.toISOString() : null,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
     organizationId: e.organizationId,
@@ -525,6 +535,7 @@ export function shapeEvent(e: any, organizerName: string) {
       priceCents: tt.priceCents,
       quantityTotal: tt.quantityTotal,
       quantitySold: tt.quantitySold,
+      isFastTrack: tt.isFastTrack ?? false,
     })),
     // Public summary shape only (approved vendors, no contact info) — this
     // is the same `events` Dexie table the public pull writes to, so the
@@ -574,6 +585,10 @@ export function shapeOrder(o: any) {
       code: t.code,
       ticketTypeId: t.ticketTypeId,
       ticketTypeName: t.ticketType.name,
+      // Session 14 — denormalized the same way ticketTypeName already is,
+      // so the gate scanner's VIP signal works fully offline off the
+      // synced order/ticket data, with no separate ticketType lookup.
+      isFastTrack: t.ticketType.isFastTrack ?? false,
       checkedIn: t.checkedIn,
       checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
       currentHolderUserId: t.currentHolderUserId ?? null,
@@ -982,6 +997,10 @@ export async function handleSellTickets(userId: string, payload: any) {
 const ticketInclude = {
   event: { select: { id: true, organizationId: true } },
   order: { select: { id: true, status: true } },
+  // Session 14 — lets shapeTicket surface isFastTrack on the CHECK_IN
+  // response, same field the client already has locally via shapeOrder's
+  // denormalized ticket.isFastTrack.
+  ticketType: { select: { isFastTrack: true } },
 } as const;
 
 export function shapeTicket(t: any) {
@@ -994,6 +1013,7 @@ export function shapeTicket(t: any) {
     orderId: t.orderId,
     eventId: t.eventId,
     ticketTypeId: t.ticketTypeId,
+    isFastTrack: t.ticketType?.isFastTrack ?? false,
     ticketGroupId: t.ticketGroupId ?? null,
     groupMemberName: t.groupMemberName ?? null,
   };
@@ -1118,6 +1138,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
             description: String(tt.description ?? ""),
             priceCents: Number(tt.priceCents),
             quantityTotal: Number(tt.quantityTotal),
+            isFastTrack: Boolean(tt.isFastTrack ?? false),
           },
         });
         if (tt.clientId) ticketTypeIdByClientId.set(String(tt.clientId), tt.id);
@@ -1132,6 +1153,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
               description: String(tt.description ?? ""),
               priceCents: Number(tt.priceCents),
               quantityTotal: Number(tt.quantityTotal),
+              isFastTrack: Boolean(tt.isFastTrack ?? false),
             },
           });
           ticketTypeIdByClientId.set(String(tt.clientId), createdTt.id);

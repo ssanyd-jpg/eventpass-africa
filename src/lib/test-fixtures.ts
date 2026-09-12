@@ -30,7 +30,7 @@ export async function addMembership(organizationId: string, userId: string, role
 
 export async function createTestEvent(
   organizationId: string,
-  ticketTypes: Array<{ priceCents: number; quantityTotal: number; quantitySold?: number }> = [
+  ticketTypes: Array<{ priceCents: number; quantityTotal: number; quantitySold?: number; name?: string; isFastTrack?: boolean }> = [
     { priceCents: 200000, quantityTotal: 10 },
   ],
   currency = "TZS",
@@ -54,10 +54,11 @@ export async function createTestEvent(
       waiverText,
       ticketTypes: {
         create: ticketTypes.map((tt) => ({
-          name: "General",
+          name: tt.name ?? "General",
           priceCents: tt.priceCents,
           quantityTotal: tt.quantityTotal,
           quantitySold: tt.quantitySold ?? 0,
+          isFastTrack: tt.isFastTrack ?? false,
         })),
       },
     },

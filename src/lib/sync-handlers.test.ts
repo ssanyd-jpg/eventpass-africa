@@ -979,6 +979,39 @@ describe("handleEditEvent", () => {
     });
     expect(cleared.event.waiverText).toBeNull();
   });
+
+  // Session 14 — the ticket type edit form's VIP fast-track toggle.
+  it("sets and later clears isFastTrack on an existing ticket type", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId, [{ priceCents: 200000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const flagged = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      ticketTypes: [{ id: tt.id, clientId: tt.clientId ?? tt.id, name: tt.name, priceCents: tt.priceCents, quantityTotal: tt.quantityTotal, isFastTrack: true }],
+    });
+    expect(flagged.ok).toBe(true);
+    expect(flagged.event.ticketTypes[0].isFastTrack).toBe(true);
+
+    const unflagged = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      ticketTypes: [{ id: tt.id, clientId: tt.clientId ?? tt.id, name: tt.name, priceCents: tt.priceCents, quantityTotal: tt.quantityTotal, isFastTrack: false }],
+    });
+    expect(unflagged.event.ticketTypes[0].isFastTrack).toBe(false);
+  });
+
+  // Session 14 — FOOTBALL added to the eventType string-convention enum.
+  it("accepts FOOTBALL as an eventType", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId);
+
+    const result = await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      eventType: "FOOTBALL",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.event.eventType).toBe("FOOTBALL");
+  });
 });
 
 describe("handleCheckIn", () => {
@@ -1090,6 +1123,32 @@ describe("handleCheckIn", () => {
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
     expect(result.ok).toBe(false);
     expect((result as any).reason).toBe("ORDER_REFUNDED");
+  });
+
+  // Session 14 — VIP fast-track signal. handleCheckIn only ever surfaces
+  // the raw isFastTrack flag; the name-based "VIP" OR is a client-side
+  // pure-function concern (see src/lib/ticket-types.test.ts).
+  it("surfaces isFastTrack: true on the check-in response for a fast-track-flagged ticket type", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 300000, quantityTotal: 10, isFastTrack: true }]);
+    const tt = event.ticketTypes[0];
+    const sale = await handleSellTickets(buyer.id, {
+      clientId: `checkin-vip-${Date.now()}`,
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKVIP-${Date.now()}`] }],
+    });
+
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
+    expect(result.ok).toBe(true);
+    expect(result.ticket.isFastTrack).toBe(true);
+  });
+
+  it("surfaces isFastTrack: false on the check-in response for a standard ticket type", async () => {
+    const { code, organizer, organizationId } = await soldTicket();
+    const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
+    expect(result.ok).toBe(true);
+    expect(result.ticket.isFastTrack).toBe(false);
   });
 });
 

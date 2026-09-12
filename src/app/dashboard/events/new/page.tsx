@@ -114,6 +114,10 @@ export default function NewEventPage() {
       priceCents: Math.round(parseFloat(t.priceMajor) * 100),
       quantityTotal: parseInt(t.quantity, 10),
       quantitySold: 0,
+      // Fast-track opt-in is set via Edit once the event exists — a ticket
+      // type named "VIP" already fast-tracks by name (see
+      // isFastTrackTicketType) without needing this flag at creation time.
+      isFastTrack: false,
     }));
 
     const localEvent: LocalEvent = {

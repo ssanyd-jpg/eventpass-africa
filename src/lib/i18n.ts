@@ -86,6 +86,7 @@ export const dictionaries = {
     "scan.wristbandReplaced": "This wristband has been replaced — please visit the registration desk.",
     "scan.modeWalletSale": "Vendor sale",
     "scan.modeWalletTap": "Sponsor tap",
+    "scan.vipFastTrack": "VIP — FAST TRACK LANE",
 
     "provision.title": "Provision wristband",
     "provision.scanPrompt": "Tap a blank wristband to begin.",
@@ -230,6 +231,7 @@ export const dictionaries = {
     "scan.wristbandReplaced": "Kikuku hiki kimebadilishwa — tafadhali nenda dawati la usajili.",
     "scan.modeWalletSale": "Mauzo ya muuzaji",
     "scan.modeWalletTap": "Mgusano wa mfadhili",
+    "scan.vipFastTrack": "VIP — NJIA YA HARAKA",
 
     "provision.title": "Sajili Kikuku",
     "provision.scanPrompt": "Gusa kikuku tupu ili kuanza.",

@@ -8,6 +8,9 @@ export interface LocalTicketType {
   priceCents: number;
   quantityTotal: number;
   quantitySold: number;
+  // Session 14 — explicit VIP fast-track opt-in, independent of name. See
+  // isFastTrackTicketType in src/lib/ticket-types.ts for the full rule.
+  isFastTrack: boolean;
 }
 
 export interface LocalEventVendorSummary {
@@ -46,8 +49,9 @@ export interface LocalEvent {
   // Session 11 — organiser opt-in for wristband balance carry-over.
   carryOverEnabled: boolean;
   // Session 12 — GENERAL | MARATHON | CONFERENCE. MARATHON unlocks the
-  // timing scanner, timing dashboard, and public leaderboard.
-  eventType: "GENERAL" | "MARATHON" | "CONFERENCE";
+  // timing scanner, timing dashboard, and public leaderboard. Session 14
+  // added FOOTBALL — display-only, no dedicated tooling of its own.
+  eventType: "GENERAL" | "MARATHON" | "CONFERENCE" | "FOOTBALL";
   // ISO, or null before the race's "Start gun" action has run.
   gunStartAt: string | null;
   vendorApplicationsOpen: boolean;
@@ -93,6 +97,11 @@ export interface LocalTicket {
   ticketGroupId?: string | null;
   ticketGroupName?: string | null;
   groupMemberName?: string | null;
+  // Session 14 — denormalized from TicketType.isFastTrack the same way
+  // ticketTypeName already is, so the gate scanner's VIP signal works fully
+  // offline. Optional only for backward compatibility with any ticket
+  // already in a device's local cache from before this field existed.
+  isFastTrack?: boolean;
 }
 
 export type OrderSyncStatus = "synced" | "pending" | "conflict";
@@ -843,6 +852,30 @@ class EventPassAfricaDB extends Dexie {
     // LocalWalletTransaction — no indexed-key change, same no-.upgrade()-
     // needed reasoning as version 15/16.
     this.version(18).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+      timingPoints: "id, clientId, eventId, sequenceOrder",
+      chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
+    });
+    // Session 14: new isFastTrack field on LocalTicketType (embedded in
+    // LocalEvent.ticketTypes) and LocalTicket (embedded in
+    // LocalOrder.tickets) — no indexed-key change, same no-.upgrade()-
+    // needed reasoning as version 15/16/18.
+    this.version(19).stores({
       events: "id, clientId, slug, organizationId, category, startsAt",
       orders: "id, clientId, userId, eventId, syncStatus, createdAt",
       mobileMoneyAccounts: "id, clientId, organizationId",

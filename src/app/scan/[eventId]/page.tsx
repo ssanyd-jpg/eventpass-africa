@@ -12,10 +12,12 @@ import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
+import { resolveGateSignal } from "@/lib/ticket-types";
 
 type ScanResult = {
   kind:
     | "valid"
+    | "vip"
     | "already"
     | "invalid"
     | "refunded"
@@ -27,8 +29,21 @@ type ScanResult = {
   message: string;
   ticketTypeName?: string;
   boothNumber?: string | null;
+  // Session 14 — the closest thing to an attendee name available offline
+  // for a VIP screen: this device's local cache never carries a buyer's
+  // real name (see LocalOrder's own comment on why), only a group member's
+  // self-chosen label when this ticket was part of a Session 13 group
+  // purchase. Absent for an ordinary solo VIP ticket.
+  attendeeLabel?: string | null;
   code: string;
 };
+
+// Session 14 — how long the full-screen VIP confirmation stays up before
+// auto-clearing, one second longer than the established 3s convention used
+// elsewhere in this app (CameraScanner/NFCScanner's own re-scan debounce,
+// the provisioning page's confirmation reset) so gate staff have time to
+// register it and wave the attendee through before it disappears.
+const VIP_AUTO_RESET_MS = 4000;
 
 export default function GateScannerPage() {
   const { eventId: rawEventId } = useParams<{ eventId: string }>();
@@ -125,7 +140,16 @@ export default function GateScannerPage() {
       return;
     }
 
-    if (match.checkedIn) {
+    // Session 14 — decides valid/VIP/already in one place so "already
+    // checked in" always wins even for a VIP ticket re-scanned a second
+    // time; see resolveGateSignal's own comment for why.
+    const signal = resolveGateSignal({
+      checkedIn: match.checkedIn,
+      ticketTypeName: match.ticketTypeName,
+      isFastTrack: match.isFastTrack ?? false,
+    });
+
+    if (signal === "already") {
       setResult({ kind: "already", message: t("scan.alreadyCheckedIn"), ticketTypeName: match.ticketTypeName, code: normalized });
       return;
     }
@@ -145,8 +169,27 @@ export default function GateScannerPage() {
       scannedAt,
     });
 
-    setResult({ kind: "valid", message: t("scan.entryGranted"), ticketTypeName: match.ticketTypeName, code: normalized });
+    setResult(
+      signal === "vip"
+        ? {
+            kind: "vip",
+            message: t("scan.vipFastTrack"),
+            ticketTypeName: match.ticketTypeName,
+            attendeeLabel: match.groupMemberName ?? null,
+            code: normalized,
+          }
+        : { kind: "valid", message: t("scan.entryGranted"), ticketTypeName: match.ticketTypeName, code: normalized }
+    );
   }, [t]);
+
+  // Session 14 — the VIP full-screen confirmation clears itself; every
+  // other result kind is left exactly as before (persists until the next
+  // scan overwrites it).
+  useEffect(() => {
+    if (result?.kind !== "vip") return;
+    const timer = setTimeout(() => setResult(null), VIP_AUTO_RESET_MS);
+    return () => clearTimeout(timer);
+  }, [result]);
 
   const checkInVendor = useCallback(async (rawCode: string) => {
     const normalized = rawCode.trim().toUpperCase();
@@ -240,6 +283,31 @@ export default function GateScannerPage() {
           offline scanning.
         </p>
         <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+      </div>
+    );
+  }
+
+  // Session 14 — VIP fast-track takeover. Full-screen so it reads at a
+  // glance in bright outdoor daylight (no reliance on the app's light/dark
+  // theme, which is a display-preference concern, not a physical-lighting
+  // one) — dark text on a bright gold ground, hard-coded rather than themed
+  // so it stays maximum-contrast in every viewing condition.
+  if (result?.kind === "vip") {
+    return (
+      <div
+        role="alert"
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-6 text-center"
+        style={{ backgroundColor: "#ffc300", color: "#1a1300" }}
+      >
+        <span style={{ fontSize: "104px", lineHeight: 1 }} aria-hidden="true">👑</span>
+        <p style={{ fontSize: "56px", lineHeight: 1.1, fontWeight: 800, letterSpacing: "0.01em" }}>
+          {result.message}
+        </p>
+        {result.attendeeLabel && <p style={{ fontSize: "28px", fontWeight: 700 }}>{result.attendeeLabel}</p>}
+        {result.ticketTypeName && <p style={{ fontSize: "20px", fontWeight: 600 }}>{result.ticketTypeName}</p>}
+        <p className="font-mono tracking-widest" style={{ fontSize: "18px", fontWeight: 600, opacity: 0.85 }}>
+          {result.code}
+        </p>
       </div>
     );
   }

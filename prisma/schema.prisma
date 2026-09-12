@@ -569,10 +569,12 @@ model Event {
   endsAt      DateTime?
   imageUrl    String
   status      String   @default("LIVE")
-  // Session 12 — GENERAL | MARATHON | CONFERENCE. Plain-string convention,
-  // same as every other enum-shaped field in this schema (see
-  // MobileMoneyAccount.provider). MARATHON unlocks the timing setup section
-  // on the event dashboard, the timing scanner, and the public leaderboard.
+  // Session 12 — GENERAL | MARATHON | CONFERENCE. Session 14 added FOOTBALL
+  // (display-only distinction, no dedicated tooling — unlike MARATHON, see
+  // below). Plain-string convention, same as every other enum-shaped field
+  // in this schema (see MobileMoneyAccount.provider). MARATHON unlocks the
+  // timing setup section on the event dashboard, the timing scanner, and
+  // the public leaderboard.
   eventType   String   @default("GENERAL")
   // When the race officially started — set once via the "Start gun" action
   // (irreversible; see startGun in src/app/dashboard/events/[id]/timing/
@@ -727,6 +729,11 @@ model TicketType {
   quantityTotal Int
   quantitySold  Int      @default(0)
   updatedAt     DateTime @updatedAt
+  // Session 14 — explicit fast-track opt-in for the gate scanner's VIP
+  // signal, independent of naming. A ticket type is also treated as VIP if
+  // its name contains "VIP" (case-insensitive) — see isFastTrackTicketType
+  // in src/lib/ticket-types.ts, the single source of truth for that OR.
+  isFastTrack Boolean @default(false)
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
