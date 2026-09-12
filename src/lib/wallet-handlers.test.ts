@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import {
   createTestEvent,
@@ -37,6 +37,17 @@ vi.mock("@/lib/payments", () => ({
 beforeEach(() => {
   mockInitiateCharge.mockReset();
   mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
+});
+
+// Neon connection-pool drain — several tests in this file chain multiple
+// heavy sequential Prisma transactions (e.g. requestedWithdrawal's own
+// setup plus two handleRejectWithdrawal/handleApproveWithdrawal calls), and
+// under vitest's parallel workers this file has been observed contributing
+// to pool exhaustion that surfaces as timeouts elsewhere in the suite. A
+// short pause between tests gives Neon's pooler room to release connections
+// before the next test's setup starts.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500));
 });
 
 describe("handleCreateWallet", () => {
@@ -687,7 +698,13 @@ describe("handleRejectWithdrawal", () => {
     expect((result as any).reason).toBe("FORBIDDEN");
   });
 
-  it("is idempotent — rejecting an already-FAILED withdrawal does not double-refund", async () => {
+  // Neon latency headroom — requestedWithdrawal's own setup plus two
+  // sequential handleRejectWithdrawal transactions has been observed timing
+  // out at the default 60s under sustained load; 120s gives it room without
+  // masking a genuine hang (see vitest.global-setup.ts's own warm-up-query
+  // comment, which explains why Neon's compute can add several seconds of
+  // cold-start latency to the first real query against it).
+  it("is idempotent — rejecting an already-FAILED withdrawal does not double-refund", { timeout: 120000 }, async () => {
     const { organizer, organizationId, wallet, withdrawal } = await requestedWithdrawal(10000, 4000);
     const walletTransactionId = (withdrawal as any).transaction.id;
 

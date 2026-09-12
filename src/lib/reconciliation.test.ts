@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import {
   createTestUser,
@@ -21,6 +21,17 @@ import {
 
 let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${++seq}`;
+
+// Neon connection-pool drain — several tests in this file chain multiple
+// heavy sequential Prisma transactions (cashSale/handleSellTickets/
+// handleChargeWallet each open their own), and under vitest's parallel
+// workers this file has been observed contributing to pool exhaustion that
+// surfaces as timeouts elsewhere in the suite. A short pause between tests
+// gives Neon's pooler room to release connections before the next test's
+// setup starts.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500));
+});
 
 async function newOrganizer() {
   const user = await createTestUser();
@@ -104,7 +115,14 @@ describe("saveFloatDeclarationCore", () => {
 });
 
 describe("getReconciliationData", () => {
-  it("summarises revenue by payment method, wallet balance, vendor sales and breakage", async () => {
+  // Neon cold-start/latency headroom — this test chains a cash sale, a
+  // digital sale, a wallet creation and a wallet charge, each its own
+  // sequential Prisma transaction, which has been observed timing out at
+  // the default 60s under sustained load; 120s gives it room without
+  // masking a genuine hang (see vitest.global-setup.ts's own warm-up-query
+  // comment, which explains why Neon's compute can add several seconds of
+  // cold-start latency to the first real query against it).
+  it("summarises revenue by payment method, wallet balance, vendor sales and breakage", { timeout: 120000 }, async () => {
     const { user: buyer, organizationId } = await newOrganizer();
     const event = await createTestEvent(organizationId);
     const operator = await createTestUser();
@@ -163,7 +181,9 @@ describe("getReconciliationData", () => {
 });
 
 describe("getOperatorFloat", () => {
-  it("reflects only the requested operator's own cash orders, never another operator's on the same event", async () => {
+  // Neon latency headroom, same reasoning as the getReconciliationData test
+  // above — three sequential cashSale calls, each its own transaction.
+  it("reflects only the requested operator's own cash orders, never another operator's on the same event", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     const event = await createTestEvent(organizationId, [{ priceCents: 200_000, quantityTotal: 20 }]);
     const opA = await createTestUser({ name: "Op A" });

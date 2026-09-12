@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import {
   createTestEvent,
@@ -70,6 +70,17 @@ beforeEach(() => {
   mockInitiateCharge.mockReset();
   mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
   mockVerifyAirpayOrder.mockReset();
+});
+
+// Neon connection-pool drain — this is the largest test file in the suite
+// and several tests chain multiple heavy sequential Prisma transactions
+// (e.g. two handleSellTickets calls, or handleSellTickets followed by
+// handleProvisionCredential). Under vitest's parallel workers this file has
+// been observed contributing to pool exhaustion that surfaces as timeouts
+// elsewhere in the suite. A short pause between tests gives Neon's pooler
+// room to release connections before the next test's setup starts.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500));
 });
 
 // Every "organizer" in these tests needs a real Organization + OWNER
@@ -277,7 +288,13 @@ describe("handleSellTickets — group checkout (Session 13)", () => {
     expect(group.leadUserId).toBe(lead.id);
   });
 
-  it("reuses the existing group/shared wallet when the lead buys a second batch for the same event", async () => {
+  // Neon latency headroom — two sequential handleSellTickets transactions
+  // has been observed timing out at the default 60s under sustained load;
+  // 120s gives it room without masking a genuine hang (see
+  // vitest.global-setup.ts's own warm-up-query comment, which explains why
+  // Neon's compute can add several seconds of cold-start latency to the
+  // first real query against it).
+  it("reuses the existing group/shared wallet when the lead buys a second batch for the same event", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     const lead = await createTestUser();
     const event = await createTestEvent(organizationId, [{ priceCents: 50000, quantityTotal: 10 }]);
@@ -2177,7 +2194,10 @@ describe("handleProvisionCredential", () => {
     expect(rows.every((r) => r.status === "ACTIVE")).toBe(true);
   });
 
-  it("Session 13: provisions a group member via ticketId, linking to the group's shared wallet without creating a User", async () => {
+  // Neon latency headroom, same reasoning as the group-checkout test above —
+  // handleSellTickets followed by handleProvisionCredential, each its own
+  // sequential transaction.
+  it("Session 13: provisions a group member via ticketId, linking to the group's shared wallet without creating a User", { timeout: 120000 }, async () => {
     const { user: organizer, organizationId } = await newOrganizer();
     const lead = await createTestUser();
     const event = await createTestEvent(organizationId, [{ priceCents: 50000, quantityTotal: 10 }]);

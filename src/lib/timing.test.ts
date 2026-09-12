@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestUser, createTestOrganization, addMembership, createTestEvent } from "@/lib/test-fixtures";
 import { handleSellTickets, handleRecordChipTime } from "@/lib/sync-handlers";
@@ -14,6 +14,16 @@ import { getTimingDashboardData, buildTimingResultsCsvSections } from "@/lib/tim
 
 let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${++seq}`;
+
+// Neon connection-pool drain — setupMarathon alone chains ~8 sequential
+// Prisma calls, and several tests here layer multiple handleRecordChipTime
+// transactions on top of it. Under vitest's parallel workers this file has
+// been observed contributing to pool exhaustion that surfaces as timeouts
+// elsewhere in the suite. A short pause between tests gives Neon's pooler
+// room to release connections before the next test's setup starts.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500));
+});
 
 async function newOrganizer() {
   const user = await createTestUser();
@@ -185,7 +195,9 @@ describe("handleRecordChipTime", () => {
     }
   );
 
-  it("is idempotent — replaying the same clientId returns the same row rather than duplicating", async () => {
+  // Neon latency headroom, same reasoning as the tests above — setupMarathon
+  // plus two sequential handleRecordChipTime transactions.
+  it("is idempotent — replaying the same clientId returns the same row rather than duplicating", { timeout: 120000 }, async () => {
     const { organizationId, event, start, credential } = await setupMarathon();
     const payload = tapPayload({ eventId: event.id, timingPointId: start.id, nfcUid: credential.nfcUid });
 
@@ -197,7 +209,8 @@ describe("handleRecordChipTime", () => {
     expect(count).toBe(1);
   });
 
-  it("returns the existing row on a re-scan of the same athlete at the same point (no duplicate)", async () => {
+  // Neon latency headroom, same reasoning as the tests above.
+  it("returns the existing row on a re-scan of the same athlete at the same point (no duplicate)", { timeout: 120000 }, async () => {
     const { organizationId, event, start, credential } = await setupMarathon();
     const first: any = await handleRecordChipTime(organizationId, tapPayload({ eventId: event.id, timingPointId: start.id, nfcUid: credential.nfcUid }));
     // A different clientId (a fresh scan, not a network retry) at the same point
