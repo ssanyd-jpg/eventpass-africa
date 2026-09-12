@@ -26,6 +26,7 @@ const ACTION_LABEL: Record<string, string> = {
   WITHDRAWAL_APPROVED: "Withdrawal approved",
   WITHDRAWAL_REJECTED: "Withdrawal rejected",
   VENDOR_PORTAL_LINK_SENT: "Vendor portal link sent",
+  SPONSOR_PORTAL_LINK_SENT: "Sponsor portal link sent",
   VENDOR_SETTLEMENT_PROCESSING: "Vendor settlement marked processing",
   VENDOR_SETTLEMENT_PROCESSED: "Vendor settlement paid out",
   FLOAT_DECLARED: "Cash float declared",

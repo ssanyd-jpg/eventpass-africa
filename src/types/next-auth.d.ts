@@ -18,6 +18,10 @@ declare module "next-auth" {
       // can never be satisfied by an unrelated session type.
       vendorId?: string;
       eventId?: string;
+      // SPONSOR sessions only (see the sponsor-magic-link provider in
+      // auth.ts and src/lib/sponsor-auth.ts) — same isolation discipline as
+      // vendorId above.
+      sponsorId?: string;
     } & DefaultSession["user"];
   }
 }

@@ -7,6 +7,7 @@ import { authConfig } from "@/auth.config";
 import { deriveSessionLabel } from "@/lib/session-label";
 import { createUserSession, isSessionRevoked } from "@/lib/session-handlers";
 import { consumeVendorMagicLinkToken } from "@/lib/vendor-auth";
+import { consumeSponsorMagicLinkToken } from "@/lib/sponsor-auth";
 
 const SESSION_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -82,6 +83,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: "VENDOR",
           vendorId: result.vendor.id,
           eventId: result.vendor.eventId,
+        };
+      },
+    }),
+    // Sponsor portal login (Session 16) — same shape and reasoning as the
+    // vendor-magic-link provider directly above (a Sponsor isn't a User
+    // either, and this deliberately stays a separate provider rather than a
+    // branch inside "credentials", same isolation-of-session-shapes reason).
+    Credentials({
+      id: "sponsor-magic-link",
+      name: "sponsor-magic-link",
+      credentials: { token: { label: "Token", type: "text" } },
+      authorize: async (credentials) => {
+        const token = credentials?.token as string | undefined;
+        if (!token) return null;
+
+        const result = await consumeSponsorMagicLinkToken(token);
+        if (!result.ok) return null;
+
+        return {
+          id: result.sponsor.id,
+          name: result.sponsor.name,
+          email: result.sponsor.contactEmail,
+          role: "SPONSOR",
+          sponsorId: result.sponsor.id,
+          eventId: result.sponsor.eventId,
         };
       },
     }),

@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalSponsor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
+import { sendSponsorPortalLink } from "./actions";
 
 const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"];
 
@@ -63,6 +64,7 @@ export default function ManageSponsorsPage() {
   const [addTier, setAddTier] = useState(SPONSOR_TIERS[0]);
   const [addFeeMajor, setAddFeeMajor] = useState("");
   const [adding, setAdding] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   if (user?.organizationRole === "GATE_CREW") return null;
 
@@ -120,6 +122,23 @@ export default function ManageSponsorsPage() {
     setAddTier(SPONSOR_TIERS[0]);
     setShowAddForm(false);
     setAdding(false);
+  }
+
+  async function sendPortalLink(sponsor: LocalSponsor) {
+    if (!sponsor.contactEmail) {
+      alert("This sponsor has no contact email on file.");
+      return;
+    }
+    if (!confirm(`Send ${sponsor.name} their sponsor portal sign-in link?`)) return;
+    setBusyId(sponsor.id);
+    try {
+      await sendSponsorPortalLink(sponsor.id);
+      alert(`Portal link sent to ${sponsor.contactEmail}.`);
+    } catch {
+      alert("Couldn't send the portal link. Try again.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -191,7 +210,7 @@ export default function ManageSponsorsPage() {
                   still-pending-sync sponsor (local temp id) has no rows to
                   show yet. */}
               {!s.syncStatus || s.syncStatus === "synced" ? (
-                <div className="flex gap-4">
+                <div className="flex flex-wrap items-center gap-4">
                   <Link
                     href={`/dashboard/events/${event.id}/sponsors/${s.id}/leads`}
                     className="text-sm font-medium text-accent-hover"
@@ -204,6 +223,13 @@ export default function ManageSponsorsPage() {
                   >
                     Campaigns ({campaignCounts?.[s.id] ?? 0}) →
                   </Link>
+                  <button
+                    className="text-xs font-medium text-accent-hover hover:underline disabled:opacity-50"
+                    disabled={busyId === s.id}
+                    onClick={() => sendPortalLink(s)}
+                  >
+                    Send portal link
+                  </button>
                 </div>
               ) : null}
             </div>

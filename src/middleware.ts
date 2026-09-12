@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 import { resolveVendorRedirect } from "@/lib/vendor-access";
+import { resolveSponsorRedirect } from "@/lib/sponsor-access";
 
 // Separate, provider-free NextAuth instance for the Edge runtime — see
 // auth.config.ts for why this can't just import the full auth.ts.
@@ -27,6 +28,17 @@ export default auth((req) => {
   if (vendorRedirect) {
     const url = req.nextUrl.clone();
     url.pathname = vendorRedirect;
+    return NextResponse.redirect(url);
+  }
+
+  // SPONSOR sessions (Session 16's sponsor portal — see
+  // src/lib/sponsor-auth.ts and the "sponsor-magic-link" provider in
+  // auth.ts) are confined to their own portal, same blanket-rule reasoning
+  // as the vendor check directly above.
+  const sponsorRedirect = resolveSponsorRedirect(req.auth?.user, path);
+  if (sponsorRedirect) {
+    const url = req.nextUrl.clone();
+    url.pathname = sponsorRedirect;
     return NextResponse.redirect(url);
   }
 

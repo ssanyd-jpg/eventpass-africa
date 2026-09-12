@@ -17,7 +17,8 @@ export type NotificationType =
   | "WRISTBAND_PROVISIONED"
   | "LOW_WALLET_BALANCE"
   | "VENDOR_MAGIC_LINK"
-  | "VENDOR_SETTLEMENT_PROCESSED";
+  | "VENDOR_SETTLEMENT_PROCESSED"
+  | "SPONSOR_MAGIC_LINK";
 
 export type NotificationChannel = "EMAIL" | "SMS";
 

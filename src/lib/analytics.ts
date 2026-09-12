@@ -439,6 +439,38 @@ export function transactionsByVendorByHour(
   }));
 }
 
+export interface SponsorHourPoint {
+  hour: string; // "09:00"
+  count: number;
+}
+
+// Same zero-filled hourly bucketing as transactionsByVendorByHour, but for
+// SPONSOR_TAP rows already scoped to ONE sponsor by the caller (see
+// getSponsorDashboardData) — no amountCents to sum (WalletTransaction's own
+// comment: amountCents is null for SPONSOR_TAP), just a tap count per hour
+// for the sponsor dashboard's "taps by hour" chart.
+export function sponsorTapsByHour(
+  taps: { createdAt: Date }[],
+  dayStart: Date,
+  now: Date = new Date()
+): SponsorHourPoint[] {
+  const startHour = startOfHourMs(dayStart);
+  const latest = taps.reduce((max, t) => (t.createdAt.getTime() > max ? t.createdAt.getTime() : max), now.getTime());
+  const endHour = Math.max(startOfHourMs(new Date(latest)), startHour);
+
+  const totals = new Map<number, number>();
+  for (const t of taps) {
+    const key = startOfHourMs(t.createdAt);
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+
+  const series: SponsorHourPoint[] = [];
+  for (let t = startHour; t <= endHour; t += HOUR_MS) {
+    series.push({ hour: formatHourLabel(t), count: totals.get(t) ?? 0 });
+  }
+  return series;
+}
+
 export interface LiveEventStats {
   totalCheckedIn: number;
   capacityTotal: number;

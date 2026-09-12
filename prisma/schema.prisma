@@ -929,13 +929,16 @@ model VendorMagicLinkToken {
 }
 
 // Organizer-managed sponsor entity — same shape as Vendor, simplified: no
-// ownerUserId/self-apply (no sponsor login/portal), no status
-// PENDING/APPROVED/REJECTED (every sponsor an organizer adds is immediately
-// active), no badgeCode/checkedIn (no sponsor check-in flow). feeCents is
-// real client-supplied input (not derived from the event, unlike Vendor's
-// stallFeeCents) — sponsorship fees are inherently variable per sponsor,
-// and this is the organizer's own number for their own reporting, not
-// charged to anyone.
+// ownerUserId/self-apply, no status PENDING/APPROVED/REJECTED (every
+// sponsor an organizer adds is immediately active), no badgeCode/checkedIn
+// (no sponsor check-in flow). feeCents is real client-supplied input (not
+// derived from the event, unlike Vendor's stallFeeCents) — sponsorship fees
+// are inherently variable per sponsor, and this is the organizer's own
+// number for their own reporting, not charged to anyone.
+// Session 16 adds a magic-link portal (magicLinkTokens below), the same
+// shape as Vendor's own — still no `status`, since consumeSponsorMagicLinkToken
+// has nothing to gate on the way consumeVendorMagicLinkToken gates on
+// vendor.status === "APPROVED".
 model Sponsor {
   id           String   @id @default(cuid())
   clientId     String?  @unique
@@ -955,6 +958,23 @@ model Sponsor {
 
   sponsorTaps      WalletTransaction[]
   sponsorCampaigns SponsorCampaign[]
+  magicLinkTokens  SponsorMagicLinkToken[]
+}
+
+// Session 16 — same hashed-token + expiry shape as VendorMagicLinkToken
+// above; a Sponsor has no password (it isn't a User), so this is the entire
+// login mechanism for the sponsor portal. Expires 24h after issue OR at
+// first use, whichever is first (see consumeSponsorMagicLinkToken in
+// src/lib/sponsor-auth.ts).
+model SponsorMagicLinkToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  sponsorId String
+  sponsor   Sponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
 }
 
 // A sponsor-booth coupon/giveaway — NOT a ticket-price discount (see
