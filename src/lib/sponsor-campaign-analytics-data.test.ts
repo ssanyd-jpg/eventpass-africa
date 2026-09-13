@@ -9,7 +9,6 @@ import {
   createTestSponsorCampaign,
   createTestWallet,
 } from "@/lib/test-fixtures";
-import { handleSponsorTap } from "@/lib/sync-handlers";
 import { getSponsorCampaignComparison, buildCampaignComparisonCsv } from "@/lib/sponsor-campaign-analytics-data";
 
 let seq = 0;
