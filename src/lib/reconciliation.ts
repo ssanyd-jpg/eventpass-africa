@@ -63,12 +63,26 @@ export interface ReconciliationSummary {
   netBreakageCents: number; // unspent balance in wallets untouched > 90 days
 }
 
+// Session 18 — one row per confirmed wallet top-up, so the organiser has
+// cash and digital reconciliation in one place. airpayRef is null for a
+// top-up confirmed before that column existed, or one whose confirmation
+// never carried a matching reference — see the dedicated AirPay
+// reconciliation report (src/lib/airpay-reconciliation.ts) for the full
+// breakdown/exception analysis; this is just a visibility surface here.
+export interface DigitalTopupRow {
+  walletCode: string; // masked, matching sponsor-dashboard-data.ts's convention
+  amountCents: number;
+  airpayRef: string | null;
+  createdAt: string;
+}
+
 export interface ReconciliationData {
   eventId: string;
   eventTitle: string;
   summary: ReconciliationSummary;
   operators: OperatorFloat[];
   unreconciledOperatorCount: number;
+  digitalTopups: DigitalTopupRow[];
 }
 
 // Per-operator computed float for ONE operator, strictly scoped to that
@@ -125,7 +139,7 @@ export async function getReconciliationData(eventId: string, now: Date = new Dat
 
   const breakageCutoff = new Date(now.getTime() - BREAKAGE_AGE_DAYS * 24 * 60 * 60 * 1000);
 
-  const [paidOrders, wallets, vendorSales, cashOrders, declarations] = await Promise.all([
+  const [paidOrders, wallets, vendorSales, cashOrders, declarations, topups] = await Promise.all([
     prisma.order.findMany({
       where: { eventId, status: { in: ["PAID", "NEEDS_REVIEW"] } },
       select: { totalCents: true, paymentMethod: true },
@@ -140,6 +154,11 @@ export async function getReconciliationData(eventId: string, now: Date = new Dat
       select: { totalCents: true, userId: true, user: { select: { id: true, name: true } } },
     }),
     prisma.floatDeclaration.findMany({ where: { eventId } }),
+    prisma.walletTransaction.findMany({
+      where: { wallet: { eventId }, type: "TOPUP", status: "COMPLETED" },
+      select: { amountCents: true, airpayRef: true, createdAt: true, wallet: { select: { code: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   const summary: ReconciliationSummary = {
@@ -176,6 +195,12 @@ export async function getReconciliationData(eventId: string, now: Date = new Dat
     summary,
     operators,
     unreconciledOperatorCount: operators.filter((o) => o.declaration === null).length,
+    digitalTopups: topups.map((t) => ({
+      walletCode: `•••${t.wallet.code.slice(-4)}`,
+      amountCents: t.amountCents ?? 0,
+      airpayRef: t.airpayRef,
+      createdAt: t.createdAt.toISOString(),
+    })),
   };
 }
 

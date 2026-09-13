@@ -1066,6 +1066,16 @@ model WalletTransaction {
   currency          String   @default("TZS")
   providerReference String?  // aggregator's merchant order id, for reconciliation
   providerMessage   String?
+  // Session 18 — set only once a TOPUP reaches COMPLETED (see
+  // handleTopupWallet's instant-PAID branch and handleCheckTopupStatus's
+  // poll-resolved PAID branch), never at initiation. Distinct column from
+  // providerReference (Chaap's own merchant order id, set at initiation)
+  // even though today's Airpay integration has no independently-documented
+  // aggregator-side reference beyond that same value — see the Session 18
+  // report for why. Null on a PENDING/FAILED row, or any row from before
+  // this column existed — that's exactly the "exception" the AirPay
+  // reconciliation report flags for manual review.
+  airpayRef         String?
   phoneNumber       String?  // TOPUP and WITHDRAWAL
   // WITHDRAWAL only — no real disbursement API exists, so the organizer
   // pays the buyer out manually (mobile money/cash) after approving the

@@ -22,6 +22,13 @@ interface OperatorRow {
   declaration: { declaredAmountCents: number; varianceCents: number; status: string; declaredAt: string } | null;
 }
 
+interface DigitalTopupRow {
+  walletCode: string;
+  amountCents: number;
+  airpayRef: string | null;
+  createdAt: string;
+}
+
 interface ReconciliationPayload {
   eventId: string;
   eventTitle: string;
@@ -36,6 +43,7 @@ interface ReconciliationPayload {
   };
   operators: OperatorRow[];
   unreconciledOperatorCount: number;
+  digitalTopups: DigitalTopupRow[];
 }
 
 const STATUS_LABEL: Record<FloatStatus, string> = {
@@ -209,6 +217,43 @@ export default function ReconciliationPage() {
         Variance = system total − declared float. Green at zero, amber under{" "}
         {formatCents(MINOR_VARIANCE_THRESHOLD_CENTS, c)}, red at or over it.
       </p>
+
+      <h2 className="mb-3 mt-10 font-semibold">Digital top-ups (AirPay)</h2>
+      {data.digitalTopups.length === 0 ? (
+        <div className="card p-8 text-center text-muted">No confirmed wallet top-ups recorded for this event.</div>
+      ) : (
+        <div className="card overflow-x-auto p-0">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
+                <th className="p-3">Wallet</th>
+                <th className="p-3 text-right">Amount</th>
+                <th className="p-3">AirPay reference</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {data.digitalTopups.map((t, i) => (
+                <tr key={i}>
+                  <td className="p-3 font-mono">{t.walletCode}</td>
+                  <td className="p-3 text-right tabular-nums">{formatCents(t.amountCents, c)}</td>
+                  <td className={`p-3 font-mono text-xs ${t.airpayRef ? "" : "text-warn"}`}>
+                    {t.airpayRef ?? "Missing — see AirPay reconciliation"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {user?.organizationRole === "OWNER" && (
+        <p className="mt-3 text-xs text-muted">
+          Full payment-method breakdown and exception review: see{" "}
+          <Link href={`/dashboard/events/${eventId}/airpay-reconciliation`} className="underline hover:text-foreground">
+            AirPay reconciliation
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }

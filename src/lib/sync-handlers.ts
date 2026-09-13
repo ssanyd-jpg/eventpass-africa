@@ -2035,6 +2035,7 @@ export function shapeWalletTransaction(t: any) {
     currency: t.currency,
     providerReference: t.providerReference,
     providerMessage: t.providerMessage,
+    airpayRef: t.airpayRef ?? null,
     phoneNumber: t.phoneNumber,
     mobileNetwork: t.mobileNetwork ?? null,
     note: t.note ?? null,
@@ -2648,6 +2649,10 @@ export async function handleTopupWallet(userId: string, payload: any) {
     providerReference: charge.reference || null,
     providerMessage: charge.message ?? null,
     phoneNumber: payload.phoneNumber ? String(payload.phoneNumber) : null,
+    // Session 18 — persisted so the AirPay reconciliation report can break
+    // top-up volume down by payment method; previously accepted here but
+    // never saved to the row.
+    mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : null,
     walletId: wallet.id,
   };
 
@@ -2663,7 +2668,9 @@ export async function handleTopupWallet(userId: string, payload: any) {
         include: walletInclude,
       });
       const transaction = await tx.walletTransaction.create({
-        data: { ...baseData, status: "COMPLETED" },
+        // airpayRef set only on confirmation (COMPLETED), never on a
+        // PENDING/FAILED row below — see the schema comment on this column.
+        data: { ...baseData, status: "COMPLETED", airpayRef: charge.reference || null },
         include: walletTxInclude,
       });
       return { updatedWallet, transaction };
@@ -2716,7 +2723,9 @@ export async function handleCheckTopupStatus(payload: any) {
     const updated = await prisma.$transaction(async (dbTx) => {
       const res = await dbTx.walletTransaction.updateMany({
         where: { id: tx.id, status: "PENDING" },
-        data: { status: "COMPLETED", providerMessage: result.message ?? null },
+        // airpayRef set here too — the poll-resolved confirmation path,
+        // mirrored from handleTopupWallet's instant-PAID branch above.
+        data: { status: "COMPLETED", providerMessage: result.message ?? null, airpayRef: result.reference || null },
       });
       if (res.count === 0) return null;
       const updatedWallet = await dbTx.wallet.update({

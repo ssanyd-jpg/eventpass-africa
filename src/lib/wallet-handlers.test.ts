@@ -24,8 +24,16 @@ import {
 // getActivePaymentProvider() always resolves to simulatedProvider (instant
 // PAID) — mocking it here is the only way to exercise the PENDING/FAILED
 // branches handleTopupWallet has to handle for when a real provider is
-// eventually configured.
-const mockInitiateCharge = vi.fn();
+// eventually configured. verifyAirpayOrder is imported directly from
+// @/lib/payments/airpay (not through getActivePaymentProvider()), so
+// handleCheckTopupStatus's poll-resolved branch needs its own separate
+// mock — same vi.hoisted two-mock pattern as sync-handlers.test.ts, for the
+// same reason (a second plain `const mock* = vi.fn()` doesn't reliably
+// hoist ahead of vi.mock's factory).
+const { mockInitiateCharge, mockVerifyAirpayOrder } = vi.hoisted(() => ({
+  mockInitiateCharge: vi.fn(),
+  mockVerifyAirpayOrder: vi.fn(),
+}));
 vi.mock("@/lib/payments", () => ({
   getActivePaymentProvider: () => ({
     name: "MOCK",
@@ -33,10 +41,14 @@ vi.mock("@/lib/payments", () => ({
     initiateCharge: mockInitiateCharge,
   }),
 }));
+vi.mock("@/lib/payments/airpay", () => ({
+  verifyAirpayOrder: mockVerifyAirpayOrder,
+}));
 
 beforeEach(() => {
   mockInitiateCharge.mockReset();
   mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
+  mockVerifyAirpayOrder.mockReset();
 });
 
 // Neon connection-pool drain — several tests in this file chain multiple
@@ -113,6 +125,47 @@ describe("handleTopupWallet", () => {
     expect(result.ok).toBe(true);
     expect(result.transaction.status).toBe("COMPLETED");
     expect(result.wallet.balanceCents).toBe(5000);
+  });
+
+  // Session 18 — airpayRef/mobileNetwork power the AirPay reconciliation
+  // report (src/lib/airpay-reconciliation.ts). airpayRef is set only on
+  // confirmation (never on a PENDING/FAILED row — see the schema comment).
+  it("persists mobileNetwork and sets airpayRef when a payment confirms instantly", async () => {
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id, { currency: event.currency });
+
+    const result = await handleTopupWallet(attendee.id, {
+      clientId: "topup-airpay-ref",
+      walletId: wallet.id,
+      amountCents: 5000,
+      mobileNetwork: "AIRTEL",
+    });
+
+    expect(result.transaction.mobileNetwork).toBe("AIRTEL");
+    expect(result.transaction.airpayRef).toBe("MOCK-REF");
+  });
+
+  it("leaves airpayRef null when the provider returns PENDING", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "MOCK-PENDING-REF" });
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+
+    const result = await handleTopupWallet(attendee.id, {
+      clientId: "topup-airpay-ref-pending",
+      walletId: wallet.id,
+      amountCents: 5000,
+    });
+
+    expect(result.transaction.status).toBe("PENDING");
+    expect(result.transaction.airpayRef).toBeNull();
   });
 
   it("does not touch the balance when the provider returns PENDING", async () => {
@@ -229,6 +282,27 @@ describe("handleCheckTopupStatus", () => {
     const result = await handleCheckTopupStatus({ clientId: "check-op-1", walletTransactionId: topup.transaction.id });
     expect(result.ok).toBe(true);
     expect(result.transaction.status).toBe("COMPLETED");
+  });
+
+  // Session 18 — the poll-resolved confirmation path (a real Airpay
+  // provider, not the simulator) sets airpayRef too, mirroring
+  // handleTopupWallet's instant-PAID branch above.
+  it("sets airpayRef when a PENDING top-up resolves to PAID via poll", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "MOCK-PENDING-REF" });
+    const organizer = await createTestUser();
+    const organization = await createTestOrganization();
+    await addMembership(organization.id, organizer.id);
+    const attendee = await createTestUser();
+    const event = await createTestEvent(organization.id);
+    const wallet = await createTestWallet(event.id, attendee.id);
+    const topup = await handleTopupWallet(attendee.id, { clientId: "check-resolve-airpay-ref", walletId: wallet.id, amountCents: 1000 });
+    expect(topup.transaction.airpayRef).toBeNull();
+
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "PAID", reference: "AIRPAY-CONFIRMED-REF" });
+    const result = await handleCheckTopupStatus({ clientId: "check-op-2", walletTransactionId: topup.transaction.id });
+
+    expect(result.transaction.status).toBe("COMPLETED");
+    expect(result.transaction.airpayRef).toBe("AIRPAY-CONFIRMED-REF");
   });
 });
 

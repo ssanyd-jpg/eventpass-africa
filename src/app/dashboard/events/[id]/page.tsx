@@ -256,6 +256,11 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/reconciliation`} className="btn-secondary">
             Reconciliation ↗
           </Link>
+          {user?.organizationRole === "OWNER" && (
+            <Link href={`/dashboard/events/${event.id}/airpay-reconciliation`} className="btn-secondary">
+              AirPay reconciliation ↗
+            </Link>
+          )}
           <Link href={`/dashboard/events/${event.id}/forecast`} className="btn-secondary">
             Revenue forecast ↗
           </Link>
