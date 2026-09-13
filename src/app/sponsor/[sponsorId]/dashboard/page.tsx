@@ -27,6 +27,19 @@ interface DashboardData {
   tapsByHour: { hour: string; count: number }[];
   campaignBreakdown: { id: string; name: string; redemptions: number }[];
   recentActivity: { id: string; createdAt: string; maskedCode: string }[];
+  campaignComparison: CampaignStat[] | null;
+}
+
+interface CampaignStat {
+  id: string;
+  name: string;
+  code: string;
+  totalRedemptions: number;
+  uniqueRedeemers: number;
+  redemptionRate: number;
+  averageTimeToRedeemMinutes: number | null;
+  relativePerformance: number;
+  isWinner: boolean;
 }
 
 function timeAgo(date: Date, now: Date): string {
@@ -151,6 +164,66 @@ export default function SponsorDashboardPage() {
           {stats.costPerVisitCents != null ? formatCents(stats.costPerVisitCents, currency) : "—"}
         </p>
       </div>
+
+      {/* Session 17 — only shown once there are 2+ active campaigns; the
+          API route returns campaignComparison: null otherwise (see
+          getSponsorCampaignComparison's `eligible` flag), same
+          hide-the-whole-section-when-not-applicable pattern the vendor
+          dashboard uses for its own optional blocks. */}
+      {data.campaignComparison && data.campaignComparison.length >= 2 && (
+        <>
+          <div className="mb-3 mt-6 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Campaign comparison</h2>
+            <a href={`/api/sponsor/${sponsorId}/campaigns/export`} className="text-sm font-medium text-accent-hover">
+              Export campaign results
+            </a>
+          </div>
+          <div className="space-y-3">
+            {data.campaignComparison.map((c) => (
+              <div key={c.id} className="card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold">
+                      {c.name}
+                      {c.isWinner && (
+                        <span className="ml-2 pill border-accent/40 bg-accent/10 text-accent-hover">Winner</span>
+                      )}
+                    </p>
+                    <p className="font-mono text-xs text-muted">{c.code}</p>
+                  </div>
+                  <p className="text-right text-2xl font-bold tabular-nums">
+                    {(c.redemptionRate * 100).toFixed(0)}%
+                  </p>
+                </div>
+
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface2">
+                  <div
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${Math.round(c.relativePerformance * 100)}%` }}
+                  />
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Redemptions</p>
+                    <p className="mt-0.5 font-semibold tabular-nums">{c.totalRedemptions}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Unique redeemers</p>
+                    <p className="mt-0.5 font-semibold tabular-nums">{c.uniqueRedeemers}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Avg. time to redeem</p>
+                    <p className="mt-0.5 font-semibold tabular-nums">
+                      {c.averageTimeToRedeemMinutes != null ? `${c.averageTimeToRedeemMinutes}m` : "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h2 className="mb-3 mt-6 text-lg font-bold">Live activity</h2>
       {data.recentActivity.length === 0 ? (

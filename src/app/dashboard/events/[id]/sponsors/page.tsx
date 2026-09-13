@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalSponsor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
+import { compareCampaigns } from "@/lib/sponsor-campaign-analytics";
 import { sendSponsorPortalLink } from "./actions";
 
 const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"];
@@ -57,6 +58,36 @@ export default function ManageSponsorsPage() {
     const counts: Record<string, number> = {};
     for (const c of all) counts[c.sponsorId] = (counts[c.sponsorId] ?? 0) + 1;
     return counts;
+  }, [sponsors]);
+
+  // Session 17 — top-performing campaign per sponsor, computed client-side
+  // from the same already-synced sponsorCampaigns/walletTransactions
+  // tables as leadCounts/campaignCounts above, reusing the exact
+  // compareCampaigns pure function the sponsor's own dashboard uses (it
+  // takes plain pre-fetched arrays, so it's safe to call directly here too
+  // — no second server round-trip just to show a one-line summary).
+  // Skipped for a sponsor with fewer than 2 active campaigns, same
+  // eligibility rule as the sponsor dashboard's own comparison section.
+  const topCampaignBySponsor = useLiveQuery(async () => {
+    if (!sponsors || sponsors.length === 0) return {};
+    const allCampaigns = await db.sponsorCampaigns.where("sponsorId").anyOf(sponsors.map((s) => s.id)).toArray();
+    const allTaps = await db.walletTransactions.where("type").equals("SPONSOR_TAP").toArray();
+
+    const result: Record<string, { name: string; redemptionRate: number } | null> = {};
+    for (const sponsor of sponsors) {
+      const activeCampaigns = allCampaigns.filter((c) => c.sponsorId === sponsor.id && c.active);
+      if (activeCampaigns.length < 2) {
+        result[sponsor.id] = null;
+        continue;
+      }
+      const taps = allTaps
+        .filter((t) => t.sponsorId === sponsor.id)
+        .map((t) => ({ walletId: t.walletId, campaignId: t.campaignId ?? null, createdAt: new Date(t.createdAt) }));
+      const stats = compareCampaigns(activeCampaigns, taps);
+      const top = stats.reduce((best, s) => (!best || s.redemptionRate > best.redemptionRate ? s : best), null as (typeof stats)[number] | null);
+      result[sponsor.id] = top ? { name: top.name, redemptionRate: top.redemptionRate } : null;
+    }
+    return result;
   }, [sponsors]);
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -205,6 +236,16 @@ export default function ManageSponsorsPage() {
                   {s.tier}
                   {s.feeCents > 0 && ` · ${formatCents(s.feeCents, s.currency)} (${s.feeStatus === "PAID" ? "paid" : s.feeStatus})`}
                 </p>
+                {/* Session 17 — a quick top-campaign readout so an organiser
+                    can share the winning message with a sponsor post-event
+                    without opening their full comparison view. Only shown
+                    once this sponsor has 2+ active campaigns to compare. */}
+                {topCampaignBySponsor?.[s.id] && (
+                  <p className="mt-0.5 text-xs font-medium text-accent-hover">
+                    Top campaign: {topCampaignBySponsor[s.id]!.name} (
+                    {Math.round(topCampaignBySponsor[s.id]!.redemptionRate * 100)}% redemption rate)
+                  </p>
+                )}
               </div>
               {/* Leads only exist once a sponsor has a real server id — a
                   still-pending-sync sponsor (local temp id) has no rows to
