@@ -271,18 +271,17 @@ export default function GateScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
 
   if (!event) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="font-semibold">Event not found on this device.</p>
+        <p className="font-semibold">{t("common.eventNotFound")}</p>
         <p className="mt-2 text-sm text-muted">
-          Open this event once while online so its ticket list downloads for
-          offline scanning.
+          {t("scan.eventNotFoundHint")}
         </p>
-        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">{t("common.backToDashboard")}</Link>
       </div>
     );
   }
@@ -319,7 +318,7 @@ export default function GateScannerPage() {
           ← {event.title}
         </Link>
         <Link href={`/scan/${event.id}/wallet`} className="text-sm font-medium text-accent-hover">
-          Charge wallets →
+          {t("scan.chargeWalletsLink")}
         </Link>
       </div>
 
@@ -402,7 +401,7 @@ export default function GateScannerPage() {
           {result.ticketTypeName && (
             <p className="text-sm text-muted">
               {result.ticketTypeName}
-              {result.boothNumber ? ` · Booth ${result.boothNumber}` : ""}
+              {result.boothNumber ? ` · ${t("common.boothNumber", { number: result.boothNumber })}` : ""}
             </p>
           )}
           <p
@@ -422,10 +421,10 @@ export default function GateScannerPage() {
             {result.message}
           </p>
           {(result.kind === "refunded" || result.kind === "paymentFailed") && (
-            <p className="mt-1 text-xs text-muted">Ask the holder for a valid ticket or alternate ID.</p>
+            <p className="mt-1 text-xs text-muted">{t("scan.refundedHint")}</p>
           )}
           {result.kind === "paymentPending" && (
-            <p className="mt-1 text-xs text-muted">Payment hasn&apos;t been confirmed yet — ask the holder to check their order.</p>
+            <p className="mt-1 text-xs text-muted">{t("scan.paymentPendingHint")}</p>
           )}
         </div>
       )}

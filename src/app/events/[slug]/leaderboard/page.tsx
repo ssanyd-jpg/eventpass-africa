@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useTranslation } from "@/lib/use-translation";
 
 interface LeaderRow {
   rank: number;
@@ -29,6 +30,7 @@ const POLL_INTERVAL_MS = 30000;
 // race-day results board someone might open on a phone with no account).
 export default function PublicLeaderboardPage() {
   const { slug } = useParams<{ slug: string }>();
+  const { t } = useTranslation();
 
   const [data, setData] = useState<LeaderboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,15 +43,15 @@ export default function PublicLeaderboardPage() {
       const res = await fetch(url, { cache: "no-store" });
       const body = await res.json();
       if (!body.ok) {
-        setError("Leaderboard not found.");
+        setError(t("leaderboard.notFound"));
         return;
       }
       setError(null);
       setData(body);
     } catch {
-      setError((prev) => prev ?? "Couldn't load the leaderboard.");
+      setError((prev) => prev ?? t("leaderboard.couldntLoad"));
     }
-  }, [slug, ticketTypeId]);
+  }, [slug, ticketTypeId, t]);
 
   useEffect(() => {
     load();
@@ -71,34 +73,34 @@ export default function PublicLeaderboardPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <p className="font-semibold">{error}</p>
-        <Link href="/" className="btn-secondary mt-6 inline-flex">Back home</Link>
+        <Link href="/" className="btn-secondary mt-6 inline-flex">{t("common.backHome")}</Link>
       </div>
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-8 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-muted">Live leaderboard</p>
+          <p className="text-sm text-muted">{t("leaderboard.live")}</p>
           <h1 className="text-2xl font-bold">{data.eventTitle}</h1>
         </div>
-        <button className="btn-secondary" onClick={share}>{copied ? "Link copied!" : "Share"}</button>
+        <button className="btn-secondary" onClick={share}>{copied ? t("leaderboard.linkCopied") : t("leaderboard.share")}</button>
       </div>
 
       {data.ticketTypes.length > 1 && (
         <div className="mt-4">
-          <label className="label" htmlFor="ticketType">Race</label>
+          <label className="label" htmlFor="ticketType">{t("leaderboard.raceLabel")}</label>
           <select
             id="ticketType"
             className="input"
             value={ticketTypeId}
             onChange={(e) => setTicketTypeId(e.target.value)}
           >
-            <option value="">All races</option>
+            <option value="">{t("leaderboard.allRaces")}</option>
             {data.ticketTypes.map((tt) => (
               <option key={tt.id} value={tt.id}>{tt.name}</option>
             ))}
@@ -106,36 +108,36 @@ export default function PublicLeaderboardPage() {
         </div>
       )}
 
-      <p className="mt-3 text-xs text-muted">Updates every 30 seconds · last updated {new Date(data.lastUpdated).toLocaleTimeString()}</p>
+      <p className="mt-3 text-xs text-muted">{t("leaderboard.updatesEvery", { time: new Date(data.lastUpdated).toLocaleTimeString() })}</p>
 
       {data.inProgress.length > 0 && (
         <>
-          <h2 className="mb-3 mt-6 font-semibold">On course</h2>
-          <LeaderTable rows={data.inProgress} />
+          <h2 className="mb-3 mt-6 font-semibold">{t("leaderboard.onCourse")}</h2>
+          <LeaderTable rows={data.inProgress} t={t} />
         </>
       )}
 
-      <h2 className="mb-3 mt-6 font-semibold">Finishers</h2>
+      <h2 className="mb-3 mt-6 font-semibold">{t("leaderboard.finishers")}</h2>
       {data.finishers.length === 0 ? (
-        <div className="card p-8 text-center text-muted">No finishers yet.</div>
+        <div className="card p-8 text-center text-muted">{t("leaderboard.noFinishers")}</div>
       ) : (
-        <LeaderTable rows={data.finishers} />
+        <LeaderTable rows={data.finishers} t={t} />
       )}
     </div>
   );
 }
 
-function LeaderTable({ rows }: { rows: LeaderRow[] }) {
+function LeaderTable({ rows, t }: { rows: LeaderRow[]; t: ReturnType<typeof useTranslation>["t"] }) {
   return (
     <div className="card overflow-x-auto p-0">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
-            <th className="p-3">Rank</th>
-            <th className="p-3">Athlete</th>
-            <th className="p-3">Bib</th>
-            <th className="p-3 text-right">Gun time</th>
-            <th className="p-3 text-right">Pace</th>
+            <th className="p-3">{t("leaderboard.rank")}</th>
+            <th className="p-3">{t("leaderboard.athlete")}</th>
+            <th className="p-3">{t("leaderboard.bib")}</th>
+            <th className="p-3 text-right">{t("leaderboard.gunTime")}</th>
+            <th className="p-3 text-right">{t("leaderboard.pace")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">

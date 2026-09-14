@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import QuestionFields from "@/components/QuestionFields";
 
@@ -22,6 +23,7 @@ export default function EventDetailPage() {
   const router = useRouter();
   const { user } = useAppSession();
   const online = useOnlineStatus();
+  const { t } = useTranslation();
   const events = useLiveQuery(() => db.events.toArray(), []);
   const event = events?.find((e) => e.slug === slug);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -71,17 +73,17 @@ export default function EventDetailPage() {
   const waiverOk = !event?.waiverText || waiverAccepted;
 
   if (events === undefined) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
 
   if (!event) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <p className="text-lg font-semibold">Event not found on this device.</p>
+        <p className="text-lg font-semibold">{t("common.eventNotFound")}</p>
         <p className="mt-2 text-sm text-muted">
-          It may not have synced here yet. Connect once and try again.
+          {t("event.notFoundHint")}
         </p>
-        <Link href="/" className="btn-secondary mt-6 inline-flex">Back to browse</Link>
+        <Link href="/" className="btn-secondary mt-6 inline-flex">{t("common.backToBrowse")}</Link>
       </div>
     );
   }
@@ -201,7 +203,7 @@ export default function EventDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-6 sm:px-6">
-      <Link href="/" className="text-sm text-muted hover:text-foreground">← Back to browse</Link>
+      <Link href="/" className="text-sm text-muted hover:text-foreground">← {t("common.backToBrowse")}</Link>
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-border">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -213,13 +215,13 @@ export default function EventDetailPage() {
           <div className="mb-3 flex items-center gap-2">
             <span className="pill">{event.category}</span>
             {event.status === "CANCELLED" && (
-              <span className="pill border-danger/40 bg-danger/10 text-danger">Cancelled</span>
+              <span className="pill border-danger/40 bg-danger/10 text-danger">{t("event.cancelledPill")}</span>
             )}
           </div>
           <h1 className="text-balance text-2xl font-bold sm:text-3xl">{event.title}</h1>
           <p className="mt-2 text-muted">{formatDateTime(event.startsAt)}</p>
           <p className="text-muted">{event.venue} · {event.city}</p>
-          <p className="mt-1 text-xs text-muted">Organized by {event.organizerName}</p>
+          <p className="mt-1 text-xs text-muted">{t("event.organizedBy", { name: event.organizerName })}</p>
           <p className="mt-6 whitespace-pre-line leading-relaxed text-foreground/90">
             {event.description}
           </p>
@@ -229,29 +231,29 @@ export default function EventDetailPage() {
               href="/account/wallet"
               className="mt-4 inline-flex text-sm font-medium text-accent-hover"
             >
-              Get a cashless wallet for this event →
+              {t("event.getWalletLink")}
             </Link>
           )}
 
           {(event.vendors.length > 0 || (event.vendorApplicationsOpen && new Date(event.startsAt) > new Date())) && (
             <div className="mt-8 border-t border-border pt-6">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-semibold">Vendors at this event</h2>
+                <h2 className="font-semibold">{t("event.vendorsHeading")}</h2>
                 {event.vendorApplicationsOpen && new Date(event.startsAt) > new Date() && (
                   <Link href={`/events/${slug}/vendors/apply`} className="text-sm font-medium text-accent-hover">
-                    Apply as a vendor →
+                    {t("event.applyAsVendor")}
                   </Link>
                 )}
               </div>
               {event.vendors.length === 0 ? (
-                <p className="text-sm text-muted">No vendors confirmed yet.</p>
+                <p className="text-sm text-muted">{t("event.noVendorsYet")}</p>
               ) : (
                 <ul className="space-y-2">
                   {event.vendors.map((v) => (
                     <li key={v.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
                       <span>{v.name}</span>
                       <span className="text-muted">
-                        {v.category}{v.boothNumber ? ` · Booth ${v.boothNumber}` : ""}
+                        {v.category}{v.boothNumber ? ` · ${t("common.boothNumber", { number: v.boothNumber })}` : ""}
                       </span>
                     </li>
                   ))}
@@ -263,17 +265,16 @@ export default function EventDetailPage() {
 
         {event.status === "CANCELLED" ? (
           <div className="card h-fit p-5">
-            <p className="font-semibold text-danger">This event has been cancelled.</p>
+            <p className="font-semibold text-danger">{t("event.cancelledCardTitle")}</p>
             <p className="mt-2 text-sm text-muted">
-              Tickets are no longer on sale. If you already have a ticket,
-              contact the organizer about a refund.
+              {t("event.cancelledCardBody")}
             </p>
           </div>
         ) : (
         <div className="card h-fit p-5">
           {step === "select" && (
             <>
-              <h2 className="mb-4 font-semibold">Select tickets</h2>
+              <h2 className="mb-4 font-semibold">{t("event.selectTickets")}</h2>
 
               <label className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface2 p-3 text-sm">
                 <input
@@ -281,21 +282,21 @@ export default function EventDetailPage() {
                   checked={isGroup}
                   onChange={(e) => setIsGroup(e.target.checked)}
                 />
-                Buying for a group?
+                {t("event.buyingForGroup")}
               </label>
               {isGroup && (
                 <div className="mb-4">
-                  <label className="label" htmlFor="groupName">Group name</label>
+                  <label className="label" htmlFor="groupName">{t("event.groupNameLabel")}</label>
                   <input
                     id="groupName"
                     className="input"
-                    placeholder="e.g. The Okonkwo Family"
+                    placeholder={t("event.groupNamePlaceholder")}
                     maxLength={120}
                     value={groupName}
                     onChange={(e) => setGroupName(e.target.value)}
                   />
                   <p className="mt-1 text-xs text-muted">
-                    Every ticket below will be named for one member and share one cashless wallet you top up and control.
+                    {t("event.groupNameHint")}
                   </p>
                 </div>
               )}
@@ -311,7 +312,7 @@ export default function EventDetailPage() {
                           <p className="font-medium">{tt.name}</p>
                           <p className="text-sm text-muted">{formatCents(tt.priceCents, event.currency)}</p>
                           <p className="text-xs text-muted">
-                            {remaining > 0 ? `${remaining} left` : "Sold out"}
+                            {remaining > 0 ? t("event.leftSuffix", { count: remaining }) : t("event.soldOut")}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -339,14 +340,14 @@ export default function EventDetailPage() {
 
               {isGroup && totalQty > 0 && (
                 <div className="mt-5 border-t border-border pt-4">
-                  <p className="label">Member names</p>
-                  <p className="mb-2 text-xs text-muted">One name per ticket — each gets its own wristband.</p>
+                  <p className="label">{t("event.memberNamesLabel")}</p>
+                  <p className="mb-2 text-xs text-muted">{t("event.memberNamesHint")}</p>
                   <div className="space-y-2">
                     {displayedMemberNames.map((name, i) => (
                       <input
                         key={i}
                         className="input"
-                        placeholder={`Ticket ${i + 1} — e.g. Asha`}
+                        placeholder={t("event.memberNamePlaceholder", { number: i + 1 })}
                         maxLength={80}
                         value={name}
                         onChange={(e) => setMemberName(i, e.target.value)}
@@ -357,7 +358,7 @@ export default function EventDetailPage() {
               )}
 
               <div className="mt-5 flex items-center justify-between text-sm">
-                <span className="text-muted">Total</span>
+                <span className="text-muted">{t("event.total")}</span>
                 <span className="font-semibold">{formatCents(totalCents, event.currency)}</span>
               </div>
               <button
@@ -365,14 +366,14 @@ export default function EventDetailPage() {
                 disabled={totalQty === 0 || !groupReady}
                 onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
               >
-                Continue
+                {t("event.continue")}
               </button>
             </>
           )}
 
           {step === "questions" && (
             <>
-              <h2 className="mb-4 font-semibold">A few questions</h2>
+              <h2 className="mb-4 font-semibold">{t("event.questionsHeading")}</h2>
               <div className="space-y-4">
                 <QuestionFields
                   questions={registrationQuestions}
@@ -382,7 +383,7 @@ export default function EventDetailPage() {
 
                 {event.waiverText && (
                   <div className="border-t border-border pt-4">
-                    <p className="label">Waiver</p>
+                    <p className="label">{t("event.waiverLabel")}</p>
                     <div className="max-h-40 overflow-y-auto whitespace-pre-line rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
                       {event.waiverText}
                     </div>
@@ -392,7 +393,7 @@ export default function EventDetailPage() {
                         checked={waiverAccepted}
                         onChange={(e) => setWaiverAccepted(e.target.checked)}
                       />
-                      I have read and accept this waiver.
+                      {t("event.waiverAccept")}
                     </label>
                   </div>
                 )}
@@ -400,14 +401,14 @@ export default function EventDetailPage() {
 
               <div className="mt-4 flex gap-2">
                 <button className="btn-secondary flex-1" onClick={() => setStep("select")}>
-                  Back
+                  {t("event.back")}
                 </button>
                 <button
                   className="btn-primary flex-1"
                   disabled={!answersValid || !waiverOk}
                   onClick={() => setStep("confirm")}
                 >
-                  Continue
+                  {t("event.continue")}
                 </button>
               </div>
             </>
@@ -415,12 +416,12 @@ export default function EventDetailPage() {
 
           {step === "confirm" && (
             <>
-              <h2 className="mb-4 font-semibold">Confirm & pay</h2>
+              <h2 className="mb-4 font-semibold">{t("event.confirmAndPay")}</h2>
               {isGroup && (
                 <div className="mb-4 rounded-lg border border-border bg-surface2 p-3 text-sm">
                   <p className="font-medium">{groupName.trim()}</p>
                   <p className="text-xs text-muted">
-                    {displayedMemberNames.join(", ")} — one shared wallet you top up and control.
+                    {t("event.groupWalletHint", { names: displayedMemberNames.join(", ") })}
                   </p>
                 </div>
               )}
@@ -432,29 +433,29 @@ export default function EventDetailPage() {
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                  <span>Total</span>
+                  <span>{t("event.total")}</span>
                   <span>{formatCents(totalCents, event.currency)}</span>
                 </div>
               </div>
 
               <div className="mt-4">
-                <label className="label" htmlFor="discountCode">Discount code (optional)</label>
+                <label className="label" htmlFor="discountCode">{t("event.discountCodeLabel")}</label>
                 <input
                   id="discountCode"
                   className="input"
-                  placeholder="e.g. EARLYBIRD"
+                  placeholder={t("event.discountCodePlaceholder")}
                   value={discountCode}
                   onChange={(e) => setDiscountCode(e.target.value)}
                 />
                 <p className="mt-1 text-xs text-muted">
-                  Applied at checkout — total may adjust once confirmed.
+                  {t("event.discountCodeHint")}
                 </p>
               </div>
 
               {online && (
                 <div className="mt-4 space-y-3">
                   <div>
-                    <label className="label" htmlFor="network">Mobile money network</label>
+                    <label className="label" htmlFor="network">{t("event.mobileNetworkLabel")}</label>
                     <select id="network" className="input" value={network} onChange={(e) => setNetwork(e.target.value)}>
                       {NETWORKS.map((n) => (
                         <option key={n.value} value={n.value}>{n.label}</option>
@@ -462,11 +463,11 @@ export default function EventDetailPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="label" htmlFor="phone">Phone number</label>
+                    <label className="label" htmlFor="phone">{t("event.phoneLabel")}</label>
                     <input
                       id="phone"
                       className="input"
-                      placeholder="e.g. 0712345678"
+                      placeholder={t("event.phonePlaceholder")}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                     />
@@ -475,27 +476,25 @@ export default function EventDetailPage() {
               )}
 
               <div className="mt-4 rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
-                {online
-                  ? "You'll get a mobile money prompt on your phone to confirm this payment. Your tickets are held until it's confirmed."
-                  : "Purchases complete instantly, even offline, and sync automatically when connected — the organizer will reconcile payment with you directly."}
+                {online ? t("event.onlinePaymentHint") : t("event.offlinePaymentHint")}
               </div>
 
               {!user && (
                 <p className="mt-3 text-xs text-warn">
-                  You&apos;ll need to log in to complete this purchase.
+                  {t("event.loginRequiredHint")}
                 </p>
               )}
 
               <div className="mt-4 flex gap-2">
                 <button className="btn-secondary flex-1" onClick={() => setStep(hasQuestionsStep ? "questions" : "select")}>
-                  Back
+                  {t("event.back")}
                 </button>
                 <button
                   className="btn-primary flex-1"
                   disabled={placing || (online && phone.trim().length < 6)}
                   onClick={placeOrder}
                 >
-                  {placing ? "Placing…" : user ? `Pay ${formatCents(totalCents, event.currency)}` : "Log in to pay"}
+                  {placing ? t("event.placing") : user ? t("event.payAmount", { amount: formatCents(totalCents, event.currency) }) : t("event.loginToPay")}
                 </button>
               </div>
             </>

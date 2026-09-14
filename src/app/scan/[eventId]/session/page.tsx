@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db, newLocalId, type LocalSessionAttendance } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatDateTime } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
@@ -24,6 +25,7 @@ export default function SessionAttendanceScannerPage() {
   const eventId = decodeURIComponent(rawEventId);
   const router = useRouter();
   const { user, status } = useAppSession();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}/session`);
@@ -73,7 +75,7 @@ export default function SessionAttendanceScannerPage() {
     const sessId = sessionIdRef.current;
     const eventSession = (sessionsRef.current ?? []).find((s) => s.id === sessId);
     if (!event || !eventSession) {
-      setError("Select a session first.");
+      setError(t("session.selectSessionFirst"));
       return;
     }
     setError(null);
@@ -91,7 +93,7 @@ export default function SessionAttendanceScannerPage() {
       eventSessionId: eventSession.id,
       eventSessionName: eventSession.name,
       credentialId: "",
-      attendeeName: "Recording…",
+      attendeeName: t("common.recordingPlaceholder"),
       ticketTypeName: "",
       recordedAt: recordedAt.toISOString(),
       syncStatus: "pending",
@@ -108,7 +110,7 @@ export default function SessionAttendanceScannerPage() {
       ticketCode: input.ticketCode,
       recordedAt: recordedAt.toISOString(),
     });
-  }, []);
+  }, [t]);
 
   const handleNfcDetect = useCallback((reading: NFCReading) => {
     if (reading.uid) recordTap({ nfcUid: reading.uid });
@@ -125,13 +127,13 @@ export default function SessionAttendanceScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
   if (!event) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="font-semibold">Event not found on this device.</p>
-        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+        <p className="font-semibold">{t("common.eventNotFound")}</p>
+        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">{t("common.backToDashboard")}</Link>
       </div>
     );
   }
@@ -141,19 +143,19 @@ export default function SessionAttendanceScannerPage() {
       <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
         ← {event.title}
       </Link>
-      <h1 className="mt-3 text-2xl font-bold">Session scanner</h1>
+      <h1 className="mt-3 text-2xl font-bold">{t("session.title")}</h1>
 
       <div className="card mt-4 p-5">
-        <label className="label" htmlFor="session">This device is scanning for</label>
+        <label className="label" htmlFor="session">{t("session.selectSessionLabel")}</label>
         <select id="session" className="input" value={eventSessionId} onChange={(e) => setEventSessionId(e.target.value)}>
-          {(sessions ?? []).length === 0 && <option value="">No sessions set up yet</option>}
+          {(sessions ?? []).length === 0 && <option value="">{t("session.noSessionsSetUp")}</option>}
           {(sessions ?? []).map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
         {activeSession && (
           <p className="mt-3 rounded-xl border border-ok/40 bg-ok/10 p-4 text-center">
-            <span className="block text-xs uppercase tracking-wide text-muted">Attendees in the room</span>
+            <span className="block text-xs uppercase tracking-wide text-muted">{t("session.attendeesInRoom")}</span>
             <span className="mt-1 block text-2xl font-bold tabular-nums">{activeSession.attendanceCount}</span>
           </p>
         )}
@@ -172,15 +174,15 @@ export default function SessionAttendanceScannerPage() {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Enter ticket code manually"
+          placeholder={t("session.enterCodeManually")}
           className="input font-mono uppercase tracking-widest"
         />
-        <button type="submit" className="btn-primary shrink-0">Record</button>
+        <button type="submit" className="btn-primary shrink-0">{t("session.record")}</button>
       </form>
 
-      <h2 className="mb-3 mt-8 font-semibold">Last 10 recorded here</h2>
+      <h2 className="mb-3 mt-8 font-semibold">{t("session.lastRecorded")}</h2>
       {(recent ?? []).length === 0 ? (
-        <div className="card p-6 text-center text-muted">Nothing recorded yet for this session.</div>
+        <div className="card p-6 text-center text-muted">{t("session.nothingRecorded")}</div>
       ) : (
         <div className="card divide-y divide-border">
           {(recent ?? []).map((a) => (
@@ -189,7 +191,7 @@ export default function SessionAttendanceScannerPage() {
                 <p className="font-medium">{a.attendeeName}</p>
                 <p className="text-xs text-muted">{a.ticketTypeName || "—"} · {formatDateTime(a.recordedAt)}</p>
               </div>
-              {a.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">Pending sync</span>}
+              {a.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>}
             </div>
           ))}
         </div>

@@ -7,12 +7,14 @@ import Link from "next/link";
 import { db, newLocalId, type LocalWallet } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatCents, generateTicketCode } from "@/lib/format";
 import { findCarryOverCandidate } from "@/lib/carry-over";
 
 export default function WalletListPage() {
   const { user, status } = useAppSession();
   const router = useRouter();
+  const { t } = useTranslation();
   const [registering, setRegistering] = useState<string | null>(null);
 
   const wallets = useLiveQuery(async () => {
@@ -60,7 +62,10 @@ export default function WalletListPage() {
       });
       if (candidate) {
         const accepted = window.confirm(
-          `You have ${formatCents(candidate.balanceCents, candidate.currency)} remaining from ${candidate.sourceEventTitle}. Would you like to use it at this event?`
+          t("walletAccount.carryOverPrompt", {
+            amount: formatCents(candidate.balanceCents, candidate.currency),
+            eventTitle: candidate.sourceEventTitle,
+          })
         );
         if (accepted) carryOver = { sourceWalletId: candidate.sourceWalletId };
       }

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp, flushOutbox, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
@@ -55,6 +56,7 @@ export default function WalletChargeTerminalPage() {
   const router = useRouter();
   const { user, status } = useAppSession();
   const online = useOnlineStatus();
+  const { t } = useTranslation();
 
   // Previously this page had no auth check at all. Middleware already
   // redirects GATE_CREW away from this route server-side; this covers the
@@ -143,13 +145,13 @@ export default function WalletChargeTerminalPage() {
   useEffect(() => {
     if (!pendingTapTx || pendingTapTx.syncStatus !== "synced") return;
     const message = pendingTapTx.campaignId
-      ? "Tap recorded. Coupon redeemed."
+      ? t("wallet.tapRecordedCouponRedeemed")
       : pendingTapTx.campaignRejectReason === "CAMPAIGN_ALREADY_REDEEMED"
-      ? "Tap recorded. Coupon already used by this attendee."
+      ? t("wallet.tapRecordedCouponUsed")
       : pendingTapTx.campaignRejectReason === "CAMPAIGN_MAX_REDEEMED"
-      ? "Tap recorded. Coupon fully redeemed."
+      ? t("wallet.tapRecordedCouponFull")
       : pendingTapTx.campaignRejectReason === "CAMPAIGN_EXPIRED" || pendingTapTx.campaignRejectReason === "CAMPAIGN_INACTIVE"
-      ? "Tap recorded. Coupon expired or inactive."
+      ? t("wallet.tapRecordedCouponExpired")
       : null;
     if (message) {
       // Only overwrite the banner if it's still showing THIS tap — staff
@@ -158,7 +160,7 @@ export default function WalletChargeTerminalPage() {
       setResult((r) => (r && r.tapClientId === pendingTapTx.clientId ? { ...r, message } : r));
     }
     setPendingTapClientId(null);
-  }, [pendingTapTx]);
+  }, [pendingTapTx, t]);
 
   // Refs so the scan handlers' identity stays stable across renders —
   // CameraScanner restarts its stream whenever onDetect changes, same
@@ -215,11 +217,11 @@ export default function WalletChargeTerminalPage() {
       return;
     }
     if (!vendorId) {
-      setResult({ kind: "invalid", message: "Pick which vendor you're charging for first.", code: normalized });
+      setResult({ kind: "invalid", message: t("wallet.pickVendorFirst"), code: normalized });
       return;
     }
     if (!amountCents || amountCents < 1) {
-      setResult({ kind: "invalid", message: "Enter an amount first.", code: normalized });
+      setResult({ kind: "invalid", message: t("wallet.enterAmountFirst"), code: normalized });
       return;
     }
 
@@ -244,14 +246,17 @@ export default function WalletChargeTerminalPage() {
     setBusy(false);
 
     if (!tx) {
-      setResult({ kind: "invalid", message: "Couldn't reach the server — check your connection and try again.", code: normalized });
+      setResult({ kind: "invalid", message: t("wallet.couldntReachServer"), code: normalized });
       return;
     }
     // Session 13 — a group wallet's confirmation names the group so staff
     // know it's a shared pool, not one person's own balance.
     const wallet = tx.walletId ? await db.wallets.get(tx.walletId) : undefined;
     const groupSuffix = wallet?.isGroupWallet
-      ? ` — ${wallet.groupName ?? "group"} shared wallet${tx.spentByMemberName ? ` (${tx.spentByMemberName})` : ""}`
+      ? t("wallet.groupWalletSuffix", {
+          groupName: wallet.groupName ?? t("wallet.groupFallbackName"),
+          memberSuffix: tx.spentByMemberName ? t("wallet.groupMemberSuffix", { name: tx.spentByMemberName }) : "",
+        })
       : "";
     if (tx.status === "FAILED") {
       // Session 15 — a plain insufficient-balance decline (the one exact
@@ -272,22 +277,22 @@ export default function WalletChargeTerminalPage() {
         });
         return;
       }
-      setResult({ kind: "declined", message: `Declined — insufficient balance.${groupSuffix}`, code: normalized });
+      setResult({ kind: "declined", message: t("wallet.declinedInsufficient", { groupSuffix }), code: normalized });
       return;
     }
     if (tx.status === "COMPLETED") {
-      setResult({ kind: "valid", message: `Charged ${formatCents(amountCents, tx.currency)}.${groupSuffix}`, code: normalized });
+      setResult({ kind: "valid", message: t("wallet.chargedMessage", { amount: formatCents(amountCents, tx.currency), groupSuffix }), code: normalized });
       return;
     }
-    setResult({ kind: "invalid", message: "Couldn't confirm this charge — try again.", code: normalized });
-  }, []);
+    setResult({ kind: "invalid", message: t("wallet.couldntConfirmCharge"), code: normalized });
+  }, [t]);
 
   const confirmSplitPayment = useCallback(async () => {
     const prompt = splitPrompt;
     const event = eventRef.current;
     if (!prompt || !event) return;
     if (!splitPhone.trim()) {
-      setResult({ kind: "invalid", message: "Enter the attendee's phone number for the top-up.", code: prompt.code });
+      setResult({ kind: "invalid", message: t("wallet.enterPhoneForTopUp"), code: prompt.code });
       return;
     }
 
@@ -316,24 +321,28 @@ export default function WalletChargeTerminalPage() {
     setSplitPhone("");
 
     if (!tx) {
-      setResult({ kind: "invalid", message: "Couldn't reach the server — check your connection and try again.", code: prompt.code });
+      setResult({ kind: "invalid", message: t("wallet.couldntReachServer"), code: prompt.code });
       return;
     }
     if (tx.status === "COMPLETED") {
       const networkLabel = NETWORKS.find((n) => n.value === splitNetwork)?.label ?? splitNetwork;
       setResult({
         kind: "valid",
-        message: `Split payment complete — ${formatCents(prompt.balanceCents, tx.currency)} from wristband + ${formatCents(prompt.topUpAmountCents, tx.currency)} via AirPay ${networkLabel}.`,
+        message: t("wallet.splitPaymentComplete", {
+          walletAmount: formatCents(prompt.balanceCents, tx.currency),
+          topUpAmount: formatCents(prompt.topUpAmountCents, tx.currency),
+          network: networkLabel,
+        }),
         code: prompt.code,
       });
       return;
     }
     setResult({
       kind: "declined",
-      message: tx.providerMessage ?? "Split payment didn't complete — try again.",
+      message: tx.providerMessage ?? t("wallet.splitPaymentFailed"),
       code: prompt.code,
     });
-  }, [splitPrompt, splitPhone, splitNetwork]);
+  }, [splitPrompt, splitPhone, splitNetwork, t]);
 
   const cancelSplitPayment = useCallback(() => {
     setSplitPrompt(null);
@@ -350,7 +359,7 @@ export default function WalletChargeTerminalPage() {
     const sponsorId = sponsorIdRef.current;
     if (!normalized || !event) return;
     if (!sponsorId) {
-      setResult({ kind: "invalid", message: "Pick which sponsor this tap is for first.", code: normalized });
+      setResult({ kind: "invalid", message: t("wallet.pickSponsorFirst"), code: normalized });
       return;
     }
 
@@ -366,7 +375,7 @@ export default function WalletChargeTerminalPage() {
       campaignId: campaignId || undefined,
     });
 
-    setResult({ kind: "recorded", message: "Tap recorded.", code: normalized, tapClientId: campaignId ? clientId : undefined });
+    setResult({ kind: "recorded", message: t("wallet.tapRecorded"), code: normalized, tapClientId: campaignId ? clientId : undefined });
     if (campaignId) setPendingTapClientId(clientId);
     // Reset for the next attendee — same discipline as the code input reset
     // in onSubmit below, applied here too since scanner-triggered taps
@@ -374,7 +383,7 @@ export default function WalletChargeTerminalPage() {
     setNote("");
     setShowNoteField(false);
     setCampaignId("");
-  }, []);
+  }, [t]);
 
   // Session 19 — exhibitor lead capture: no charge, no wallet involvement at
   // all, so this resolves an attendee's CREDENTIAL directly (nfcUid or a
@@ -389,7 +398,7 @@ export default function WalletChargeTerminalPage() {
     const displayCode = (input.ticketCode ?? input.nfcUid ?? "").toUpperCase();
     if (!event) return;
     if (!vendorId) {
-      setResult({ kind: "invalid", message: "Pick which exhibitor this lead is for first.", code: displayCode });
+      setResult({ kind: "invalid", message: t("wallet.pickExhibitorFirst"), code: displayCode });
       return;
     }
 
@@ -406,10 +415,10 @@ export default function WalletChargeTerminalPage() {
       notes: leadNoteRef.current.trim() || undefined,
     });
 
-    setResult({ kind: "leadCaptured", message: "Lead captured.", code: displayCode });
+    setResult({ kind: "leadCaptured", message: t("wallet.leadCaptured"), code: displayCode });
     setLeadNote("");
     setShowLeadNoteField(false);
-  }, []);
+  }, [t]);
 
   const activeHandler = useMemo(
     () =>
@@ -449,14 +458,12 @@ export default function WalletChargeTerminalPage() {
         const replaced = await isUidSuperseded(reading.uid, "wallet");
         setResult({
           kind: replaced ? "wristbandReplaced" : "notProvisioned",
-          message: replaced
-            ? "This wristband has been replaced — please visit the registration desk."
-            : "Wristband not provisioned — please visit the registration desk.",
+          message: replaced ? t("scan.wristbandReplaced") : t("scan.notProvisioned"),
           code: reading.uid,
         });
       }
     },
-    [activeHandler, captureLead]
+    [activeHandler, captureLead, t]
   );
 
   function onSubmit(e: React.FormEvent) {
@@ -469,13 +476,13 @@ export default function WalletChargeTerminalPage() {
   if (!user || user.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
   if (!event) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="font-semibold">Event not found on this device.</p>
-        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+        <p className="font-semibold">{t("common.eventNotFound")}</p>
+        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">{t("common.backToDashboard")}</Link>
       </div>
     );
   }
@@ -483,22 +490,22 @@ export default function WalletChargeTerminalPage() {
   return (
     <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
       <Link href={`/scan/${event.id}`} className="text-sm text-muted hover:text-foreground">
-        ← {event.title} gate scanner
+        ← {event.title} {t("wallet.backToGateScannerSuffix")}
       </Link>
-      <h1 className="mt-3 text-2xl font-bold">Wallet charge terminal</h1>
+      <h1 className="mt-3 text-2xl font-bold">{t("wallet.title")}</h1>
 
       <div className="mt-4 flex gap-2">
         <button
           className={mode === "sale" ? "btn-primary" : "btn-secondary"}
           onClick={() => { setMode("sale"); setResult(null); setSplitPrompt(null); }}
         >
-          Vendor sale
+          {t("wallet.modeSale")}
         </button>
         <button
           className={mode === "tap" ? "btn-primary" : "btn-secondary"}
           onClick={() => { setMode("tap"); setResult(null); setSplitPrompt(null); }}
         >
-          Sponsor tap
+          {t("wallet.modeTap")}
         </button>
         {/* Session 19 — exhibitor lead capture only makes sense for a
             CONFERENCE event, where vendors are exhibitors at booths rather
@@ -508,28 +515,28 @@ export default function WalletChargeTerminalPage() {
             className={mode === "lead" ? "btn-primary" : "btn-secondary"}
             onClick={() => { setMode("lead"); setResult(null); setSplitPrompt(null); }}
           >
-            Lead capture
+            {t("wallet.modeLead")}
           </button>
         )}
       </div>
 
       {!online && mode === "sale" && (
-        <p className="mt-3 text-sm text-warn">Charging requires an online connection — reconnect to continue.</p>
+        <p className="mt-3 text-sm text-warn">{t("wallet.offlineChargeWarning")}</p>
       )}
 
       {mode === "sale" ? (
         <div className="card mt-5 space-y-4 p-5">
           <div>
-            <label className="label" htmlFor="vendor">Charging as</label>
+            <label className="label" htmlFor="vendor">{t("wallet.chargingAsLabel")}</label>
             <select id="vendor" className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
-              <option value="">Select a vendor…</option>
+              <option value="">{t("wallet.selectVendor")}</option>
               {approvedVendors.map((v) => (
-                <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (Booth ${v.boothNumber})` : ""}</option>
+                <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (${t("common.boothNumber", { number: v.boothNumber })})` : ""}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="label" htmlFor="amount">Amount ({event.currency})</label>
+            <label className="label" htmlFor="amount">{t("wallet.amountLabel", { currency: event.currency })}</label>
             <input
               id="amount"
               type="number"
@@ -541,11 +548,11 @@ export default function WalletChargeTerminalPage() {
             />
           </div>
           <div>
-            <label className="label" htmlFor="item">What&rsquo;s being sold? (optional)</label>
+            <label className="label" htmlFor="item">{t("wallet.itemLabel")}</label>
             <input
               id="item"
               className="input"
-              placeholder="e.g. Grilled maize"
+              placeholder={t("wallet.itemPlaceholder")}
               maxLength={120}
               value={item}
               onChange={(e) => setItem(e.target.value)}
@@ -555,9 +562,9 @@ export default function WalletChargeTerminalPage() {
       ) : mode === "tap" ? (
         <div className="card mt-5 space-y-3 p-5">
           <div>
-            <label className="label" htmlFor="sponsor">Sponsor</label>
+            <label className="label" htmlFor="sponsor">{t("wallet.sponsorLabel")}</label>
             <select id="sponsor" className="input" value={sponsorId} onChange={(e) => setSponsorId(e.target.value)}>
-              <option value="">Select a sponsor…</option>
+              <option value="">{t("wallet.selectSponsor")}</option>
               {(sponsors ?? []).map((s) => (
                 <option key={s.id} value={s.id}>{s.name} ({s.tier})</option>
               ))}
@@ -565,9 +572,9 @@ export default function WalletChargeTerminalPage() {
           </div>
           {sponsorId && (
             <div>
-              <label className="label" htmlFor="campaign">Coupon</label>
+              <label className="label" htmlFor="campaign">{t("wallet.couponLabel")}</label>
               <select id="campaign" className="input" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
-                <option value="">No campaign — just a tap</option>
+                <option value="">{t("wallet.noCampaign")}</option>
                 {redeemableCampaigns.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
                 ))}
@@ -576,11 +583,11 @@ export default function WalletChargeTerminalPage() {
           )}
           {showNoteField ? (
             <div>
-              <label className="label" htmlFor="tapNote">Note (optional)</label>
+              <label className="label" htmlFor="tapNote">{t("wallet.noteLabel")}</label>
               <textarea
                 id="tapNote"
                 className="input min-h-16"
-                placeholder="e.g. interested in the Series A demo"
+                placeholder={t("wallet.tapNotePlaceholder")}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 maxLength={500}
@@ -592,28 +599,28 @@ export default function WalletChargeTerminalPage() {
               className="text-xs font-medium text-accent-hover"
               onClick={() => setShowNoteField(true)}
             >
-              + Add a note
+              {t("wallet.addNote")}
             </button>
           )}
         </div>
       ) : (
         <div className="card mt-5 space-y-3 p-5">
           <div>
-            <label className="label" htmlFor="exhibitor">Exhibitor</label>
+            <label className="label" htmlFor="exhibitor">{t("wallet.exhibitorLabel")}</label>
             <select id="exhibitor" className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
-              <option value="">Select an exhibitor…</option>
+              <option value="">{t("wallet.selectExhibitor")}</option>
               {approvedVendors.map((v) => (
-                <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (Booth ${v.boothNumber})` : ""}</option>
+                <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (${t("common.boothNumber", { number: v.boothNumber })})` : ""}</option>
               ))}
             </select>
           </div>
           {showLeadNoteField ? (
             <div>
-              <label className="label" htmlFor="leadNote">Note (optional)</label>
+              <label className="label" htmlFor="leadNote">{t("wallet.noteLabel")}</label>
               <textarea
                 id="leadNote"
                 className="input min-h-16"
-                placeholder="e.g. interested in the premium plan, follow up Monday"
+                placeholder={t("wallet.leadNotePlaceholder")}
                 value={leadNote}
                 onChange={(e) => setLeadNote(e.target.value)}
                 maxLength={500}
@@ -625,7 +632,7 @@ export default function WalletChargeTerminalPage() {
               className="text-xs font-medium text-accent-hover"
               onClick={() => setShowLeadNoteField(true)}
             >
-              + Add a note
+              {t("wallet.addNote")}
             </button>
           )}
         </div>
@@ -642,11 +649,11 @@ export default function WalletChargeTerminalPage() {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder={mode === "lead" ? "Enter or scan ticket code" : "Enter or scan wallet code"}
+          placeholder={mode === "lead" ? t("wallet.enterOrScanTicket") : t("wallet.enterOrScanWallet")}
           className="input font-mono uppercase tracking-widest"
         />
         <button type="submit" disabled={busy} className="btn-primary shrink-0">
-          {busy ? "…" : mode === "sale" ? "Charge" : mode === "tap" ? "Record tap" : "Capture lead"}
+          {busy ? "…" : mode === "sale" ? t("wallet.charge") : mode === "tap" ? t("wallet.recordTapButton") : t("wallet.captureLeadButton")}
         </button>
       </form>
 
@@ -654,15 +661,15 @@ export default function WalletChargeTerminalPage() {
         <div className="mt-5 rounded-xl border border-warn/40 bg-warn/10 p-5">
           <p className="font-mono text-sm font-bold tracking-widest">{splitPrompt.code}</p>
           <p className="mt-2 text-sm">
-            Your balance: <strong>{formatCents(splitPrompt.balanceCents, splitPrompt.currency)}</strong>. Amount due:{" "}
+            {t("wallet.yourBalanceLabel")} <strong>{formatCents(splitPrompt.balanceCents, splitPrompt.currency)}</strong>. {t("wallet.amountDueLabel")}{" "}
             <strong>{formatCents(splitPrompt.totalAmountCents, splitPrompt.currency)}</strong>.
           </p>
           <p className="mt-1 text-sm font-semibold text-warn">
-            Top up {formatCents(splitPrompt.topUpAmountCents, splitPrompt.currency)} to complete this purchase?
+            {t("wallet.topUpPrompt", { amount: formatCents(splitPrompt.topUpAmountCents, splitPrompt.currency) })}
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div>
-              <label className="label" htmlFor="splitNetwork">Network</label>
+              <label className="label" htmlFor="splitNetwork">{t("wallet.networkLabel")}</label>
               <select id="splitNetwork" className="input" value={splitNetwork} onChange={(e) => setSplitNetwork(e.target.value)}>
                 {NETWORKS.map((n) => (
                   <option key={n.value} value={n.value}>{n.label}</option>
@@ -670,7 +677,7 @@ export default function WalletChargeTerminalPage() {
               </select>
             </div>
             <div>
-              <label className="label" htmlFor="splitPhone">Attendee&rsquo;s phone</label>
+              <label className="label" htmlFor="splitPhone">{t("wallet.attendeePhoneLabel")}</label>
               <input
                 id="splitPhone"
                 className="input"
@@ -682,10 +689,10 @@ export default function WalletChargeTerminalPage() {
           </div>
           <div className="mt-4 flex gap-2">
             <button type="button" disabled={splitBusy} className="btn-primary flex-1" onClick={confirmSplitPayment}>
-              {splitBusy ? "…" : "Top up and pay"}
+              {splitBusy ? "…" : t("wallet.topUpAndPay")}
             </button>
             <button type="button" disabled={splitBusy} className="btn-secondary flex-1" onClick={cancelSplitPayment}>
-              Cancel
+              {t("wallet.cancel")}
             </button>
           </div>
         </div>

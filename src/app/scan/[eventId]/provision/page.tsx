@@ -327,13 +327,13 @@ export default function ProvisionPage() {
   if (user.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
   if (!event) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="font-semibold">Event not found on this device.</p>
-        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+        <p className="font-semibold">{t("common.eventNotFound")}</p>
+        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">{t("common.backToDashboard")}</Link>
       </div>
     );
   }

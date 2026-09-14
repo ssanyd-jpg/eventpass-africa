@@ -33,8 +33,19 @@ export function useLocaleState() {
 
 export function useTranslation() {
   const { locale, setLocale } = useContext(LocaleContext);
+  // Session 20 — optional {placeholder} interpolation, needed for messages
+  // that embed a dynamic amount/name/count (e.g. "Charged {amount}.") that
+  // a plain key lookup can't produce on its own. Existing single-argument
+  // call sites (`t("key")`) are unaffected.
   const t = useCallback(
-    (key: TranslationKey) => dictionaries[locale][key] ?? dictionaries.en[key] ?? key,
+    (key: TranslationKey, vars?: Record<string, string | number>) => {
+      const template = dictionaries[locale][key] ?? dictionaries.en[key] ?? key;
+      if (!vars) return template;
+      return Object.entries(vars).reduce(
+        (acc, [name, value]) => acc.replaceAll(`{${name}}`, String(value)),
+        template as string
+      );
+    },
     [locale]
   );
   return { t, locale, setLocale };

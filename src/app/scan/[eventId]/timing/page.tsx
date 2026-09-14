@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db, newLocalId, type LocalChipTime } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatElapsed, computeGunTimeOffsetSeconds } from "@/lib/timing";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
@@ -23,6 +24,7 @@ export default function TimingScannerPage() {
   const eventId = decodeURIComponent(rawEventId);
   const router = useRouter();
   const { user, status } = useAppSession();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}/timing`);
@@ -70,7 +72,7 @@ export default function TimingScannerPage() {
     const tpId = timingPointRef.current;
     const point = (timingPointsRef.current ?? []).find((p) => p.id === tpId);
     if (!event || !point) {
-      setError("Select a timing point first.");
+      setError(t("timing.selectPointFirst"));
       return;
     }
     setError(null);
@@ -93,7 +95,7 @@ export default function TimingScannerPage() {
       timingPointId: point.id,
       timingPointName: point.name,
       credentialId: "",
-      athleteName: "Recording…",
+      athleteName: t("common.recordingPlaceholder"),
       bib: input.nfcUid ? input.nfcUid.slice(-4).toUpperCase() : input.ticketCode ?? "",
       ticketTypeName: "",
       recordedAt: recordedAt.toISOString(),
@@ -113,7 +115,7 @@ export default function TimingScannerPage() {
       ticketCode: input.ticketCode,
       recordedAt: recordedAt.toISOString(),
     });
-  }, []);
+  }, [t]);
 
   const handleNfcDetect = useCallback((reading: NFCReading) => {
     if (reading.uid) recordTap({ nfcUid: reading.uid });
@@ -130,13 +132,13 @@ export default function TimingScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
   }
   if (!event) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="font-semibold">Event not found on this device.</p>
-        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">Back to dashboard</Link>
+        <p className="font-semibold">{t("common.eventNotFound")}</p>
+        <Link href="/dashboard" className="btn-secondary mt-6 inline-flex">{t("common.backToDashboard")}</Link>
       </div>
     );
   }
@@ -146,17 +148,17 @@ export default function TimingScannerPage() {
       <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
         ← {event.title}
       </Link>
-      <h1 className="mt-3 text-2xl font-bold">Timing scanner</h1>
+      <h1 className="mt-3 text-2xl font-bold">{t("timing.title")}</h1>
       {event.gunStartAt && (
         <p className="mt-1 text-sm text-muted">
-          Gun time: <span className="font-mono">{formatElapsed((Date.now() - new Date(event.gunStartAt).getTime()) / 1000)}</span>
+          {t("timing.gunTimeLabel")} <span className="font-mono">{formatElapsed((Date.now() - new Date(event.gunStartAt).getTime()) / 1000)}</span>
         </p>
       )}
 
       <div className="card mt-4 p-5">
-        <label className="label" htmlFor="timingPoint">This device is at</label>
+        <label className="label" htmlFor="timingPoint">{t("timing.selectPointLabel")}</label>
         <select id="timingPoint" className="input" value={timingPointId} onChange={(e) => setTimingPointId(e.target.value)}>
-          {(timingPoints ?? []).length === 0 && <option value="">No timing points set up yet</option>}
+          {(timingPoints ?? []).length === 0 && <option value="">{t("timing.noPointsSetUp")}</option>}
           {(timingPoints ?? []).map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
@@ -176,26 +178,26 @@ export default function TimingScannerPage() {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Enter ticket code manually"
+          placeholder={t("timing.enterCodeManually")}
           className="input font-mono uppercase tracking-widest"
         />
-        <button type="submit" className="btn-primary shrink-0">Record</button>
+        <button type="submit" className="btn-primary shrink-0">{t("timing.record")}</button>
       </form>
 
-      <h2 className="mb-3 mt-8 font-semibold">Last 10 recorded here</h2>
+      <h2 className="mb-3 mt-8 font-semibold">{t("timing.lastRecorded")}</h2>
       {(recent ?? []).length === 0 ? (
-        <div className="card p-6 text-center text-muted">Nothing recorded yet at this point.</div>
+        <div className="card p-6 text-center text-muted">{t("timing.nothingRecorded")}</div>
       ) : (
         <div className="card divide-y divide-border">
           {(recent ?? []).map((c) => (
             <div key={c.id} className="flex items-center justify-between p-3 text-sm">
               <div>
                 <p className="font-medium">{c.athleteName}</p>
-                <p className="text-xs text-muted">Bib {c.bib}{c.ticketTypeName ? ` · ${c.ticketTypeName}` : ""}</p>
+                <p className="text-xs text-muted">{t("timing.bibLabel", { bib: c.bib })}{c.ticketTypeName ? ` · ${c.ticketTypeName}` : ""}</p>
               </div>
               <div className="text-right">
                 <p className="font-mono">{c.gunTimeOffsetSeconds != null ? formatElapsed(c.gunTimeOffsetSeconds) : "—"}</p>
-                {c.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">Pending sync</span>}
+                {c.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>}
               </div>
             </div>
           ))}

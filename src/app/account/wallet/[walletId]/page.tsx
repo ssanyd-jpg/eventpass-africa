@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
+import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime } from "@/lib/format";
 import TicketQr from "@/components/TicketQr";
 
@@ -44,6 +45,7 @@ export default function WalletDetailPage() {
   const { walletId } = useParams<{ walletId: string }>();
   const router = useRouter();
   const { user, status } = useAppSession();
+  const { t } = useTranslation();
 
   const wallet = useLiveQuery(async () => db.wallets.get(walletId), [walletId]);
   const event = useLiveQuery(async () => (wallet ? db.events.get(wallet.eventId) : undefined), [wallet?.eventId]);
@@ -262,7 +264,7 @@ export default function WalletDetailPage() {
           <span className="pill border-warn/40 bg-warn/10 text-warn">Pending sync</span>
         )}
         {wallet.carryOverSourceWalletId && carryOverSourceEventTitle && (
-          <p className="text-xs text-muted">Carried over from {carryOverSourceEventTitle}</p>
+          <p className="text-xs text-muted">{t("walletAccount.carriedOverFrom", { eventTitle: carryOverSourceEventTitle })}</p>
         )}
         {wallet.isGroupWallet && (
           <Link href="/account/groups" className="text-xs font-medium text-accent-hover">
