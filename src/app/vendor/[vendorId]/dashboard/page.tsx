@@ -17,6 +17,7 @@ const SETTLEMENT_LABEL: Record<string, string> = { PENDING: "Pending", PROCESSIN
 interface DashboardData {
   vendorName: string;
   eventTitle: string;
+  eventType: string;
   currency: string;
   lastUpdated: string;
   stats: { todaysSalesTotalCents: number; transactionCount: number; averageTransactionCents: number };
@@ -24,6 +25,7 @@ interface DashboardData {
   topItems: { item: string; amountCents: number }[];
   settlement: { status: string; amountCents: number; processedAt: string | null };
   transactions: { id: string; createdAt: string; item: string | null; amountCents: number | null; status: string; walletCodeLast4: string }[];
+  leads: { id: string; capturedAt: string; attendeeName: string; notes: string | null }[];
 }
 
 function timeAgo(date: Date, now: Date): string {
@@ -185,6 +187,34 @@ export default function VendorDashboardPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {data.eventType === "CONFERENCE" && (
+        <>
+          <div className="mb-3 mt-6 flex items-center justify-between">
+            <h2 className="text-lg font-bold">My leads</h2>
+            <a href={`/api/vendor/${vendorId}/leads/export`} className="text-sm font-medium text-accent-hover underline">
+              Export CSV
+            </a>
+          </div>
+          {data.leads.length === 0 ? (
+            <div className="card p-6 text-center text-base text-muted">No leads captured yet.</div>
+          ) : (
+            <div className="card divide-y divide-border">
+              {data.leads.map((lead) => (
+                <div key={lead.id} className="p-4 text-base">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{lead.attendeeName}</span>
+                    <span className="text-sm text-muted">
+                      {new Date(lead.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  {lead.notes && <p className="mt-1 text-sm text-muted">{lead.notes}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

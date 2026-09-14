@@ -17,6 +17,7 @@ import {
   type LocalSponsorCampaign,
   type LocalCredential,
   type LocalTimingPoint,
+  type LocalConferenceSession,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -189,6 +190,15 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
     if (Array.isArray(data.myTimingPoints)) {
       await db.timingPoints.clear();
       await db.timingPoints.bulkPut(data.myTimingPoints as LocalTimingPoint[]);
+    }
+
+    // Session 19 — same full-replace discipline as timingPoints above,
+    // including the live attendanceCount aggregate (see myConferenceSessions
+    // in pull/route.ts) so the session scanner's "attendees in the room"
+    // count stays current on every ~20s pull, not just this device's own taps.
+    if (Array.isArray(data.myConferenceSessions)) {
+      await db.conferenceSessions.clear();
+      await db.conferenceSessions.bulkPut(data.myConferenceSessions as LocalConferenceSession[]);
     }
 
     if (Array.isArray(data.myWallets)) {
@@ -414,6 +424,16 @@ async function applyRecordChipTimeResult(payload: any, result: any) {
   const localId = payload.clientId as string;
   await db.chipTimes.delete(localId);
   await db.chipTimes.put({ ...result.chipTime, syncStatus: "synced" });
+}
+
+// Same optimistic-placeholder-replacement shape as applyRecordChipTimeResult
+// above — see the session scanner page for the optimistic LocalSessionAttendance
+// row this replaces.
+async function applyRecordSessionAttendanceResult(payload: any, result: any) {
+  if (!result?.ok || !result.attendance) return;
+  const localId = payload.clientId as string;
+  await db.sessionAttendances.delete(localId);
+  await db.sessionAttendances.put({ ...result.attendance, syncStatus: "synced" });
 }
 
 // Replaces the two optimistic LocalCredential rows written under the
@@ -650,6 +670,9 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "RECORD_CHIP_TIME":
           await applyRecordChipTimeResult(entry.payload, result);
+          break;
+        case "RECORD_SESSION_ATTENDANCE":
+          await applyRecordSessionAttendanceResult(entry.payload, result);
           break;
         case "PROVISION_CREDENTIAL":
           await applyProvisionCredentialResult(entry.payload, result);

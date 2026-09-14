@@ -14,6 +14,11 @@ const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   // Session 12 — timing operators at each mat are GATE_CREW, same
   // event-day-door-staff role as everyone else scanning at the gate.
   "RECORD_CHIP_TIME",
+  // Session 19 — conference session-door scanners are the same event-day
+  // door staff role. CAPTURE_EXHIBITOR_LEAD is deliberately NOT here — the
+  // wallet terminal (where lead capture lives) already blocks GATE_CREW
+  // client-side entirely, same as CHARGE_WALLET/SPONSOR_TAP.
+  "RECORD_SESSION_ATTENDANCE",
   "SELL_TICKETS",
   "APPLY_VENDOR",
   "CREATE_WALLET",

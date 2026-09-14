@@ -36,7 +36,8 @@ export type AuditAction =
   | "FLOAT_DECLARED"
   | "FORECAST_SAVED"
   | "TIMING_POINTS_SAVED"
-  | "GUN_STARTED";
+  | "GUN_STARTED"
+  | "CONFERENCE_SESSIONS_SAVED";
 
 interface LogAuditInput {
   organizationId: string;

@@ -399,6 +399,46 @@ export interface LocalChipTime {
   syncStatus: "synced" | "pending";
 }
 
+// Session 19 — a CONFERENCE event's talk/panel schedule. Organiser-authored
+// via a Server Action (session setup is a desk job, not a field outbox op —
+// same reasoning LocalTimingPoint's own comment gives), synced down like any
+// other event sub-resource. attendanceCount is a live server-computed
+// aggregate (every device's synced attendance, not just this one's — see
+// payload.myConferenceSessions in pull/route.ts), refreshed on the same
+// ~20s pull cadence as the rest of this app's "live" data.
+export interface LocalConferenceSession {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  eventClientId?: string | null;
+  name: string;
+  speaker: string | null;
+  location: string | null;
+  startsAt: string;
+  endsAt: string;
+  attendanceCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Session 19 — a session-scanner device's own recent taps, same "local-only,
+// this device's own history" scope as LocalChipTime (its own comment above
+// applies identically here: not synced down for every attendee/event, only
+// populated by this device's own successful RECORD_SESSION_ATTENDANCE
+// results).
+export interface LocalSessionAttendance {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  eventSessionId: string;
+  eventSessionName: string;
+  credentialId: string;
+  attendeeName: string;
+  ticketTypeName: string;
+  recordedAt: string;
+  syncStatus: "synced" | "pending";
+}
+
 export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
@@ -494,7 +534,9 @@ export type OutboxOpType =
   | "CANCEL_PENDING_ORDER"
   | "MARK_ORDER_PAID"
   | "CARRY_OVER_WALLET"
-  | "RECORD_CHIP_TIME";
+  | "RECORD_CHIP_TIME"
+  | "RECORD_SESSION_ATTENDANCE"
+  | "CAPTURE_EXHIBITOR_LEAD";
 
 export interface OutboxEntry {
   id?: number;
@@ -530,6 +572,8 @@ class EventPassAfricaDB extends Dexie {
   credentials!: Table<LocalCredential, string>;
   timingPoints!: Table<LocalTimingPoint, string>;
   chipTimes!: Table<LocalChipTime, string>;
+  conferenceSessions!: Table<LocalConferenceSession, string>;
+  sessionAttendances!: Table<LocalSessionAttendance, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -895,6 +939,31 @@ class EventPassAfricaDB extends Dexie {
       credentials: "id, nfcUid, ticketId, walletId, status",
       timingPoints: "id, clientId, eventId, sequenceOrder",
       chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
+    });
+    // New conferenceSessions table (see LocalConferenceSession above,
+    // mirrors timingPoints) and sessionAttendances table (mirrors chipTimes)
+    // for Session 19's conference features.
+    this.version(20).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+      timingPoints: "id, clientId, eventId, sequenceOrder",
+      chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
+      conferenceSessions: "id, clientId, eventId, startsAt",
+      sessionAttendances: "id, clientId, eventId, eventSessionId, recordedAt",
     });
   }
 }

@@ -6,6 +6,7 @@ const GATE_CREW_ALLOWED = [
   "CHECK_IN",
   "CHECK_IN_VENDOR",
   "RECORD_CHIP_TIME",
+  "RECORD_SESSION_ATTENDANCE",
   "SELL_TICKETS",
   "APPLY_VENDOR",
   "CREATE_WALLET",
@@ -25,6 +26,11 @@ describe("isOpAllowedForRole", () => {
 
   it("allows GATE_CREW to operate a marathon timing point", () => {
     expect(isOpAllowedForRole("GATE_CREW", "RECORD_CHIP_TIME")).toBe(true);
+  });
+
+  it("allows GATE_CREW to operate a conference session-door scanner, but not exhibitor lead capture", () => {
+    expect(isOpAllowedForRole("GATE_CREW", "RECORD_SESSION_ATTENDANCE")).toBe(true);
+    expect(isOpAllowedForRole("GATE_CREW", "CAPTURE_EXHIBITOR_LEAD")).toBe(false);
   });
 
   it("allows GATE_CREW the personal/self-scoped ops", () => {

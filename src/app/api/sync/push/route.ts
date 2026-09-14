@@ -33,6 +33,8 @@ import {
   handleSponsorTap,
   handleAddSponsorCampaign,
   handleDeactivateSponsorCampaign,
+  handleRecordSessionAttendance,
+  handleCaptureExhibitorLead,
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
 import { logAudit, buildSyncAuditEntry } from "@/lib/audit";
@@ -132,6 +134,12 @@ export async function POST(request: Request) {
         break;
       case "RECORD_CHIP_TIME":
         result = await handleRecordChipTime(session.user.organizationId, body.payload);
+        break;
+      case "RECORD_SESSION_ATTENDANCE":
+        result = await handleRecordSessionAttendance(session.user.organizationId, body.payload);
+        break;
+      case "CAPTURE_EXHIBITOR_LEAD":
+        result = await handleCaptureExhibitorLead(session.user.organizationId, body.payload);
         break;
       case "PROVISION_CREDENTIAL":
         result = await handleProvisionCredential(session.user.id, session.user.organizationId, body.payload);

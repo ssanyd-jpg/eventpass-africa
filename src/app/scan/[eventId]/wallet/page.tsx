@@ -39,7 +39,7 @@ type SplitPrompt = {
 };
 
 type TerminalResult = {
-  kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned" | "wristbandReplaced";
+  kind: "valid" | "declined" | "invalid" | "offline" | "recorded" | "notProvisioned" | "wristbandReplaced" | "leadCaptured";
   message: string;
   code: string;
   // Set only for a tap that selected a campaign — lets the reactive
@@ -64,7 +64,7 @@ export default function WalletChargeTerminalPage() {
     if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}/wallet`);
     if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
   }, [status, user, router, eventId]);
-  const [mode, setMode] = useState<"sale" | "tap">("sale");
+  const [mode, setMode] = useState<"sale" | "tap" | "lead">("sale");
   const [code, setCode] = useState("");
   const [amountMajor, setAmountMajor] = useState("");
   const [item, setItem] = useState("");
@@ -73,6 +73,12 @@ export default function WalletChargeTerminalPage() {
   const [campaignId, setCampaignId] = useState("");
   const [note, setNote] = useState("");
   const [showNoteField, setShowNoteField] = useState(false);
+  // Session 19 — exhibitor lead capture's own note, kept separate from the
+  // sponsor tap's `note` state above even though both render as the same
+  // "+ Add a note" textarea pattern, since the two modes' vendorId/sponsorId
+  // selections are already independent state.
+  const [leadNote, setLeadNote] = useState("");
+  const [showLeadNoteField, setShowLeadNoteField] = useState(false);
   const [result, setResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [splitPrompt, setSplitPrompt] = useState<SplitPrompt | null>(null);
@@ -161,6 +167,8 @@ export default function WalletChargeTerminalPage() {
   eventRef.current = event;
   const vendorIdRef = useRef(vendorId);
   vendorIdRef.current = vendorId;
+  const approvedVendorsRef = useRef(approvedVendors);
+  approvedVendorsRef.current = approvedVendors;
   const amountMajorRef = useRef(amountMajor);
   amountMajorRef.current = amountMajor;
   const itemRef = useRef(item);
@@ -171,6 +179,10 @@ export default function WalletChargeTerminalPage() {
   campaignIdRef.current = campaignId;
   const noteRef = useRef(note);
   noteRef.current = note;
+  const leadNoteRef = useRef(leadNote);
+  leadNoteRef.current = leadNote;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const onlineRef = useRef(online);
   onlineRef.current = online;
 
@@ -364,14 +376,64 @@ export default function WalletChargeTerminalPage() {
     setCampaignId("");
   }, []);
 
-  const activeHandler = mode === "sale" ? chargeWallet : recordTap;
+  // Session 19 — exhibitor lead capture: no charge, no wallet involvement at
+  // all, so this resolves an attendee's CREDENTIAL directly (nfcUid or a
+  // scanned ticket QR — same resolution the session/timing scanners use
+  // server-side, see resolveCredentialForTiming), never a wallet code the
+  // way chargeWallet/recordTap do. rawCode from CameraScanner/manual entry
+  // is always treated as a ticket code; handleNfcDetect below calls this
+  // with nfcUid directly instead, bypassing resolveCodeFromUid entirely.
+  const captureLead = useCallback(async (input: { ticketCode?: string; nfcUid?: string }) => {
+    const event = eventRef.current;
+    const vendorId = vendorIdRef.current;
+    const displayCode = (input.ticketCode ?? input.nfcUid ?? "").toUpperCase();
+    if (!event) return;
+    if (!vendorId) {
+      setResult({ kind: "invalid", message: "Pick which exhibitor this lead is for first.", code: displayCode });
+      return;
+    }
+
+    const clientId = newLocalId();
+    const vendor = (approvedVendorsRef.current ?? []).find((v) => v.id === vendorId);
+    await queueOp("CAPTURE_EXHIBITOR_LEAD", {
+      clientId,
+      eventId: event.id,
+      eventClientId: event.clientId,
+      vendorId,
+      vendorClientId: vendor?.clientId ?? undefined,
+      ticketCode: input.ticketCode,
+      nfcUid: input.nfcUid,
+      notes: leadNoteRef.current.trim() || undefined,
+    });
+
+    setResult({ kind: "leadCaptured", message: "Lead captured.", code: displayCode });
+    setLeadNote("");
+    setShowLeadNoteField(false);
+  }, []);
+
+  const activeHandler = useMemo(
+    () =>
+      mode === "sale"
+        ? chargeWallet
+        : mode === "tap"
+        ? recordTap
+        : (rawCode: string) => captureLead({ ticketCode: rawCode.trim().toUpperCase() }),
+    [mode, chargeWallet, recordTap, captureLead]
+  );
 
   // NFC uid resolution first (a wristband provisioned via /scan/[eventId]/
   // provision), falling back to the decoded NDEF text (a tag bound the old
   // way, via bindNfc() on the buyer's own wallet page) — chargeWallet/
   // recordTap themselves are untouched, they still just take a code string.
+  // Lead capture mode is the one exception: it needs the raw nfcUid itself
+  // (or the raw scanned ticket code), not a wallet-code resolution, so it
+  // branches out via modeRef before any of that.
   const handleNfcDetect = useCallback(
     async (reading: NFCReading) => {
+      if (modeRef.current === "lead") {
+        if (reading.uid) captureLead({ nfcUid: reading.uid });
+        return;
+      }
       const code = (reading.uid ? await resolveCodeFromUid(reading.uid, "wallet") : null) ?? reading.text;
       if (code) {
         // Session 13 — this same uid may also have a sibling ticket-linked
@@ -394,7 +456,7 @@ export default function WalletChargeTerminalPage() {
         });
       }
     },
-    [activeHandler]
+    [activeHandler, captureLead]
   );
 
   function onSubmit(e: React.FormEvent) {
@@ -438,6 +500,17 @@ export default function WalletChargeTerminalPage() {
         >
           Sponsor tap
         </button>
+        {/* Session 19 — exhibitor lead capture only makes sense for a
+            CONFERENCE event, where vendors are exhibitors at booths rather
+            than food/merch stalls. */}
+        {event.eventType === "CONFERENCE" && (
+          <button
+            className={mode === "lead" ? "btn-primary" : "btn-secondary"}
+            onClick={() => { setMode("lead"); setResult(null); setSplitPrompt(null); }}
+          >
+            Lead capture
+          </button>
+        )}
       </div>
 
       {!online && mode === "sale" && (
@@ -479,7 +552,7 @@ export default function WalletChargeTerminalPage() {
             />
           </div>
         </div>
-      ) : (
+      ) : mode === "tap" ? (
         <div className="card mt-5 space-y-3 p-5">
           <div>
             <label className="label" htmlFor="sponsor">Sponsor</label>
@@ -523,6 +596,39 @@ export default function WalletChargeTerminalPage() {
             </button>
           )}
         </div>
+      ) : (
+        <div className="card mt-5 space-y-3 p-5">
+          <div>
+            <label className="label" htmlFor="exhibitor">Exhibitor</label>
+            <select id="exhibitor" className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+              <option value="">Select an exhibitor…</option>
+              {approvedVendors.map((v) => (
+                <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (Booth ${v.boothNumber})` : ""}</option>
+              ))}
+            </select>
+          </div>
+          {showLeadNoteField ? (
+            <div>
+              <label className="label" htmlFor="leadNote">Note (optional)</label>
+              <textarea
+                id="leadNote"
+                className="input min-h-16"
+                placeholder="e.g. interested in the premium plan, follow up Monday"
+                value={leadNote}
+                onChange={(e) => setLeadNote(e.target.value)}
+                maxLength={500}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="text-xs font-medium text-accent-hover"
+              onClick={() => setShowLeadNoteField(true)}
+            >
+              + Add a note
+            </button>
+          )}
+        </div>
       )}
 
       <div className="mt-5">
@@ -536,11 +642,11 @@ export default function WalletChargeTerminalPage() {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Enter or scan wallet code"
+          placeholder={mode === "lead" ? "Enter or scan ticket code" : "Enter or scan wallet code"}
           className="input font-mono uppercase tracking-widest"
         />
         <button type="submit" disabled={busy} className="btn-primary shrink-0">
-          {busy ? "…" : mode === "sale" ? "Charge" : "Record tap"}
+          {busy ? "…" : mode === "sale" ? "Charge" : mode === "tap" ? "Record tap" : "Capture lead"}
         </button>
       </form>
 
@@ -588,7 +694,7 @@ export default function WalletChargeTerminalPage() {
       {!splitPrompt && result && (
         <div
           className={`mt-5 rounded-xl border p-5 text-center ${
-            result.kind === "valid" || result.kind === "recorded"
+            result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured"
               ? "border-ok/40 bg-ok/10"
               : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
               ? "border-warn/40 bg-warn/10"
@@ -598,14 +704,14 @@ export default function WalletChargeTerminalPage() {
           <p className="font-mono text-lg font-bold tracking-widest">{result.code}</p>
           <p
             className={`mt-1 text-lg font-semibold ${
-              result.kind === "valid" || result.kind === "recorded"
+              result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured"
                 ? "text-ok"
                 : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
                 ? "text-warn"
                 : "text-danger"
             }`}
           >
-            {result.kind === "valid" || result.kind === "recorded" ? "✓ " : "✕ "}
+            {result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured" ? "✓ " : "✕ "}
             {result.message}
           </p>
         </div>

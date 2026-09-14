@@ -13,6 +13,7 @@ import { detectOrderAnomalies } from "@/lib/anomaly";
 import { scoreOrderRisk, type RiskBand } from "@/lib/risk";
 import BarSeries from "@/components/charts/BarSeries";
 import TimingSetupSection from "@/components/TimingSetupSection";
+import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -269,6 +270,16 @@ export default function ManageEventPage() {
               Timing ↗
             </Link>
           )}
+          {event.eventType === "CONFERENCE" && (
+            <>
+              <Link href={`/dashboard/events/${event.id}/sessions`} className="btn-secondary">
+                Sessions ↗
+              </Link>
+              <Link href={`/scan/${event.id}/session`} className="btn-secondary">
+                Session scanner ↗
+              </Link>
+            </>
+          )}
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
         </div>
@@ -283,6 +294,8 @@ export default function ManageEventPage() {
       {event.eventType === "MARATHON" && (
         <TimingSetupSection eventId={event.id} eventTitle={event.title} gunStartAt={event.gunStartAt} />
       )}
+
+      {event.eventType === "CONFERENCE" && <ConferenceSessionsSection eventId={event.id} />}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card p-5">

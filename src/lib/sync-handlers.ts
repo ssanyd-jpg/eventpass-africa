@@ -451,6 +451,47 @@ export const payloadSchemas = {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either nfcUid or ticketCode is required." });
       }
     }),
+  // Session 19 — a session scanner's tap into ONE conference session. Same
+  // nfcUid-or-ticketCode shape as RECORD_CHIP_TIME above, resolved to the
+  // exact same kind of credential (see resolveCredentialForTiming, reused
+  // as-is by handleRecordSessionAttendance).
+  RECORD_SESSION_ATTENDANCE: z
+    .object({
+      clientId: z.string().min(1),
+      eventId: z.string().min(1),
+      eventClientId: z.string().nullable().optional(),
+      eventSessionId: z.string().min(1),
+      eventSessionClientId: z.string().nullable().optional(),
+      nfcUid: z.string().min(1).optional(),
+      ticketCode: z.string().min(1).max(40).optional(),
+      recordedAt: z.string().min(1),
+    })
+    .superRefine((val, ctx) => {
+      if (!val.nfcUid && !val.ticketCode) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either nfcUid or ticketCode is required." });
+      }
+    }),
+  // Session 19 — an exhibitor's lead-capture tap at their booth. Resolved
+  // the same nfcUid-or-ticketCode way as a session/timing tap — never a
+  // wallet code, since capturing a lead has nothing to do with the
+  // attendee's wallet (contrast SPONSOR_TAP, which is walletCode-based
+  // because it's tied to redemption-cap bookkeeping on the wallet itself).
+  CAPTURE_EXHIBITOR_LEAD: z
+    .object({
+      clientId: z.string().min(1),
+      eventId: z.string().min(1),
+      eventClientId: z.string().nullable().optional(),
+      vendorId: z.string().min(1),
+      vendorClientId: z.string().nullable().optional(),
+      nfcUid: z.string().min(1).optional(),
+      ticketCode: z.string().min(1).max(40).optional(),
+      notes: z.string().trim().max(500).nullable().optional(),
+    })
+    .superRefine((val, ctx) => {
+      if (!val.nfcUid && !val.ticketCode) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Either nfcUid or ticketCode is required." });
+      }
+    }),
 } as const;
 
 async function resolveEventId(eventId: string, eventClientId?: string | null) {
@@ -3603,5 +3644,189 @@ export async function handleRecordChipTime(organizationId: string, payload: any)
         timingPointName: fresh.timingPoint.name,
       }),
     };
+  }
+}
+
+// ---------- Session 19: conference sessions, attendance, exhibitor leads ----------
+
+function shapeSessionAttendance(
+  a: any,
+  extra: { attendeeName: string; ticketTypeName: string; eventSessionName: string }
+) {
+  return {
+    id: a.id,
+    clientId: a.clientId,
+    eventId: a.eventId,
+    eventSessionId: a.eventSessionId,
+    eventSessionName: extra.eventSessionName,
+    credentialId: a.credentialId,
+    attendeeName: extra.attendeeName,
+    ticketTypeName: extra.ticketTypeName,
+    recordedAt: a.recordedAt.toISOString(),
+    syncedAt: a.syncedAt ? a.syncedAt.toISOString() : null,
+  };
+}
+
+// A session-scanner tap and a timing-mat tap resolve an attendee's
+// credential the exact same way — nfcUid or ticketCode, landing on their
+// ACTIVE ticket-linked Credential — so this reuses resolveCredentialForTiming
+// as-is rather than duplicating it under a second name.
+export async function handleRecordSessionAttendance(organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.sessionAttendance.findUnique({ where: { clientId } });
+  if (existing) {
+    return recordedSessionAttendanceResult(existing.id);
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const eventSession =
+    (await prisma.conferenceSession.findUnique({ where: { id: String(payload.eventSessionId) } })) ??
+    (payload.eventSessionClientId
+      ? await prisma.conferenceSession.findUnique({ where: { clientId: String(payload.eventSessionClientId) } })
+      : null);
+  if (!eventSession || eventSession.eventId !== event.id) {
+    return { ok: false, retry: true, reason: "SESSION_NOT_SYNCED_YET" };
+  }
+
+  const credential = await resolveCredentialForTiming(organizationId, payload);
+  if (!credential) {
+    return { ok: false, reason: "CREDENTIAL_NOT_FOUND" };
+  }
+
+  // One tap per attendee per session — a re-scan of the same wristband at
+  // the same room door returns the existing row rather than erroring or
+  // duplicating (the @@unique([credentialId, eventSessionId]) constraint
+  // backs this at the DB level too), same discipline as handleRecordChipTime.
+  const existingAtSession = await prisma.sessionAttendance.findUnique({
+    where: { credentialId_eventSessionId: { credentialId: credential.id, eventSessionId: eventSession.id } },
+  });
+  if (existingAtSession) {
+    return recordedSessionAttendanceResult(existingAtSession.id);
+  }
+
+  const created = await prisma.sessionAttendance.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      eventSessionId: eventSession.id,
+      credentialId: credential.id,
+      recordedAt: new Date(payload.recordedAt),
+      syncedAt: new Date(),
+    },
+  });
+
+  return recordedSessionAttendanceResult(created.id);
+
+  // Shared shaping path for the fresh-create, replay, and already-at-this-
+  // session cases above — same reasoning handleRecordChipTime's own
+  // recordedChipTimeResult uses.
+  async function recordedSessionAttendanceResult(attendanceId: string) {
+    const fresh = await prisma.sessionAttendance.findUniqueOrThrow({
+      where: { id: attendanceId },
+      include: {
+        eventSession: { select: { name: true } },
+        credential: {
+          include: {
+            ticket: {
+              include: {
+                ticketType: { select: { name: true } },
+                order: { select: { userId: true, user: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const ticket = fresh.credential.ticket;
+    const attendeeName = ticket
+      ? ticket.currentHolderUserId
+        ? (await prisma.user.findUnique({ where: { id: ticket.currentHolderUserId }, select: { name: true } }))?.name ?? ticket.order.user.name
+        : ticket.order.user.name
+      : "Unknown attendee";
+    return {
+      ok: true as const,
+      attendance: shapeSessionAttendance(fresh, {
+        attendeeName,
+        ticketTypeName: ticket?.ticketType.name ?? "",
+        eventSessionName: fresh.eventSession.name,
+      }),
+    };
+  }
+}
+
+function shapeExhibitorLead(l: any, extra: { attendeeName: string }) {
+  return {
+    id: l.id,
+    clientId: l.clientId,
+    eventId: l.eventId,
+    vendorId: l.vendorId,
+    credentialId: l.credentialId,
+    attendeeName: extra.attendeeName,
+    notes: l.notes,
+    capturedAt: l.capturedAt.toISOString(),
+  };
+}
+
+export async function handleCaptureExhibitorLead(organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.exhibitorLead.findUnique({ where: { clientId } });
+  if (existing) {
+    return capturedExhibitorLeadResult(existing.id);
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  const vendor =
+    (await prisma.vendor.findUnique({ where: { id: String(payload.vendorId) } })) ??
+    (payload.vendorClientId
+      ? await prisma.vendor.findUnique({ where: { clientId: String(payload.vendorClientId) } })
+      : null);
+  if (!vendor || vendor.eventId !== event.id) {
+    return { ok: false, retry: true, reason: "VENDOR_NOT_SYNCED_YET" };
+  }
+
+  const credential = await resolveCredentialForTiming(organizationId, payload);
+  if (!credential) {
+    return { ok: false, reason: "CREDENTIAL_NOT_FOUND" };
+  }
+
+  const created = await prisma.exhibitorLead.create({
+    data: {
+      clientId,
+      eventId: event.id,
+      vendorId: vendor.id,
+      credentialId: credential.id,
+      notes: payload.notes ? String(payload.notes).trim() || null : null,
+    },
+  });
+
+  return capturedExhibitorLeadResult(created.id);
+
+  async function capturedExhibitorLeadResult(leadId: string) {
+    const fresh = await prisma.exhibitorLead.findUniqueOrThrow({
+      where: { id: leadId },
+      include: {
+        credential: {
+          include: { ticket: { include: { order: { select: { user: { select: { name: true } } } } } } },
+        },
+      },
+    });
+    const attendeeName = fresh.credential.ticket?.order.user.name ?? "Unknown attendee";
+    return { ok: true as const, lead: shapeExhibitorLead(fresh, { attendeeName }) };
   }
 }

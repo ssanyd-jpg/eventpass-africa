@@ -33,6 +33,7 @@ const ACTION_LABEL: Record<string, string> = {
   FORECAST_SAVED: "Revenue forecast saved",
   TIMING_POINTS_SAVED: "Timing points saved",
   GUN_STARTED: "Start gun fired",
+  CONFERENCE_SESSIONS_SAVED: "Conference sessions saved",
 };
 
 // Server-rendered, non-offline — same reasoning as dashboard/team/page.tsx:

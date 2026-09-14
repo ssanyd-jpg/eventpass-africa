@@ -375,6 +375,32 @@ export async function GET(request: Request) {
       updatedAt: p.updatedAt.toISOString(),
     }));
 
+    // Session 19 — a CONFERENCE event's session schedule, same
+    // organiser/staff-scoped, synced-everywhere-read-only shape as
+    // myTimingPoints above. attendanceCount is a live server-side aggregate
+    // (every device's synced taps, not just the pulling device's own) so the
+    // session scanner's "attendees in the room" count reflects the whole
+    // room, refreshed on the same pull cadence as everything else here.
+    const myConferenceSessions = await prisma.conferenceSession.findMany({
+      where: { event: { organizationId } },
+      include: { event: { select: { id: true, clientId: true } }, _count: { select: { attendances: true } } },
+      orderBy: [{ eventId: "asc" }, { startsAt: "asc" }],
+    });
+    payload.myConferenceSessions = myConferenceSessions.map((s) => ({
+      id: s.id,
+      clientId: s.clientId,
+      eventId: s.eventId,
+      eventClientId: s.event.clientId,
+      name: s.name,
+      speaker: s.speaker,
+      location: s.location,
+      startsAt: s.startsAt.toISOString(),
+      endsAt: s.endsAt.toISOString(),
+      attendanceCount: s._count.attendances,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    }));
+
     const accounts = await prisma.mobileMoneyAccount.findMany({
       where: { organizationId },
     });

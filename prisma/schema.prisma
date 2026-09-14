@@ -277,6 +277,8 @@ model Credential {
   vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   chipTimes ChipTime[]
+  sessionAttendances SessionAttendance[]
+  exhibitorLeads     ExhibitorLead[]
 
   @@index([organizationId, ticketId])
   @@index([organizationId, walletId])
@@ -618,6 +620,11 @@ model Event {
   timingPoints          TimingPoint[]
   chipTimes             ChipTime[]
   ticketGroups          TicketGroup[]
+  // Session 19 — CONFERENCE-only, same "exists on every event, only
+  // populated/used when eventType matches" convention as timingPoints above.
+  conferenceSessions    ConferenceSession[]
+  sessionAttendances    SessionAttendance[]
+  exhibitorLeads        ExhibitorLead[]
 }
 
 // Session 13 — group/family ticketing: one buyer (the lead) purchases
@@ -718,6 +725,65 @@ model ChipTime {
   // find-before-create guard, which this backs at the DB level too).
   @@unique([credentialId, timingPointId])
   @@index([eventId, timingPointId])
+}
+
+// Session 19 — one talk/panel/workshop slot at a CONFERENCE event. Same
+// organiser-authored-via-Server-Action, synced-down-read-only-everywhere-
+// else shape as TimingPoint (session setup is a desk job, not a field
+// outbox op) — clientId follows the same replay-safe upsert-by-clientId
+// convention TimingPoint's own saveTimingPoints uses, even though the
+// literal Session 19 spec didn't list it: every other outbox-adjacent,
+// bulk-upserted entity in this schema has one (see Credential's own comment
+// for the sole deliberate exception, which this isn't).
+model ConferenceSession {
+  id        String   @id @default(cuid())
+  clientId  String?  @unique
+  name      String
+  speaker   String?
+  location  String?
+  startsAt  DateTime
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  attendances SessionAttendance[]
+
+  @@index([eventId, startsAt])
+}
+
+// Session 19 — one NFC/QR tap of an attendee's wristband into a specific
+// conference session, same shape as ChipTime (its own schema comment on
+// clientId/credentialId applies here identically): clientId is the offline-
+// outbox idempotency key, credentialId resolves to the SAME ticket-linked
+// Credential a timing tap would (see resolveCredentialForTiming, reused
+// as-is by handleRecordSessionAttendance). recordedAt is the scanning
+// device's own clock, syncedAt is when the server actually saw it — a
+// device that was offline for the tap may sync well after recordedAt.
+// eventId is denormalized from eventSessionId (same reasoning ChipTime
+// denormalizes eventId from timingPointId) purely for query scoping.
+model SessionAttendance {
+  id         String    @id @default(cuid())
+  clientId   String?   @unique
+  recordedAt DateTime
+  syncedAt   DateTime?
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  eventSessionId String
+  eventSession   ConferenceSession @relation(fields: [eventSessionId], references: [id], onDelete: Cascade)
+
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  // One tap per attendee per session — a re-scan (tag held too long, staff
+  // double-tap) must never create a second row, same discipline as
+  // ChipTime's own @@unique([credentialId, timingPointId]).
+  @@unique([credentialId, eventSessionId])
+  @@index([eventId, eventSessionId])
 }
 
 model TicketType {
@@ -910,6 +976,7 @@ model Vendor {
   walletSales      WalletTransaction[]
   credentials      Credential[]
   magicLinkTokens  VendorMagicLinkToken[]
+  exhibitorLeads   ExhibitorLead[]
 }
 
 // Same hashed-token + expiry shape as PasswordResetToken/OrganizationInvite
@@ -926,6 +993,38 @@ model VendorMagicLinkToken {
 
   vendorId String
   vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+// Session 19 — a CONFERENCE exhibitor's contact capture: an NFC/QR tap at
+// their booth, no charge involved (contrast WalletTransaction's SALE type,
+// which IS a charge). Deliberately its own model rather than another
+// WalletTransaction type — a lead has no amountCents/wallet involvement at
+// all, unlike SPONSOR_TAP (which does reuse WalletTransaction, tied to the
+// attendee's wallet for redemption-cap bookkeeping a lead has no equivalent
+// of). credentialId resolves the same way a timing/session tap does (see
+// resolveCredentialForTiming) — nfcUid or a scanned ticket QR, never a
+// wallet code, since capturing a lead has nothing to do with the attendee's
+// wallet. No uniqueness constraint on (vendorId, credentialId): an attendee
+// revisiting a booth, or staff intentionally re-tapping to update the note,
+// both just create another row, same "no dedup" convention SPONSOR_TAP
+// itself follows for repeat taps.
+model ExhibitorLead {
+  id         String   @id @default(cuid())
+  clientId   String?  @unique
+  notes      String?
+  capturedAt DateTime @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, vendorId])
+  @@index([vendorId, capturedAt])
 }
 
 // Organizer-managed sponsor entity — same shape as Vendor, simplified: no

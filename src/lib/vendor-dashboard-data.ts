@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { transactionsByVendorByHour } from "@/lib/analytics";
+import { buildCsvDocument, type CsvSection } from "@/lib/csv";
 
 // Split out of the route handler so it's directly testable without going
 // through auth()/NextAuth request plumbing — same reasoning
@@ -10,7 +11,7 @@ import { transactionsByVendorByHour } from "@/lib/analytics";
 export async function getVendorDashboardData(vendorId: string, now: Date = new Date()) {
   const vendor = await prisma.vendor.findUnique({
     where: { id: vendorId },
-    include: { event: { select: { title: true, currency: true, startsAt: true } } },
+    include: { event: { select: { title: true, currency: true, startsAt: true, eventType: true } } },
   });
   if (!vendor) return null;
 
@@ -70,9 +71,24 @@ export async function getVendorDashboardData(vendorId: string, now: Date = new D
     settlementAmountCents = totals._sum.amountCents ?? 0;
   }
 
+  // Session 19 — CONFERENCE-only "My leads" section: this exhibitor's own
+  // captured leads, most recent first. Fetched unconditionally (cheap — a
+  // vendor at a non-CONFERENCE event simply has none) rather than branching
+  // on eventType here; the page itself decides whether to render the
+  // section, same "exists on every event, only shown when relevant"
+  // convention timingPoints/conferenceSessions use elsewhere.
+  const leads = await prisma.exhibitorLead.findMany({
+    where: { vendorId: vendor.id },
+    include: {
+      credential: { include: { ticket: { include: { order: { select: { user: { select: { name: true } } } } } } } },
+    },
+    orderBy: { capturedAt: "desc" },
+  });
+
   return {
     vendorName: vendor.name,
     eventTitle: vendor.event.title,
+    eventType: vendor.event.eventType,
     currency: vendor.event.currency,
     lastUpdated: now.toISOString(),
     stats: { todaysSalesTotalCents, transactionCount, averageTransactionCents },
@@ -90,6 +106,53 @@ export async function getVendorDashboardData(vendorId: string, now: Date = new D
       amountCents: t.amountCents,
       status: t.status,
       walletCodeLast4: t.wallet.code.slice(-4),
+    })),
+    leads: leads.map((l) => ({
+      id: l.id,
+      capturedAt: l.capturedAt.toISOString(),
+      attendeeName: l.credential.ticket?.order.user.name ?? "Unknown attendee",
+      notes: l.notes,
+    })),
+  };
+}
+
+export interface ExhibitorLeadExportRow {
+  capturedAt: string;
+  attendeeName: string;
+  notes: string | null;
+}
+
+// CSV export of this exhibitor's own leads (point 4) — same hand-rolled csv.ts
+// pattern every other export in this app uses.
+export function buildExhibitorLeadsCsv(vendorName: string, rows: ExhibitorLeadExportRow[]): string {
+  const sections: CsvSection[] = [
+    {
+      title: `Leads — ${vendorName}`,
+      headers: ["Time", "Attendee", "Notes"],
+      rows: rows.map((r) => [new Date(r.capturedAt).toLocaleString(), r.attendeeName, r.notes ?? ""]),
+    },
+  ];
+  return buildCsvDocument(sections);
+}
+
+export async function getExhibitorLeadsExportData(vendorId: string): Promise<{ vendorName: string; rows: ExhibitorLeadExportRow[] } | null> {
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { name: true } });
+  if (!vendor) return null;
+
+  const leads = await prisma.exhibitorLead.findMany({
+    where: { vendorId },
+    include: {
+      credential: { include: { ticket: { include: { order: { select: { user: { select: { name: true } } } } } } } },
+    },
+    orderBy: { capturedAt: "desc" },
+  });
+
+  return {
+    vendorName: vendor.name,
+    rows: leads.map((l) => ({
+      capturedAt: l.capturedAt.toISOString(),
+      attendeeName: l.credential.ticket?.order.user.name ?? "Unknown attendee",
+      notes: l.notes,
     })),
   };
 }
