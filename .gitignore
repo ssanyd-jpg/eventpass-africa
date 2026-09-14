@@ -39,3 +39,10 @@ next-env.d.ts
 .env
 /prisma/dev.db
 /prisma/test.db
+
+# playwright (e2e)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.fixtures.json
