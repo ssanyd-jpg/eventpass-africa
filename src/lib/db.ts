@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import type { EventType } from "@/lib/event-modes";
 
 export interface LocalTicketType {
   id: string;
@@ -50,8 +51,10 @@ export interface LocalEvent {
   carryOverEnabled: boolean;
   // Session 12 — GENERAL | MARATHON | CONFERENCE. MARATHON unlocks the
   // timing scanner, timing dashboard, and public leaderboard. Session 14
-  // added FOOTBALL — display-only, no dedicated tooling of its own.
-  eventType: "GENERAL" | "MARATHON" | "CONFERENCE" | "FOOTBALL";
+  // added FOOTBALL — display-only, no dedicated tooling of its own. Session
+  // 22 added CONCERT | FESTIVAL and moved what each type unlocks into
+  // EVENT_MODE_CONFIG (src/lib/event-modes.ts).
+  eventType: EventType;
   // ISO, or null before the race's "Start gun" action has run.
   gunStartAt: string | null;
   vendorApplicationsOpen: boolean;

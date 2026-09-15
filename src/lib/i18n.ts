@@ -364,6 +364,16 @@ export const dictionaries = {
 
     "walletAccount.carryOverPrompt": "You have {amount} remaining from {eventTitle}. Would you like to use it at this event?",
     "walletAccount.carriedOverFrom": "Carried over from {eventTitle}",
+
+    // Session 22 — labels for lib/event-modes.ts's EVENT_MODE_CONFIG,
+    // referenced from there rather than duplicated as raw strings, so the
+    // existing en/sw completeness test (i18n.test.ts) covers them too.
+    "eventType.general": "General",
+    "eventType.marathon": "Marathon / running race",
+    "eventType.conference": "Conference",
+    "eventType.football": "Football Match",
+    "eventType.concert": "Concert",
+    "eventType.festival": "Festival",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -733,6 +743,13 @@ export const dictionaries = {
 
     "walletAccount.carryOverPrompt": "Una {amount} iliyobaki kutoka {eventTitle}. Ungependa kuitumia kwenye tukio hili?",
     "walletAccount.carriedOverFrom": "Imehamishwa kutoka {eventTitle}",
+
+    "eventType.general": "Kawaida",
+    "eventType.marathon": "Mbio za marathoni",
+    "eventType.conference": "Mkutano",
+    "eventType.football": "Mechi ya Mpira wa Miguu",
+    "eventType.concert": "Tamasha la Muziki",
+    "eventType.festival": "Sherehe",
   },
 } as const;
 
