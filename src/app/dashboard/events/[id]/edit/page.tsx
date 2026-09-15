@@ -9,6 +9,7 @@ import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { eventHasEnded } from "@/lib/carry-over";
+import { EVENT_MODE_CONFIG, EVENT_TYPES, type EventType } from "@/lib/event-modes";
 
 interface DraftTicketType {
   key: string;
@@ -103,7 +104,7 @@ export default function EditEventPage() {
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [carryOverEnabled, setCarryOverEnabled] = useState(false);
-  const [eventType, setEventType] = useState<"GENERAL" | "MARATHON" | "CONFERENCE" | "FOOTBALL">("GENERAL");
+  const [eventType, setEventType] = useState<EventType>("GENERAL");
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
   const [vendorStallFeeMajor, setVendorStallFeeMajor] = useState("0");
@@ -626,15 +627,15 @@ export default function EditEventPage() {
             id="eventType"
             className="input"
             value={eventType}
-            onChange={(e) => setEventType(e.target.value as typeof eventType)}
+            onChange={(e) => setEventType(e.target.value as EventType)}
           >
-            <option value="GENERAL">General</option>
-            <option value="MARATHON">Marathon / running race</option>
-            <option value="CONFERENCE">Conference</option>
-            <option value="FOOTBALL">Football Match</option>
+            {EVENT_TYPES.map((type) => (
+              <option key={type} value={type}>{EVENT_MODE_CONFIG[type].label}</option>
+            ))}
           </select>
           <p className="mt-1 text-xs text-muted">
             Marathon unlocks timing setup, a timing scanner, and a public live leaderboard.
+            Conference unlocks session setup, a session scanner, and exhibitor lead capture.
           </p>
         </div>
 

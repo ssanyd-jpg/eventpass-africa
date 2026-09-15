@@ -10,6 +10,7 @@ import { verifyAirpayOrder } from "@/lib/payments/airpay";
 import { normalizeTanzaniaPhone } from "@/lib/sms";
 import { buildOrderConfirmationHtml } from "@/lib/email";
 import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timing";
+import { EVENT_TYPES } from "@/lib/event-modes";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -165,7 +166,9 @@ export const payloadSchemas = {
     carryOverEnabled: z.boolean().optional(),
     // Session 12 — GENERAL | MARATHON | CONFERENCE. Session 14 added
     // FOOTBALL (display-only, no dedicated tooling — unlike MARATHON).
-    eventType: z.enum(["GENERAL", "MARATHON", "CONFERENCE", "FOOTBALL"]).optional(),
+    // Session 22 added CONCERT | FESTIVAL — see EVENT_TYPES in event-modes.ts,
+    // the single source of truth this now validates against.
+    eventType: z.enum(EVENT_TYPES).optional(),
     registrationQuestions: z.array(registrationQuestionInputSchema).optional(),
     discountCodes: z.array(discountCodeInputSchema).optional(),
     // Same exact shape as registrationQuestions — post-event survey
