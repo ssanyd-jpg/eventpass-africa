@@ -14,6 +14,7 @@ import { scoreOrderRisk, type RiskBand } from "@/lib/risk";
 import BarSeries from "@/components/charts/BarSeries";
 import TimingSetupSection from "@/components/TimingSetupSection";
 import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
+import { hasFeature } from "@/lib/event-modes";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -265,12 +266,12 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/forecast`} className="btn-secondary">
             Revenue forecast ↗
           </Link>
-          {event.eventType === "MARATHON" && (
+          {hasFeature(event.eventType, "chipTiming") && (
             <Link href={`/dashboard/events/${event.id}/timing`} className="btn-secondary">
               Timing ↗
             </Link>
           )}
-          {event.eventType === "CONFERENCE" && (
+          {hasFeature(event.eventType, "sessionCheckIn") && (
             <>
               <Link href={`/dashboard/events/${event.id}/sessions`} className="btn-secondary">
                 Sessions ↗
@@ -291,11 +292,11 @@ export default function ManageEventPage() {
         </button>
       )}
 
-      {event.eventType === "MARATHON" && (
+      {hasFeature(event.eventType, "chipTiming") && (
         <TimingSetupSection eventId={event.id} eventTitle={event.title} gunStartAt={event.gunStartAt} />
       )}
 
-      {event.eventType === "CONFERENCE" && <ConferenceSessionsSection eventId={event.id} />}
+      {hasFeature(event.eventType, "sessionCheckIn") && <ConferenceSessionsSection eventId={event.id} />}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card p-5">

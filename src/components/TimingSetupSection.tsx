@@ -12,10 +12,11 @@ interface DraftPoint extends TimingPointInput {
 }
 
 // Session 12's "Timing setup" section, embedded on the main event dashboard
-// (src/app/dashboard/events/[id]/page.tsx) only when eventType ===
-// "MARATHON". Kept as its own component so that page's own diff stays a
-// single import + one conditional block, rather than growing an already
-// large file with all of this state.
+// (src/app/dashboard/events/[id]/page.tsx) only when
+// hasFeature(event.eventType, "chipTiming") — see src/lib/event-modes.ts.
+// Kept as its own component so that page's own diff stays a single import +
+// one conditional block, rather than growing an already large file with all
+// of this state.
 export default function TimingSetupSection({
   eventId,
   eventTitle,

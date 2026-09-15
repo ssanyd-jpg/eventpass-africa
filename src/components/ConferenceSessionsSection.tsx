@@ -12,9 +12,10 @@ interface DraftSession extends ConferenceSessionInput {
 }
 
 // Session 19's "Sessions" section, embedded on the main event dashboard
-// (src/app/dashboard/events/[id]/page.tsx) only when eventType ===
-// "CONFERENCE" — same "own component, one import + one conditional block"
-// discipline TimingSetupSection already established for MARATHON.
+// (src/app/dashboard/events/[id]/page.tsx) only when
+// hasFeature(event.eventType, "sessionCheckIn") — see src/lib/event-modes.ts.
+// Same "own component, one import + one conditional block" discipline
+// TimingSetupSection already established for MARATHON.
 export default function ConferenceSessionsSection({ eventId }: { eventId: string }) {
   const savedSessions = useLiveQuery(
     async () => db.conferenceSessions.where("eventId").equals(eventId).sortBy("startsAt"),

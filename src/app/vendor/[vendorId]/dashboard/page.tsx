@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { formatCents } from "@/lib/format";
 import LineSeries from "@/components/charts/LineSeries";
+import { hasFeature } from "@/lib/event-modes";
 
 // 60s, not the 30s the organiser live-monitoring page uses — see point 3 of
 // the Session 8 spec: vendors don't need second-by-second granularity, and
@@ -189,7 +190,7 @@ export default function VendorDashboardPage() {
         </div>
       )}
 
-      {data.eventType === "CONFERENCE" && (
+      {hasFeature(data.eventType, "exhibitorLeads") && (
         <>
           <div className="mb-3 mt-6 flex items-center justify-between">
             <h2 className="text-lg font-bold">My leads</h2>

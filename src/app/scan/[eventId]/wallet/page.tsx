@@ -13,6 +13,7 @@ import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import { resolveCodeFromUid, isUidSuperseded, resolveTicketIdFromUid } from "@/lib/credentials";
 import { resolveOfflineChargeMessage } from "@/lib/wallet-charge";
+import { hasFeature } from "@/lib/event-modes";
 
 // Same network list as the buyer's own top-up form (account/wallet/[walletId]/page.tsx) —
 // Session 15's split payment needs the same phone+network pair to STK-push
@@ -510,7 +511,7 @@ export default function WalletChargeTerminalPage() {
         {/* Session 19 — exhibitor lead capture only makes sense for a
             CONFERENCE event, where vendors are exhibitors at booths rather
             than food/merch stalls. */}
-        {event.eventType === "CONFERENCE" && (
+        {hasFeature(event.eventType, "exhibitorLeads") && (
           <button
             className={mode === "lead" ? "btn-primary" : "btn-secondary"}
             onClick={() => { setMode("lead"); setResult(null); setSplitPrompt(null); }}
