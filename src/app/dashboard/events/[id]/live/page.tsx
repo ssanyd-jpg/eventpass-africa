@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime } from "@/lib/format";
 import LineSeries from "@/components/charts/LineSeries";
+import Spinner from "@/components/Spinner";
 import type { HourPoint, VendorHourlyStats, LiveEventStats } from "@/lib/analytics";
 import type { LiveActivityEntry } from "@/lib/live-activity";
 
@@ -104,7 +105,12 @@ export default function LiveEventPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (!data && !initialError) {
-    return <div className="mx-auto max-w-5xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return (
+      <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   if (!data) {
@@ -260,7 +266,7 @@ export default function LiveEventPage() {
 
       <h2 className="mb-3 mt-8 font-semibold">Live activity</h2>
       {activity.length === 0 ? (
-        <div className="card p-8 text-center text-muted">Nothing yet.</div>
+        <div className="card p-8 text-center text-muted">No activity yet.</div>
       ) : (
         <div className="card divide-y divide-border">
           {activity.map((entry, i) => (

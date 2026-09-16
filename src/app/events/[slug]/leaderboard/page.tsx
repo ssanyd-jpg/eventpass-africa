@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslation } from "@/lib/use-translation";
+import Spinner from "@/components/Spinner";
 
 interface LeaderRow {
   rank: number;
@@ -78,7 +79,12 @@ export default function PublicLeaderboardPage() {
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
 
   return (

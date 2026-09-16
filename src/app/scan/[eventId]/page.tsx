@@ -11,6 +11,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import Spinner from "@/components/Spinner";
 import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
 import { resolveGateSignal } from "@/lib/ticket-types";
 
@@ -271,7 +272,12 @@ export default function GateScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
 
   if (!event) {
@@ -298,13 +304,13 @@ export default function GateScannerPage() {
         className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-6 text-center"
         style={{ backgroundColor: "#ffc300", color: "#1a1300" }}
       >
-        <span style={{ fontSize: "104px", lineHeight: 1 }} aria-hidden="true">👑</span>
-        <p style={{ fontSize: "56px", lineHeight: 1.1, fontWeight: 800, letterSpacing: "0.01em" }}>
+        <span className="text-[clamp(2.5rem,18vw,6.5rem)] leading-none" aria-hidden="true">👑</span>
+        <p className="text-[clamp(1.75rem,9vw,3.5rem)] font-extrabold leading-[1.1] tracking-[0.01em]">
           {result.message}
         </p>
-        {result.attendeeLabel && <p style={{ fontSize: "28px", fontWeight: 700 }}>{result.attendeeLabel}</p>}
-        {result.ticketTypeName && <p style={{ fontSize: "20px", fontWeight: 600 }}>{result.ticketTypeName}</p>}
-        <p className="font-mono tracking-widest" style={{ fontSize: "18px", fontWeight: 600, opacity: 0.85 }}>
+        {result.attendeeLabel && <p className="text-[clamp(1.25rem,6vw,1.75rem)] font-bold">{result.attendeeLabel}</p>}
+        {result.ticketTypeName && <p className="text-[clamp(1rem,4vw,1.25rem)] font-semibold">{result.ticketTypeName}</p>}
+        <p className="font-mono text-[clamp(0.9rem,3.5vw,1.125rem)] font-semibold tracking-widest opacity-[0.85]">
           {result.code}
         </p>
       </div>
@@ -350,7 +356,7 @@ export default function GateScannerPage() {
 
       <div className="card mt-5 flex items-center justify-between p-5">
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted">{t("scan.checkedIn")}</p>
+          <p className="text-sm uppercase tracking-wide text-muted">{t("scan.checkedIn")}</p>
           <p className="text-2xl font-bold">
             {mode === "attendee" ? `${checkedInCount} / ${tickets.length}` : `${vendorCheckedInCount} / ${approvedVendors.length}`}
           </p>
@@ -405,7 +411,7 @@ export default function GateScannerPage() {
             </p>
           )}
           <p
-            className={`mt-1 text-lg font-semibold ${
+            className={`mt-1 text-lg font-bold ${
               result.kind === "valid"
                 ? "text-ok"
                 : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
@@ -421,10 +427,10 @@ export default function GateScannerPage() {
             {result.message}
           </p>
           {(result.kind === "refunded" || result.kind === "paymentFailed") && (
-            <p className="mt-1 text-xs text-muted">{t("scan.refundedHint")}</p>
+            <p className="mt-1 text-sm text-muted">{t("scan.refundedHint")}</p>
           )}
           {result.kind === "paymentPending" && (
-            <p className="mt-1 text-xs text-muted">{t("scan.paymentPendingHint")}</p>
+            <p className="mt-1 text-sm text-muted">{t("scan.paymentPendingHint")}</p>
           )}
         </div>
       )}

@@ -49,7 +49,7 @@ export default async function AdminAnalyticsPage() {
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-xl font-bold">Analytics</h1>
+          <h1 className="mb-1 text-2xl font-bold">Analytics</h1>
           <p className="text-sm text-muted">Platform-wide, last {TREND_WINDOW_DAYS} days for trends.</p>
         </div>
         <a href="/api/admin/analytics/export" className="btn-secondary shrink-0 text-sm">Download CSV</a>

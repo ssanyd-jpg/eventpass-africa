@@ -11,6 +11,7 @@ import { useTranslation } from "@/lib/use-translation";
 import { formatElapsed, computeGunTimeOffsetSeconds } from "@/lib/timing";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import Spinner from "@/components/Spinner";
 
 // Session 12's timing scanner — one device per timing point on the course.
 // Deliberately always-optimistic (unlike the wallet charge terminal, which
@@ -132,7 +133,12 @@ export default function TimingScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
   if (!event) {
     return (
@@ -193,7 +199,7 @@ export default function TimingScannerPage() {
             <div key={c.id} className="flex items-center justify-between p-3 text-sm">
               <div>
                 <p className="font-medium">{c.athleteName}</p>
-                <p className="text-xs text-muted">{t("timing.bibLabel", { bib: c.bib })}{c.ticketTypeName ? ` · ${c.ticketTypeName}` : ""}</p>
+                <p className="text-sm text-muted">{t("timing.bibLabel", { bib: c.bib })}{c.ticketTypeName ? ` · ${c.ticketTypeName}` : ""}</p>
               </div>
               <div className="text-right">
                 <p className="font-mono">{c.gunTimeOffsetSeconds != null ? formatElapsed(c.gunTimeOffsetSeconds) : "—"}</p>

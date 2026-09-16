@@ -11,6 +11,7 @@ import { useTranslation } from "@/lib/use-translation";
 import { formatDateTime } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import Spinner from "@/components/Spinner";
 
 // Session 19's conference session-attendance scanner — one device per
 // room/door, same shape as the Session 12 timing scanner it's modeled on
@@ -127,7 +128,12 @@ export default function SessionAttendanceScannerPage() {
   if (!user) return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
   if (!event) {
     return (
@@ -155,7 +161,7 @@ export default function SessionAttendanceScannerPage() {
         </select>
         {activeSession && (
           <p className="mt-3 rounded-xl border border-ok/40 bg-ok/10 p-4 text-center">
-            <span className="block text-xs uppercase tracking-wide text-muted">{t("session.attendeesInRoom")}</span>
+            <span className="block text-sm uppercase tracking-wide text-muted">{t("session.attendeesInRoom")}</span>
             <span className="mt-1 block text-2xl font-bold tabular-nums">{activeSession.attendanceCount}</span>
           </p>
         )}
@@ -189,7 +195,7 @@ export default function SessionAttendanceScannerPage() {
             <div key={a.id} className="flex items-center justify-between p-3 text-sm">
               <div>
                 <p className="font-medium">{a.attendeeName}</p>
-                <p className="text-xs text-muted">{a.ticketTypeName || "—"} · {formatDateTime(a.recordedAt)}</p>
+                <p className="text-sm text-muted">{a.ticketTypeName || "—"} · {formatDateTime(a.recordedAt)}</p>
               </div>
               {a.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>}
             </div>

@@ -21,7 +21,13 @@
   --accent-soft: rgba(0, 102, 255, 0.15);
   --ok: #22c55e;
   --warn: #f59e0b;
-  --danger: var(--crimson-red);
+  /* Session 23 — kept independent of --crimson-red (the brand mark's own
+     red) on purpose: at #e6001a, plain danger text measured ~3.7:1 against
+     this dark theme's backgrounds, below WCAG AA's 4.5:1 for normal text.
+     #ff5252 keeps the same hue family but is light enough to clear AA on
+     both the page background and the translucent bg-danger/10 alert tint
+     used across gate/wallet/live-monitoring banners. */
+  --danger: #ff5252;
 }
 
 * {

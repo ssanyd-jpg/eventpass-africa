@@ -11,6 +11,7 @@ import { useTranslation } from "@/lib/use-translation";
 import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
+import Spinner from "@/components/Spinner";
 import { resolveCodeFromUid, isUidSuperseded, resolveTicketIdFromUid } from "@/lib/credentials";
 import { resolveOfflineChargeMessage } from "@/lib/wallet-charge";
 import { hasFeature } from "@/lib/event-modes";
@@ -477,7 +478,12 @@ export default function WalletChargeTerminalPage() {
   if (!user || user.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
   if (!event) {
     return (
@@ -597,7 +603,7 @@ export default function WalletChargeTerminalPage() {
           ) : (
             <button
               type="button"
-              className="text-xs font-medium text-accent-hover"
+              className="text-sm font-medium text-accent-hover"
               onClick={() => setShowNoteField(true)}
             >
               {t("wallet.addNote")}
@@ -630,7 +636,7 @@ export default function WalletChargeTerminalPage() {
           ) : (
             <button
               type="button"
-              className="text-xs font-medium text-accent-hover"
+              className="text-sm font-medium text-accent-hover"
               onClick={() => setShowLeadNoteField(true)}
             >
               {t("wallet.addNote")}
@@ -668,7 +674,7 @@ export default function WalletChargeTerminalPage() {
           <p className="mt-1 text-sm font-semibold text-warn">
             {t("wallet.topUpPrompt", { amount: formatCents(splitPrompt.topUpAmountCents, splitPrompt.currency) })}
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="label" htmlFor="splitNetwork">{t("wallet.networkLabel")}</label>
               <select id="splitNetwork" className="input" value={splitNetwork} onChange={(e) => setSplitNetwork(e.target.value)}>
@@ -711,7 +717,7 @@ export default function WalletChargeTerminalPage() {
         >
           <p className="font-mono text-lg font-bold tracking-widest">{result.code}</p>
           <p
-            className={`mt-1 text-lg font-semibold ${
+            className={`mt-1 text-lg font-bold ${
               result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured"
                 ? "text-ok"
                 : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"

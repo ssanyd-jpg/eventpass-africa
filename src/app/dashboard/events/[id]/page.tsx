@@ -12,6 +12,7 @@ import { predictSellOut, forecastEventRevenue, type SellOutStatus } from "@/lib/
 import { detectOrderAnomalies } from "@/lib/anomaly";
 import { scoreOrderRisk, type RiskBand } from "@/lib/risk";
 import BarSeries from "@/components/charts/BarSeries";
+import Spinner from "@/components/Spinner";
 import TimingSetupSection from "@/components/TimingSetupSection";
 import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
 import { hasFeature } from "@/lib/event-modes";
@@ -87,7 +88,12 @@ export default function ManageEventPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return (
+      <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   if (!event) {
@@ -242,7 +248,7 @@ export default function ManageEventPage() {
           </h1>
           <p className="text-sm text-muted">{formatDateTime(event.startsAt)} · {event.venue}, {event.city}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href={`/dashboard/events/${event.id}/edit`} className="btn-secondary">Edit</Link>
           <Link href={`/dashboard/events/${event.id}/vendors`} className="btn-secondary">Vendors</Link>
           <Link href={`/dashboard/events/${event.id}/sponsors`} className="btn-secondary">Sponsors</Link>

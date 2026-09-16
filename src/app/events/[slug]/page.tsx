@@ -10,6 +10,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import QuestionFields from "@/components/QuestionFields";
+import Spinner from "@/components/Spinner";
 
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
@@ -73,7 +74,12 @@ export default function EventDetailPage() {
   const waiverOk = !event?.waiverText || waiverAccepted;
 
   if (events === undefined) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
+        <Spinner />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
   }
 
   if (!event) {
