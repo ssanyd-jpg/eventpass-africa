@@ -858,6 +858,13 @@ model Order {
   tickets             Ticket[]
   settlementItems     SettlementItem[]
   registrationAnswers RegistrationAnswer[]
+
+  // Session 22 — every organizer analytics/live/customer-list query filters
+  // by eventId (see getOrganizerAnalyticsData, getLiveEventData's sibling
+  // queries, getCustomerListData/getCustomerDetailData), and the sync pull
+  // route filters myOrders by userId; neither had an index before this.
+  @@index([eventId, status])
+  @@index([userId])
 }
 
 model OrderItem {
@@ -929,6 +936,11 @@ model Ticket {
 
   credentials Credential[]
   transfers   TicketTransfer[]
+
+  // Session 22 — every analytics/live-monitoring fetcher (getLiveEventData,
+  // getOrganizerAnalyticsData, getPlatformAnalyticsData) filters tickets by
+  // eventId; there was no index at all on this heavily-queried column.
+  @@index([eventId])
 }
 
 // status is PENDING | APPROVED | REJECTED. feeStatus is NONE | PAID | REFUNDED
@@ -1230,6 +1242,14 @@ model WalletTransaction {
 
   @@index([sponsorId, type, createdAt])
   @@unique([campaignId, walletId])
+  // Session 22 — the ONLY existing index touching walletId is the
+  // campaignId-first composite above, which is useless for a plain
+  // walletId lookup (campaignId is null on nearly every row). Every wallet's
+  // own transaction history, the vendor/sponsor dashboards' today-only
+  // queries, and the sync pull route's myWalletTransactions all join back
+  // to Wallet through this column with no index to use — this was the
+  // single least-indexed hot column in the schema.
+  @@index([walletId, createdAt])
 }
 
 // End-of-event cash float reconciliation (Session 9). One row per staff

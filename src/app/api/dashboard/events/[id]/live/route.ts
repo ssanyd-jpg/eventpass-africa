@@ -4,12 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { checkInsByHour, transactionsByVendorByHour, liveEventStats } from "@/lib/analytics";
 import { getLiveEventData } from "@/lib/analytics-data";
 import { getLiveActivityFeed } from "@/lib/live-activity";
+import { logIfSlow } from "@/lib/perf-log";
 
 // Polled by the live-event dashboard page every 30s — deliberately a plain
 // GET an authenticated client can re-fetch on an interval, not a one-shot
 // server-component load, since the whole point of this view is watching
-// numbers change during the event rather than a static snapshot.
+// numbers change during the event rather than a static snapshot. Timed
+// end-to-end (Session 22) since a 30s poll that itself takes seconds
+// defeats the point of "live".
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  const startedAt = Date.now();
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, reason: "UNAUTHENTICATED" }, { status: 401 });
@@ -38,6 +42,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const checkIns = checkInsByHour(data.tickets, data.event.startsAt, now);
   const vendorHourly = transactionsByVendorByHour(data.walletTxs, data.event.startsAt, now);
   const activity = await getLiveActivityFeed(params.id);
+
+  logIfSlow(`GET /api/dashboard/events/${params.id}/live`, startedAt);
 
   return NextResponse.json({
     ok: true,

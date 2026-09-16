@@ -80,12 +80,37 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
   if (!db || !navigator.onLine) return { ok: false };
   try {
     const deviceId = await getOrCreateDeviceId();
-    const res = await fetch("/api/sync/pull", {
+    // Session 22 — TWO separate delta-sync cursors, matching the pull
+    // route's own two independent cursors (see its header comment for why
+    // one shared cursor is actually wrong, not just simpler): `lastSyncedAt`
+    // covers the public `events` field, which the route fills on every
+    // request regardless of session; `lastAuthSyncedAt` covers everything
+    // that only exists once logged in (myOrders/myVendors/myWallets/etc.)
+    // and must never be sent — nor advanced — from a pull made before this
+    // browser had ever actually pulled that data at all (an anonymous pull,
+    // or the very first pull right after logging in). Every table either
+    // cursor gates merges via bulkPut/upsert-by-clientId already (see
+    // below), so receiving a subset here is exactly as correct as receiving
+    // everything — nothing gets removed either way.
+    const lastSyncedAt = await db.meta.get("lastSyncedAt");
+    const since = typeof lastSyncedAt?.value === "string" ? lastSyncedAt.value : null;
+    const lastAuthSyncedAt = await db.meta.get("lastAuthSyncedAt");
+    const sinceAuth = typeof lastAuthSyncedAt?.value === "string" ? lastAuthSyncedAt.value : null;
+    const params = new URLSearchParams();
+    if (since) params.set("since", since);
+    if (sinceAuth) params.set("sinceAuth", sinceAuth);
+    const query = params.toString();
+    const url = query ? `/api/sync/pull?${query}` : "/api/sync/pull";
+    const res = await fetch(url, {
       cache: "no-store",
       headers: deviceId ? { "X-Device-Id": deviceId } : undefined,
     });
     if (!res.ok) return { ok: false };
     const data = await res.json();
+    // Signals the response actually included the authenticated block (the
+    // pull route only ever sets this key inside its `if (session?.user?.id
+    // ...)` branch) — the gate the auth cursor's advance below is keyed on.
+    const gotAuthData = Array.isArray(data.myOrders);
 
     if (Array.isArray(data.events)) {
       await db.events.bulkPut(
@@ -220,7 +245,22 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
       }
     }
 
-    await db.meta.put({ key: "lastSyncedAt", value: new Date().toISOString() });
+    // The SERVER's clock, not the client's — this value becomes the next
+    // request's `since`/`sinceAuth`, compared against `updatedAt` columns
+    // that were themselves stamped by the server's clock. Using the
+    // client's own clock here would silently lose rows under any client/
+    // server clock drift where the client runs ahead.
+    if (typeof data.now === "string") {
+      await db.meta.put({ key: "lastSyncedAt", value: data.now });
+      // Only advance the auth cursor from a response that actually carried
+      // the authenticated block — an anonymous pull (or a pull made right
+      // as a session is ending) must never advance this, or the next
+      // login's first pull would wrongly delta-filter data it has never
+      // actually fetched (see this function's own header comment).
+      if (gotAuthData) {
+        await db.meta.put({ key: "lastAuthSyncedAt", value: data.now });
+      }
+    }
     return { ok: true };
   } catch {
     return { ok: false };
@@ -590,6 +630,52 @@ async function applyDeactivateSponsorCampaignResult(_payload: any, result: any) 
   await db.sponsorCampaigns.put(result.campaign);
 }
 
+// Session 22 — which resource an outbox entry mutates, so independent
+// entries (different wallets, different tickets) can flush concurrently
+// while anything sharing a resource keeps today's exact one-at-a-time,
+// createdAt order (a second charge against the SAME wallet must never
+// race the first). Only the op types the audit actually confirmed are
+// pairwise-independent by resource get a real key; every other type
+// (event lifecycle, vendor/sponsor approvals, credential replacement,
+// withdrawal approvals, mobile money accounts, sponsor campaigns — all
+// low-volume, staff-desk actions, not a busy gate/wallet terminal's hot
+// path) shares one bucket and keeps its current fully-sequential behavior.
+//
+// A bucket-key mismatch is self-healing, not corrupting: an op referencing
+// a not-yet-synced wallet/ticket (by its local clientId) that happens to
+// run in a different bucket than the op that creates it simply gets back
+// `retry:true` from the server (the same fallback every clientId-resolved
+// op already relies on) and is retried on the next flush cycle.
+function outboxResourceKey(entry: { type: OutboxOpType; payload: Record<string, unknown>; id?: number }): string {
+  const p = entry.payload;
+  switch (entry.type) {
+    case "TOPUP_WALLET":
+    case "WITHDRAW_WALLET":
+      return `wallet:${p.walletId}`;
+    case "CHARGE_WALLET":
+    case "SPLIT_PAYMENT":
+    case "SPONSOR_TAP":
+      return `wallet:${p.walletCode}`;
+    case "CHECK_IN":
+      return `ticket:${p.ticketCode}`;
+    case "CHECK_IN_VENDOR":
+      return `vendor:${p.badgeCode}`;
+    case "RECORD_CHIP_TIME":
+    case "RECORD_SESSION_ATTENDANCE":
+      // Keyed by whichever of nfcUid/ticketCode this tap resolved by (the
+      // payload always carries exactly one — see the zod schema's own
+      // superRefine) — two taps of the SAME tag stay ordered, two different
+      // athletes'/attendees' taps don't.
+      return `credential:${p.nfcUid ?? p.ticketCode ?? entry.id}`;
+    case "SELL_TICKETS":
+      // Every purchase is its own order — never shares a wallet/ticket with
+      // another SELL_TICKETS entry, so each gets its own one-entry bucket.
+      return `sell:${entry.id}`;
+    default:
+      return "__serial__";
+  }
+}
+
 export async function flushOutbox(): Promise<{ flushed: number; failed: number }> {
   if (!db || !navigator.onLine) return { flushed: 0, failed: 0 };
 
@@ -598,8 +684,19 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
   let failed = 0;
   const deviceId = await getOrCreateDeviceId();
 
+  const buckets = new Map<string, typeof entries>();
   for (const entry of entries) {
-    if (entry.id == null) continue;
+    const key = outboxResourceKey(entry);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      buckets.set(key, [entry]);
+    }
+  }
+
+  async function processEntry(entry: (typeof entries)[number]) {
+    if (entry.id == null) return;
     await db.outbox.update(entry.id, { status: "syncing" });
     try {
       const res = await fetch("/api/sync/push", {
@@ -620,12 +717,12 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
             lastError: result.reason ?? "sync failed",
           });
           failed++;
-          continue;
+          return;
         }
         // non-retryable: drop from outbox but record conflict on the local record if we can
         await db.outbox.delete(entry.id);
         failed++;
-        continue;
+        return;
       }
 
       switch (entry.type) {
@@ -728,6 +825,19 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
       failed++;
     }
   }
+
+  // Entries within a bucket run strictly in order (a plain for-loop,
+  // identical to the old single-queue behavior); different buckets run
+  // concurrently via Promise.all — the counters above are safe to share
+  // across them despite the concurrency: JS never interleaves two `flushed++`
+  // mid-increment, only between `await` points.
+  await Promise.all(
+    Array.from(buckets.values()).map(async (bucket) => {
+      for (const entry of bucket) {
+        await processEntry(entry);
+      }
+    })
+  );
 
   return { flushed, failed };
 }

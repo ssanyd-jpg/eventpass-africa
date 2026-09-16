@@ -1,4 +1,12 @@
 import withPWAInit from "next-pwa";
+import withBundleAnalyzerInit from "@next/bundle-analyzer";
+
+// Session 22 performance audit — `ANALYZE=true npm run build` opens the
+// client/server/edge bundle treemaps in a browser tab; a plain build is
+// completely unaffected (withBundleAnalyzer no-ops when disabled).
+const withBundleAnalyzer = withBundleAnalyzerInit({
+  enabled: process.env.ANALYZE === "true",
+});
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -70,4 +78,4 @@ const nextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+export default withBundleAnalyzer(withPWA(nextConfig));

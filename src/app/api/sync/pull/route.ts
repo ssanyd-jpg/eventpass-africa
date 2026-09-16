@@ -4,11 +4,68 @@ import { prisma } from "@/lib/prisma";
 import { checkAndTrackDevice } from "@/lib/device-handlers";
 import { getPendingSurveysForBuyer } from "@/lib/survey-handlers";
 import { getRecommendedEventIdsForBuyer } from "@/lib/recommendations";
+import { logIfSlow } from "@/lib/perf-log";
+
+// Session 22 — every table below except the five explicitly marked
+// "full-replace" (pendingSurveys, recommendedEventIds, credentials,
+// myTimingPoints, myConferenceSessions — see pullFromServer's own comments
+// for why those need shrink-capable reconciliation) is already merged
+// client-side via bulkPut/upsert-by-clientId, never a wholesale replace.
+// That means it's safe to hand back only what changed since the client's
+// last successful pull instead of the organization's/platform's entire
+// history every ~20s: nothing already in Dexie ever needs to be removed by
+// this route, only added to or overwritten. `since`/`sinceAuth` are
+// optional — omitted (first pull, or an old client) falls back to the
+// exact unfiltered queries this route always ran, so nothing about a
+// first sync changes.
+// Grep-verified: no `prisma.<model>.delete` call site exists for any of
+// Event/Order/Vendor/Sponsor/SponsorCampaign/DiscountCode/SurveyQuestion/
+// Wallet/WalletTransaction — every one of them is soft-stated (status/
+// active flags) or simply immutable once created, which is what makes
+// dropping the "give me everything" guarantee safe here.
+//
+// TWO separate cursors, not one — this is deliberate, not an oversight.
+// The public `events` query runs on every request, logged in or not;
+// the whole block below it only ever runs when a session exists. An
+// anonymous pull (the page loads before the buyer/organizer has logged
+// in — the normal case for every page on this site) would otherwise set
+// ONE shared cursor that the very next, now-authenticated pull would then
+// reuse to delta-filter myOrders/myVendors/myWallets/etc. — fields that
+// have never actually been fetched for this session at all, silently
+// dropping everything with an updatedAt older than that stray anonymous
+// timestamp forever. `sinceAuth` only ever advances from a response that
+// actually included the authenticated block, so the first pull after
+// logging in (or the first pull ever, or the first pull after switching
+// accounts in the same browser) is always a full, unfiltered fetch of
+// that block, exactly like before delta sync existed.
+function parseTimestampParam(request: Request, name: string): Date | null {
+  const raw = new URL(request.url).searchParams.get(name);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 export async function GET(request: Request) {
+  const startedAt = Date.now();
   const session = await auth();
+  const since = parseTimestampParam(request, "since");
+  // Captured before any query below runs (not after) so the next pull's
+  // `since` can never be later than the moment these queries actually read
+  // the database — a row written mid-request has an updatedAt at or after
+  // this timestamp, so worst case it's harmlessly re-delivered (and
+  // re-upserted) on the very next pull rather than silently skipped.
+  const requestStartedAt = new Date();
 
   const events = await prisma.event.findMany({
+    // Widened past a plain Event.updatedAt check: quantitySold increments on
+    // every ticket sale, touching TicketType.updatedAt, never Event's own —
+    // a plain filter would let the public browse/checkout page's "X left"
+    // count silently go stale under delta sync. Re-including the whole
+    // event on ANY of its ticket types changing is a deliberately generous
+    // (occasionally redundant, never wrong) trigger.
+    where: since
+      ? { OR: [{ updatedAt: { gt: since } }, { ticketTypes: { some: { updatedAt: { gt: since } } } }] }
+      : undefined,
     include: {
       ticketTypes: true,
       organization: { select: { name: true } },
@@ -68,13 +125,16 @@ export async function GET(request: Request) {
   }));
 
   const payload: Record<string, unknown> = {
-    now: new Date().toISOString(),
+    now: requestStartedAt.toISOString(),
     events: shapedEvents,
   };
 
   if (session?.user?.id && session.user.organizationId) {
     const userId = session.user.id;
     const organizationId = session.user.organizationId;
+    // Separate cursor from `since` above — see this file's header comment
+    // for why reusing the public `events` cursor here would be wrong.
+    const sinceAuth = parseTimestampParam(request, "sinceAuth");
 
     const deviceId = request.headers.get("X-Device-Id");
     if (deviceId) {
@@ -91,12 +151,29 @@ export async function GET(request: Request) {
 
     const myOrders = await prisma.order.findMany({
       where: {
-        // Third arm: an order the caller doesn't own or organize, but holds
-        // at least one ticket in via an ACCEPTED TicketTransfer — see
-        // Ticket.currentHolderUserId. Pulls the WHOLE parent order (all its
-        // tickets/total), not just the transferred ticket — an accepted v1
-        // simplification, same as OrderConfirmation's rendering.
-        OR: [{ userId }, { event: { organizationId } }, { tickets: { some: { currentHolderUserId: userId } } }],
+        AND: [
+          // Third arm: an order the caller doesn't own or organize, but
+          // holds at least one ticket in via an ACCEPTED TicketTransfer —
+          // see Ticket.currentHolderUserId. Pulls the WHOLE parent order
+          // (all its tickets/total), not just the transferred ticket — an
+          // accepted v1 simplification, same as OrderConfirmation's
+          // rendering. (Deliberately AND-combined with the delta clause
+          // below, not a second sibling OR key, which JS object spread
+          // would silently let clobber this one.)
+          { OR: [{ userId }, { event: { organizationId } }, { tickets: { some: { currentHolderUserId: userId } } }] },
+          // Widened past a plain Order.updatedAt check: handleCheckIn only
+          // ever updates the Ticket row (checkedIn/checkedInAt), and
+          // acceptTicketTransfer only ever updates Ticket.currentHolderUserId
+          // — neither touches the parent Order. A plain filter would let a
+          // check-in performed on one device (or a just-accepted transfer)
+          // silently never reach another device's delta pull, since the
+          // order this ticket belongs to might not itself change again for
+          // the rest of the event. Re-including the whole order on ANY of
+          // its tickets changing matches what a full sync always returned.
+          ...(sinceAuth
+            ? [{ OR: [{ updatedAt: { gt: sinceAuth } }, { tickets: { some: { updatedAt: { gt: sinceAuth } } } }] }]
+            : []),
+        ],
       },
       include: {
         items: { include: { ticketType: true } },
@@ -157,7 +234,10 @@ export async function GET(request: Request) {
     }));
 
     const myVendors = await prisma.vendor.findMany({
-      where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
+      where: {
+        OR: [{ ownerUserId: userId }, { event: { organizationId } }],
+        ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}),
+      },
       include: { event: { select: { id: true, clientId: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -188,7 +268,7 @@ export async function GET(request: Request) {
     }));
 
     const mySponsors = await prisma.sponsor.findMany({
-      where: { event: { organizationId } },
+      where: { event: { organizationId }, ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}) },
       include: { event: { select: { id: true, clientId: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -213,7 +293,7 @@ export async function GET(request: Request) {
     // sponsor's coupon/campaign codes never ride in the public `events`
     // field, so an anonymous browser can't enumerate them.
     const myCampaigns = await prisma.sponsorCampaign.findMany({
-      where: { sponsor: { event: { organizationId } } },
+      where: { sponsor: { event: { organizationId } }, ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}) },
       orderBy: { createdAt: "desc" },
     });
     payload.myCampaigns = myCampaigns.map((c) => ({
@@ -236,7 +316,7 @@ export async function GET(request: Request) {
     // anonymous browser's IndexedDB. Scoped to the organizing org only,
     // same as mySponsors.
     const myDiscountCodes = await prisma.discountCode.findMany({
-      where: { event: { organizationId } },
+      where: { event: { organizationId }, ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}) },
       include: { ticketType: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -262,7 +342,7 @@ export async function GET(request: Request) {
     // are never needed pre-purchase, so they don't ride in the public
     // `events` field above.
     const mySurveyQuestions = await prisma.surveyQuestion.findMany({
-      where: { event: { organizationId } },
+      where: { event: { organizationId }, ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}) },
       orderBy: { sortOrder: "asc" },
     });
     payload.mySurveyQuestions = mySurveyQuestions.map((q) => ({
@@ -289,7 +369,10 @@ export async function GET(request: Request) {
     payload.recommendedEventIds = await getRecommendedEventIdsForBuyer(userId);
 
     const myWallets = await prisma.wallet.findMany({
-      where: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
+      where: {
+        OR: [{ ownerUserId: userId }, { event: { organizationId } }],
+        ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}),
+      },
       include: {
         event: { select: { id: true, clientId: true } },
         owner: { select: { name: true, email: true } },
@@ -317,7 +400,10 @@ export async function GET(request: Request) {
     }));
 
     const myWalletTransactions = await prisma.walletTransaction.findMany({
-      where: { wallet: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] } },
+      where: {
+        wallet: { OR: [{ ownerUserId: userId }, { event: { organizationId } }] },
+        ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}),
+      },
       include: {
         vendor: { select: { name: true } },
         sponsor: { select: { name: true } },
@@ -467,6 +553,8 @@ export async function GET(request: Request) {
       supersededAt: c.supersededAt ? c.supersededAt.toISOString() : null,
     }));
   }
+
+  logIfSlow(since ? "GET /api/sync/pull (delta)" : "GET /api/sync/pull (full)", startedAt);
 
   return NextResponse.json(payload);
 }
