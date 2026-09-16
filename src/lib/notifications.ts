@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { sendSMS } from "@/lib/sms";
+import { sendWhatsApp } from "@/lib/whatsapp";
 
 export type NotificationType =
   | "ORDER_CONFIRMATION"
@@ -18,9 +19,12 @@ export type NotificationType =
   | "LOW_WALLET_BALANCE"
   | "VENDOR_MAGIC_LINK"
   | "VENDOR_SETTLEMENT_PROCESSED"
-  | "SPONSOR_MAGIC_LINK";
+  | "SPONSOR_MAGIC_LINK"
+  // Session 24
+  | "WALLET_TOPUP_CONFIRMED"
+  | "EVENT_REMINDER";
 
-export type NotificationChannel = "EMAIL" | "SMS";
+export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 
 interface SendNotificationInput {
   type: NotificationType;
@@ -46,9 +50,16 @@ interface SendNotificationInput {
  * isn't configured.
  */
 export async function sendNotification(input: SendNotificationInput) {
+  // WHATSAPP is "configured" if either a real WhatsApp send or its SMS
+  // fallback could actually go out — sendWhatsApp itself picks between
+  // them (see src/lib/whatsapp.ts), so this only needs to rule out the
+  // "neither provider exists" case, matching EMAIL/SMS's own all-or-log gate.
   const providerConfigured =
     (input.channel === "EMAIL" && !!process.env.RESEND_API_KEY) ||
-    (input.channel === "SMS" && !!process.env.AT_API_KEY && !!process.env.AT_USERNAME);
+    (input.channel === "SMS" && !!process.env.AT_API_KEY && !!process.env.AT_USERNAME) ||
+    (input.channel === "WHATSAPP" &&
+      !!process.env.AT_API_KEY &&
+      (!!(process.env.AT_WHATSAPP_USERNAME && process.env.AT_WHATSAPP_SHORTCODE) || !!process.env.AT_USERNAME));
 
   if (!providerConfigured) {
     return prisma.notificationLog.create({
@@ -71,7 +82,9 @@ export async function sendNotification(input: SendNotificationInput) {
           html: input.html ?? `<p>${input.body.replace(/\n/g, "<br />")}</p>`,
           text: input.body,
         })
-      : await sendSMS({ to: input.recipient, message: input.body });
+      : input.channel === "SMS"
+        ? await sendSMS({ to: input.recipient, message: input.body })
+        : await sendWhatsApp({ to: input.recipient, message: input.body });
 
   return prisma.notificationLog.create({
     data: {

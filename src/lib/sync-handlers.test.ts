@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { formatCents } from "@/lib/format";
 import {
   createTestEvent,
   createTestUser,
@@ -2413,7 +2414,10 @@ describe("handleChargeWallet — low wallet balance SMS", () => {
     expect(result.declined).toBeFalsy();
     const logs = await prisma.notificationLog.findMany({ where: { type: "LOW_WALLET_BALANCE", recipient: phone } });
     expect(logs).toHaveLength(1);
-    expect(logs[0].body).toBe("Your Chaap balance is low — top up at any station");
+    // Built via formatCents rather than a hardcoded literal — Node's Intl
+    // currency formatting inserts a U+00A0 non-breaking space after "TZS",
+    // not a plain space, which a typed-out literal would silently miss.
+    expect(logs[0].body).toBe(`⚠️ Your Chaap balance is low (${formatCents(150000, "TZS")}). Top up at any station to keep spending.`);
   });
 
   it("does not send a low-balance SMS when the remaining balance stays at or above TZS 2,000", async () => {

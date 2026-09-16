@@ -54,6 +54,8 @@ npx prisma db seed         # optional — loads demo events/accounts
    | `RESEND_API_KEY` | No | Enables real email delivery — see §4 |
    | `CHAAP_FROM_EMAIL` | No | Sender address for real email (default: `noreply@chaap-africa.com`) — see §4 |
    | `AT_API_KEY` / `AT_USERNAME` | No | Enables real SMS delivery via Africa's Talking — both required together, see §4 |
+   | `AT_WHATSAPP_USERNAME` / `AT_WHATSAPP_SHORTCODE` | No | Enables real WhatsApp delivery via Africa's Talking (with `AT_API_KEY`) — see §4 |
+   | `CRON_SECRET` | No | Required to enable the 24h event-reminder Vercel Cron job — see §6 |
    | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §5 |
 
 3. Deploy. `npm run build` runs the same way it does locally.
@@ -66,24 +68,41 @@ store to the project (Storage tab) — this automatically injects
 `BLOB_READ_WRITE_TOKEN`. Nothing else to configure; `/api/upload` and the
 event edit page's photo uploader already check for this token.
 
-## 4. Email / SMS
+## 4. Email / SMS / WhatsApp
 
 Real delivery is wired in: `src/lib/notifications.ts`'s `sendNotification()`
 — the single choke point every caller (checkout, password reset, org
-invites, wristband provisioning, low-balance warnings, ...) already goes
-through — calls `sendEmail()` (`src/lib/email.ts`, via Resend) whenever
-`RESEND_API_KEY` is set, and `sendSMS()` (`src/lib/sms.ts`, via Africa's
-Talking, Tanzania-only) whenever both `AT_API_KEY` and `AT_USERNAME` are
-set. Without those, every call still just lands in the `NotificationLog`
+invites, wristband provisioning, low-balance warnings, wallet top-ups,
+event reminders, ...) already goes through — calls `sendEmail()`
+(`src/lib/email.ts`, via Resend) whenever `RESEND_API_KEY` is set, and
+routes every buyer/attendee-facing SMS-shaped notification through
+`sendWhatsApp()` (`src/lib/whatsapp.ts`, via Africa's Talking's WhatsApp
+Business API, Tanzania-only) instead of `sendSMS()` directly — WhatsApp is
+the primary channel attendees actually check in Tanzania. `sendWhatsApp()`
+sends a real WhatsApp message when `AT_API_KEY`, `AT_WHATSAPP_USERNAME`,
+and `AT_WHATSAPP_SHORTCODE` (the WhatsApp Business number registered to the
+account — the SDK calls this `waNumber`) are all set; otherwise it falls
+back to `sendSMS()` (`src/lib/sms.ts`), which itself sends real SMS via
+Africa's Talking whenever both `AT_API_KEY` and `AT_USERNAME` are set.
+Without any of those, the call still just lands in the `NotificationLog`
 table, visible to admins at `/admin/notifications` — see the README's
 "Simulated pieces" section — same dev-mode behavior as before, per channel.
 
-SMS needs a phone number to send to, and no signup flow collects one —
-`User.phone` is only ever populated opportunistically when a buyer types a
-number at AIRPAY_ONLINE checkout (see `handleSellTickets`). An attendee who
-never paid online (cash/offline order, or a walk-up wristband provisioned
-by email) has no phone on file, so their SMS sends are silently skipped —
-they still get the email.
+**A note on Africa's Talking's WhatsApp sandbox**: as of this writing, its
+sandbox endpoint is documented as "coming soon" — only the live/production
+endpoint actually accepts WhatsApp sends. `AT_USERNAME=sandbox` (the
+free-traffic sandbox this project's SMS already runs against) does **not**
+currently support WhatsApp, so expect every WhatsApp send to fall back to
+SMS (or to a console log, if SMS isn't configured either) until real
+production WhatsApp credentials — a Meta-verified WhatsApp Business number
+onboarded through Africa's Talking — are set.
+
+SMS/WhatsApp need a phone number to send to, and no signup flow collects
+one — `User.phone` is only ever populated opportunistically when a buyer
+types a number at AIRPAY_ONLINE checkout (see `handleSellTickets`). An
+attendee who never paid online (cash/offline order, or a walk-up wristband
+provisioned by email) has no phone on file, so their WhatsApp/SMS sends are
+silently skipped — they still get the email.
 
 ## 5. Mobile money charging (optional)
 
@@ -111,6 +130,28 @@ yet — see `airpay.ts`'s comments and the README for why (a real charge is
 asynchronous; checkout needs a "waiting for you to confirm on your phone"
 state and a network selector that don't exist yet), and treat that as a
 follow-up task once credentials are verified against the sandbox.
+
+## 6. Event reminders (Vercel Cron)
+
+`src/lib/reminders.ts`'s `sendEventReminders()` finds every LIVE event
+starting in roughly 24 hours and sends each ticket holder with a phone on
+file a WhatsApp (falling back to SMS/log, same as every other notification)
+reminder with their current wallet balance and the event's start time.
+`src/app/api/cron/reminders/route.ts` exposes this as a `GET` endpoint that
+only runs the job when the request's `Authorization: Bearer <token>` header
+matches `CRON_SECRET` — set that env var (`openssl rand -base64 32`) for
+this to do anything at all; without it, the route always returns 401.
+
+`vercel.json` schedules Vercel Cron to hit that route hourly
+(`0 * * * *`). An hourly cadence rather than one exact "24h before" run is
+deliberate: `sendEventReminders()`'s own query window is a 2-hour band
+(23h–25h out) specifically so a slightly-late or one-off-missed run still
+catches every event, and the real "don't remind the same attendee twice"
+guarantee is a `NotificationLog` lookup keyed on event + recipient inside
+the function itself, not the schedule. (Vercel's Hobby plan limits cron
+jobs to once a day — on Hobby, change the schedule to something like
+`0 9 * * *` and accept that a very-last-minute event announced with under
+~24h notice may not get a reminder in.)
 
 ## Post-deploy checklist
 

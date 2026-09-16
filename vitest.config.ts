@@ -22,6 +22,8 @@ export default defineConfig({
       RESEND_API_KEY: "",
       AT_API_KEY: "",
       AT_USERNAME: "",
+      AT_WHATSAPP_USERNAME: "",
+      AT_WHATSAPP_SHORTCODE: "",
     },
     // integration tests share one disposable Postgres database — parallel
     // test files would race on writes/schema, so run them one at a time.

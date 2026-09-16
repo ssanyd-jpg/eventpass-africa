@@ -2,7 +2,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { generateTicketCode, slugify, formatCents } from "@/lib/format";
+import { generateTicketCode, slugify, formatCents, formatDate } from "@/lib/format";
 import { sendNotification } from "@/lib/notifications";
 import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { getActivePaymentProvider } from "@/lib/payments";
@@ -691,9 +691,11 @@ const fullOrderInclude = {
   items: { include: { ticketType: true } },
   tickets: { include: { ticketType: true, ticketGroup: { select: { name: true } } } },
   // organizationId added for handleMarkOrderPaid's ownership check, slug
-  // for the retry links in PAYMENT_FAILED notifications — shapeOrder itself
-  // reads neither, so this is a no-op for every other existing caller.
-  event: { select: { id: true, clientId: true, title: true, organizationId: true, slug: true } },
+  // for the retry links in PAYMENT_FAILED notifications, startsAt for the
+  // "Date: ..." line in the WhatsApp order-confirmation message (Session
+  // 24) — shapeOrder itself reads none of these, so this is a no-op for
+  // every other existing caller.
+  event: { select: { id: true, clientId: true, title: true, organizationId: true, slug: true, startsAt: true } },
   registrationAnswers: { include: { question: true } },
 } as const;
 
@@ -802,10 +804,10 @@ export async function handleSellTickets(userId: string, payload: any) {
         if (buyer.phone) {
           await sendNotification({
             type: "ORDER_PAYMENT_FAILED",
-            channel: "SMS",
+            channel: "WHATSAPP",
             recipient: buyer.phone,
             subject: "Payment failed",
-            body: `Chaap: Payment for ${event.title} failed. Try again: ${retryUrl}`,
+            body: `❌ Payment failed for ${event.title}. Tap here to try again: ${retryUrl}`,
           });
         }
       }
@@ -1033,13 +1035,14 @@ export async function handleSellTickets(userId: string, payload: any) {
       }),
     });
     if (buyer.phone) {
-      const ticketPart = ticketCodes.length === 1 ? `Ticket ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+      const codePart = ticketCodes.length === 1 ? `Code: ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+      const orderLink = `${process.env.NEXTAUTH_URL ?? ""}/orders/${order.id}`;
       await sendNotification({
         type: "ORDER_CONFIRMATION",
-        channel: "SMS",
+        channel: "WHATSAPP",
         recipient: buyer.phone,
         subject: "Order confirmed",
-        body: `Chaap: ${ticketPart} for ${event.title}. Total ${totalFormatted}. See you there!`,
+        body: `🎟 Your Chaap ticket is confirmed! Event: ${event.title}, Date: ${formatDate(event.startsAt)}, ${codePart}. Show this at the gate: ${orderLink}`,
       });
     }
   }
@@ -1536,13 +1539,14 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
           }),
         });
         if (buyer.phone) {
-          const ticketPart = ticketCodes.length === 1 ? `Ticket ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+          const codePart = ticketCodes.length === 1 ? `Code: ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
+          const orderLink = `${process.env.NEXTAUTH_URL ?? ""}/orders/${fresh.id}`;
           await sendNotification({
             type: "ORDER_CONFIRMATION",
-            channel: "SMS",
+            channel: "WHATSAPP",
             recipient: buyer.phone,
             subject: "Order confirmed",
-            body: `Chaap: ${ticketPart} for ${fresh.event.title}. Total ${totalFormatted}. See you there!`,
+            body: `🎟 Your Chaap ticket is confirmed! Event: ${fresh.event.title}, Date: ${formatDate(fresh.event.startsAt)}, ${codePart}. Show this at the gate: ${orderLink}`,
           });
         }
       }
@@ -1590,10 +1594,10 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     if (buyer.phone) {
       await sendNotification({
         type: "ORDER_PAYMENT_FAILED",
-        channel: "SMS",
+        channel: "WHATSAPP",
         recipient: buyer.phone,
         subject: "Payment failed",
-        body: `Chaap: Payment for ${outcome.event.title} failed. Try again: ${retryUrl}`,
+        body: `❌ Payment failed for ${outcome.event.title}. Tap here to try again: ${retryUrl}`,
       });
     }
   }
@@ -2538,10 +2542,10 @@ export async function handleProvisionCredential(userId: string, organizationId: 
   if (outcome.user.phone) {
     await sendNotification({
       type: "WRISTBAND_PROVISIONED",
-      channel: "SMS",
+      channel: "WHATSAPP",
       recipient: outcome.user.phone,
       subject: "Wristband active",
-      body: `Chaap: Your wristband is active! Wallet code: ${outcome.wallet.code}. Balance: ${formatCents(outcome.wallet.balanceCents, outcome.wallet.currency)}.`,
+      body: `✅ Your Chaap wristband is active! Balance: ${formatCents(outcome.wallet.balanceCents, outcome.wallet.currency)}. Tap to pay at any vendor. Top up at any station.`,
     });
   }
 
@@ -2720,6 +2724,19 @@ export async function handleTopupWallet(userId: string, payload: any) {
       return { updatedWallet, transaction };
     }, { timeout: 15000, maxWait: 10000 });
 
+    // Best-effort, skipped silently when the attendee has no phone on
+    // file — same discipline as the wristband-provisioned/low-balance
+    // notifications above.
+    if (result.updatedWallet.owner.phone) {
+      await sendNotification({
+        type: "WALLET_TOPUP_CONFIRMED",
+        channel: "WHATSAPP",
+        recipient: result.updatedWallet.owner.phone,
+        subject: "Top-up confirmed",
+        body: `💰 ${formatCents(amountCents, wallet.currency)} added to your Chaap wallet via ${payload.mobileNetwork ? String(payload.mobileNetwork) : "mobile money"}. New balance: ${formatCents(result.updatedWallet.balanceCents, result.updatedWallet.currency)}.`,
+      });
+    }
+
     return { ok: true, transaction: shapeWalletTransaction(result.transaction), wallet: shapeWallet(result.updatedWallet) };
   }
 
@@ -2789,6 +2806,21 @@ export async function handleCheckTopupStatus(payload: any) {
       const fresh = await prisma.walletTransaction.findUniqueOrThrow({ where: { id: tx.id }, include: walletTxInclude });
       return { ok: true, transaction: shapeWalletTransaction(fresh), wallet: null };
     }
+
+    // Only just transitioned to COMPLETED by this call — mirrors
+    // handleTopupWallet's instant-PAID notification above, for the
+    // poll-resolved path (Airpay's real provider always returns PENDING
+    // first, so most real top-ups confirm here rather than instantly).
+    if (updated.updatedWallet.owner.phone) {
+      await sendNotification({
+        type: "WALLET_TOPUP_CONFIRMED",
+        channel: "WHATSAPP",
+        recipient: updated.updatedWallet.owner.phone,
+        subject: "Top-up confirmed",
+        body: `💰 ${formatCents(tx.amountCents ?? 0, updated.updatedWallet.currency)} added to your Chaap wallet via ${tx.mobileNetwork ?? "mobile money"}. New balance: ${formatCents(updated.updatedWallet.balanceCents, updated.updatedWallet.currency)}.`,
+      });
+    }
+
     return { ok: true, transaction: shapeWalletTransaction(updated.updatedTx), wallet: shapeWallet(updated.updatedWallet) };
   }
 
@@ -2933,10 +2965,10 @@ export async function handleChargeWallet(userId: string, organizationId: string,
   if (result.wallet.currency === "TZS" && result.wallet.balanceCents < 200000 && result.wallet.owner?.phone) {
     await sendNotification({
       type: "LOW_WALLET_BALANCE",
-      channel: "SMS",
+      channel: "WHATSAPP",
       recipient: result.wallet.owner.phone,
       subject: "Low wallet balance",
-      body: "Your Chaap balance is low — top up at any station",
+      body: `⚠️ Your Chaap balance is low (${formatCents(result.wallet.balanceCents, result.wallet.currency)}). Top up at any station to keep spending.`,
     });
   }
 

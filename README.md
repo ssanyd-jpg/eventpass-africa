@@ -142,15 +142,25 @@ you can kill the network entirely and keep browsing/buying/scanning.
   orders into a payout record with a simulated reference number. No real
   funds move; `src/lib/settlement-handlers.ts` is the integration point
   where a real provider call would go.
-- **Email / SMS** — every notification (order confirmations, password
-  resets, cancellations, refunds, wristband provisioning, low wallet
-  balance) goes through the single choke point `src/lib/notifications.ts`,
-  which sends real email via Resend (`src/lib/email.ts`) when
-  `RESEND_API_KEY` is set and real SMS via Africa's Talking
-  (`src/lib/sms.ts`, Tanzania-only) when `AT_API_KEY`/`AT_USERNAME` are
-  set. Without those, it logs to `NotificationLog` (visible at
+- **Email / SMS / WhatsApp** — every notification (order confirmations,
+  password resets, cancellations, refunds, wristband provisioning, low
+  wallet balance, wallet top-ups, event reminders) goes through the single
+  choke point `src/lib/notifications.ts`, which sends real email via Resend
+  (`src/lib/email.ts`) when `RESEND_API_KEY` is set, real WhatsApp via
+  Africa's Talking's WhatsApp Business API (`src/lib/whatsapp.ts`,
+  Tanzania-only — WhatsApp is the primary channel every buyer/attendee
+  notification uses) when `AT_API_KEY`/`AT_WHATSAPP_USERNAME`/
+  `AT_WHATSAPP_SHORTCODE` are set, and real SMS via Africa's Talking
+  (`src/lib/sms.ts`) when `AT_API_KEY`/`AT_USERNAME` are set — WhatsApp
+  itself falls back to SMS whenever it isn't configured or a send fails.
+  Without any of those, it logs to `NotificationLog` (visible at
   `/admin/notifications`) instead of sending anything, per channel — the
   original dev-mode behavior, unchanged for whichever isn't configured.
+- **24-hour event reminders** — `src/lib/reminders.ts`'s `sendEventReminders()`
+  queries events starting in roughly 24 hours and WhatsApps every ticket
+  holder with a phone on file; `src/app/api/cron/reminders/route.ts` is a
+  Vercel Cron target (see `vercel.json`) protected by `CRON_SECRET`, and is
+  a no-op with no real effect until that secret is set.
 - **Event photo uploads** — events default to a `picsum.photos` placeholder
   image. `/api/upload` and the edit page's uploader use Vercel Blob when
   `BLOB_READ_WRITE_TOKEN` is set, and fall back to the placeholder
