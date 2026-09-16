@@ -1,131 +1,94 @@
-"use client";
+import Link from "next/link";
+import { getFeaturedEvents, getPlatformStats } from "@/lib/marketplace";
+import { formatCents } from "@/lib/format";
+import PublicEventCard from "@/components/PublicEventCard";
+import HomeBrowse from "@/components/HomeBrowse";
 
-import { useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
-import EventCard from "@/components/EventCard";
-import { useOnlineStatus } from "@/lib/sync-engine";
-import { useTranslation } from "@/lib/use-translation";
+const HOW_IT_WORKS = [
+  {
+    title: "Buy your ticket",
+    description: "Browse events and buy tickets online or offline — synced automatically once you're back online.",
+  },
+  {
+    title: "Get your wristband",
+    description: "Tap your wristband at the gate for instant check-in. No printing, no paper tickets.",
+  },
+  {
+    title: "Tap to pay",
+    description: "Load your wallet and tap to pay at any vendor on-site — no cash, no queues.",
+  },
+];
 
-const CATEGORIES = ["All", "Music", "Sports", "Comedy", "Conference", "Festival"];
-
-export default function HomePage() {
-  const [category, setCategory] = useState("All");
-  const [query, setQuery] = useState("");
-  const [vendorsOnly, setVendorsOnly] = useState(false);
-  const online = useOnlineStatus();
-  const { t } = useTranslation();
-
-  const events = useLiveQuery(() => db.events.orderBy("startsAt").toArray(), [], undefined);
-
-  // Deterministic same-category recommendations (see recommendations.ts) —
-  // only ids ride over the wire, so look each one up against the
-  // already-synced events table. Empty for signed-out visitors and buyers
-  // with no purchase history — no cold-start guessing.
-  const recommendedIds = useLiveQuery(() => db.recommendedEvents.toArray(), [], []);
-  const recommendedEvents = useLiveQuery(async () => {
-    if (!recommendedIds || recommendedIds.length === 0) return [];
-    const rows = await Promise.all(recommendedIds.map((r) => db.events.get(r.id)));
-    return rows.filter((e): e is NonNullable<typeof e> => !!e);
-  }, [recommendedIds]);
-
-  const filtered = useMemo(() => {
-    if (!events) return undefined;
-    const q = query.trim().toLowerCase();
-    return events.filter((e) => {
-      if (e.status === "CANCELLED") return false;
-      const matchesCategory = category === "All" || e.category === category;
-      const matchesQuery =
-        !q ||
-        e.title.toLowerCase().includes(q) ||
-        e.city.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q);
-      const matchesVendors =
-        !vendorsOnly || (e.vendorApplicationsOpen && new Date(e.startsAt) > new Date());
-      return matchesCategory && matchesQuery && matchesVendors;
-    });
-  }, [events, category, query, vendorsOnly]);
+// Server Component: fetches live platform data (featured events, stats) via
+// Prisma directly, so the marketing sections below are real server-rendered
+// HTML a crawler (or a slow first paint) can see immediately. The old
+// homepage — fully "use client", reading events out of Dexie/IndexedDB —
+// still exists, unchanged in behavior, as <HomeBrowse /> beneath these
+// sections: that's the offline-first buyer app, not the public marketplace,
+// and Session 25 only adds a discovery layer on top of it.
+export default async function HomePage() {
+  const [featuredEvents, stats] = await Promise.all([getFeaturedEvents(3), getPlatformStats()]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6">
-      <section className="mb-10 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent-soft via-surface to-surface p-8 sm:p-12">
-        <p className="mb-3 text-xs font-bold tracking-[0.3em] text-silver">{t("home.tagline")}</p>
-        <p className="pill mb-4 border-accent/40 bg-accent-soft text-accent-hover">{t("home.badge")}</p>
+      <section className="mb-12 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent-soft via-surface to-surface p-8 sm:p-12">
+        <p className="mb-3 text-xs font-bold tracking-[0.3em] text-silver">EAST AFRICA&apos;S EVENT PLATFORM</p>
         <h1 className="max-w-xl text-balance text-3xl font-bold leading-tight sm:text-4xl">
-          {t("home.heroTitle")}
+          Chaap — East Africa&apos;s event platform
         </h1>
-        <p className="mt-3 max-w-lg text-muted">{t("home.heroSubtitle")}</p>
-        {!online && (
-          <p className="mt-4 inline-flex items-center gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-            {t("home.offlineNotice")}
-          </p>
-        )}
+        <p className="mt-3 max-w-lg text-muted">
+          Buy tickets, get your wristband, and tap to pay — cashless and built to work offline, anywhere in East
+          Africa.
+        </p>
+        <Link href="/events" className="btn-primary mt-6 inline-flex">
+          Browse events
+        </Link>
       </section>
 
-      {recommendedEvents && recommendedEvents.length > 0 && (
-        <section className="mb-10">
-          <h2 className="mb-4 text-xl font-bold">Events you might like</h2>
+      {featuredEvents.length > 0 && (
+        <section className="mb-12">
+          <h2 className="mb-4 text-xl font-bold">Featured events</h2>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {recommendedEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+            {featuredEvents.map((event) => (
+              <PublicEventCard key={event.id} event={event} />
             ))}
           </div>
         </section>
       )}
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-                category === c
-                  ? "border-accent bg-accent text-white"
-                  : "border-border bg-surface2 text-muted hover:text-foreground"
-              }`}
-            >
-              {c === "All" ? t("home.categoryAll") : c}
-            </button>
+      <section className="mb-12">
+        <h2 className="mb-4 text-xl font-bold">How it works</h2>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          {HOW_IT_WORKS.map((step, i) => (
+            <div key={step.title} className="card p-5">
+              <span className="pill mb-3 inline-flex border-accent/40 bg-accent-soft text-accent-hover">
+                Step {i + 1}
+              </span>
+              <h3 className="font-semibold">{step.title}</h3>
+              <p className="mt-1 text-sm text-muted">{step.description}</p>
+            </div>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setVendorsOnly((v) => !v)}
-            className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-              vendorsOnly
-                ? "border-accent bg-accent text-white"
-                : "border-border bg-surface2 text-muted hover:text-foreground"
-            }`}
-          >
-            Vendors welcome
-          </button>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("home.searchPlaceholder")}
-            className="input sm:max-w-xs"
-          />
-        </div>
-      </div>
+      </section>
 
-      {filtered === undefined ? (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card aspect-[16/9] animate-pulse bg-surface2" />
-          ))}
+      <section className="mb-12 grid grid-cols-1 gap-6 rounded-2xl border border-border bg-surface2 p-8 sm:grid-cols-3">
+        <div>
+          <p className="text-3xl font-bold tabular-nums">{stats.totalEventsHosted.toLocaleString()}</p>
+          <p className="mt-1 text-sm text-muted">Events hosted</p>
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="card p-12 text-center text-muted">
-          {events && events.length === 0 ? t("home.noEventsCached") : t("home.noEventsMatch")}
+        <div>
+          <p className="text-3xl font-bold tabular-nums">{stats.totalTicketsSold.toLocaleString()}</p>
+          <p className="mt-1 text-sm text-muted">Tickets sold</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((event) => (
-            <EventCard key={event.id} event={event} />
-          ))}
+        <div>
+          <p className="text-3xl font-bold tabular-nums">
+            {formatCents(stats.totalCashlessVolumeCents, stats.currency)}
+          </p>
+          <p className="mt-1 text-sm text-muted">Cashless volume processed</p>
         </div>
-      )}
+      </section>
+
+      <HomeBrowse />
     </div>
   );
 }

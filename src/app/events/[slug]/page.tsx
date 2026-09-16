@@ -1,513 +1,93 @@
-"use client";
+import type { Metadata } from "next";
+import { getPublicEventSeo, computeEventPricing } from "@/lib/marketplace";
+import EventDetailClient from "./EventDetailClient";
 
-import { useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { db, newLocalId } from "@/lib/db";
-import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
-import { useAppSession } from "@/lib/use-app-session";
-import { useTranslation } from "@/lib/use-translation";
-import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
-import QuestionFields from "@/components/QuestionFields";
-import Spinner from "@/components/Spinner";
+// EventDetailClient (the actual buyer-facing page — ticket selection,
+// checkout, group buying, etc.) stays exactly as it was: a "use client"
+// component reading the event out of Dexie, since that's what makes it
+// work offline. It has no server-fetched data and so cannot itself export
+// generateMetadata or emit SEO-crawlable content. This file is the new,
+// separate server-rendered wrapper Session 25 needs: it does its own
+// Prisma lookup by slug purely for <head> metadata and JSON-LD, then
+// renders the untouched client page underneath.
+const SITE_URL = process.env.NEXTAUTH_URL ?? "https://chaap.africa";
 
-const NETWORKS = [
-  { value: "MPESA", label: "M-Pesa" },
-  { value: "TIGO", label: "Tigo Pesa" },
-  { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
-];
+interface EventDetailPageProps {
+  params: { slug: string };
+}
 
-export default function EventDetailPage() {
-  const { slug } = useParams<{ slug: string }>();
-  const router = useRouter();
-  const { user } = useAppSession();
-  const online = useOnlineStatus();
-  const { t } = useTranslation();
-  const events = useLiveQuery(() => db.events.toArray(), []);
-  const event = events?.find((e) => e.slug === slug);
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [step, setStep] = useState<"select" | "questions" | "confirm">("select");
-  const [placing, setPlacing] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [waiverAccepted, setWaiverAccepted] = useState(false);
-  const [discountCode, setDiscountCode] = useState("");
-  const [phone, setPhone] = useState("");
-  const [network, setNetwork] = useState(NETWORKS[0].value);
-
-  // Session 13 — group/family checkout. One name per ticket being bought,
-  // in the same order tickets get flattened below — kept in sync with
-  // totalQty as the buyer adjusts quantities, preserving names already
-  // typed for the tickets that are still there.
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [memberNames, setMemberNames] = useState<string[]>([]);
-
-  const selection = useMemo(() => {
-    if (!event) return [];
-    return event.ticketTypes
-      .map((tt) => ({ tt, qty: quantities[tt.id] ?? 0 }))
-      .filter((s) => s.qty > 0);
-  }, [event, quantities]);
-
-  const totalCents = selection.reduce((sum, s) => sum + s.tt.priceCents * s.qty, 0);
-  const totalQty = selection.reduce((sum, s) => sum + s.qty, 0);
-
-  // Padded/truncated to the current totalQty for rendering and validation —
-  // memberNames itself only grows via setMemberName, so a quantity change
-  // (up or down) is reflected here without a separate effect to keep it in
-  // sync.
-  const displayedMemberNames = Array.from({ length: totalQty }, (_, i) => memberNames[i] ?? "");
-  function setMemberName(index: number, name: string) {
-    const next = displayedMemberNames.slice();
-    next[index] = name;
-    setMemberNames(next);
-  }
-  const groupReady = !isGroup || (groupName.trim().length > 0 && displayedMemberNames.every((n) => n.trim().length > 0));
-
-  // Skip the questions step entirely when there's nothing to ask — no empty
-  // screen between selecting tickets and confirming.
-  const registrationQuestions = event?.registrationQuestions ?? [];
-  const hasQuestionsStep = registrationQuestions.length > 0 || !!event?.waiverText;
-  const answersValid = registrationQuestions.every((q) => !q.required || (answers[q.id] ?? "").trim());
-  const waiverOk = !event?.waiverText || waiverAccepted;
-
-  if (events === undefined) {
-    return (
-      <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
-        <Spinner />
-        <span>{t("common.loading")}</span>
-      </div>
-    );
-  }
-
+export async function generateMetadata({ params }: EventDetailPageProps): Promise<Metadata> {
+  const event = await getPublicEventSeo(params.slug);
   if (!event) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <p className="text-lg font-semibold">{t("common.eventNotFound")}</p>
-        <p className="mt-2 text-sm text-muted">
-          {t("event.notFoundHint")}
-        </p>
-        <Link href="/" className="btn-secondary mt-6 inline-flex">{t("common.backToBrowse")}</Link>
-      </div>
-    );
+    return { title: "Event not found — Chaap" };
   }
 
-  function setQty(ticketTypeId: string, qty: number, max: number) {
-    setQuantities((q) => ({ ...q, [ticketTypeId]: Math.max(0, Math.min(qty, max)) }));
-  }
+  const description = event.description.slice(0, 160);
+  const url = `${SITE_URL}/events/${params.slug}`;
 
-  async function placeOrder() {
-    if (!event || event.status === "CANCELLED") return;
-    if (!user) {
-      router.push(`/login?callbackUrl=/events/${slug}`);
-      return;
-    }
-    setPlacing(true);
+  return {
+    title: `${event.title} — Chaap`,
+    description,
+    openGraph: {
+      title: event.title,
+      description,
+      url,
+      images: [{ url: event.imageUrl }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: event.title,
+      description,
+      images: [event.imageUrl],
+    },
+  };
+}
 
-    const clientId = newLocalId();
-    // Session 13 — when buying for a group, memberNames maps 1:1 onto
-    // these tickets in this exact flattened order (items are sent to
-    // SELL_TICKETS in the same order below, and the server expands each
-    // item by quantity the same way — see handleSellTickets).
-    let memberIndex = 0;
-    const tickets = selection.flatMap((s) =>
-      Array.from({ length: s.qty }).map(() => ({
-        id: newLocalId(),
-        clientId: newLocalId(),
-        code: generateTicketCode(),
-        ticketTypeId: s.tt.id,
-        ticketTypeName: s.tt.name,
-        checkedIn: false,
-        checkedInAt: null,
-        groupMemberName: isGroup ? displayedMemberNames[memberIndex++]?.trim() || null : null,
-      }))
-    );
+export default async function EventDetailPage({ params }: EventDetailPageProps) {
+  const event = await getPublicEventSeo(params.slug);
 
-    const order = {
-      id: clientId,
-      clientId,
-      // Online buyers hold in PENDING until the Airpay STK push confirms
-      // (see handleSellTickets/handleCheckOrderPaymentStatus); offline
-      // buyers keep the original instant-PAID flow, deferred to organizer
-      // reconciliation via paymentMethod below.
-      status: online ? "PENDING" : "PAID",
-      totalCents,
-      currency: event.currency,
-      createdAt: new Date().toISOString(),
-      userId: user.id,
-      eventId: event.id,
-      eventClientId: event.clientId,
-      eventTitle: event.title,
-      items: selection.map((s) => ({
-        ticketTypeId: s.tt.id,
-        ticketTypeName: s.tt.name,
-        quantity: s.qty,
-        unitPriceCents: s.tt.priceCents,
-      })),
-      tickets,
-      waiverText: event.waiverText ?? null,
-      waiverAcceptedAt: waiverAccepted ? new Date().toISOString() : null,
-      answers: registrationQuestions.map((q) => ({
-        questionId: q.id,
-        questionLabel: q.label,
-        value: answers[q.id] ?? "",
-      })),
-      // Discounts can't be pre-validated offline (codes deliberately don't
-      // ride in the public event pull) — the optimistic local echo keeps
-      // the full list-price total; applySellTicketsResult overwrites this
-      // whole order with the server-authoritative, correctly discounted one
-      // once sync succeeds.
-      syncStatus: "pending" as const,
-      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
-      providerReference: null,
-      providerMessage: online ? "Awaiting payment confirmation on your phone." : "Purchased offline — payment collection deferred.",
-    };
-
-    await db.orders.put(order);
-
-    // reflect the sale locally right away so inventory looks correct offline
-    await db.events.put({
-      ...event,
-      ticketTypes: event.ticketTypes.map((tt) => {
-        const sold = selection.find((s) => s.tt.id === tt.id);
-        return sold ? { ...tt, quantitySold: tt.quantitySold + sold.qty } : tt;
-      }),
-    });
-
-    await queueOp("SELL_TICKETS", {
-      clientId,
-      eventId: event.id,
-      eventClientId: event.clientId,
-      // Codes are generated client-side and already shown to the buyer —
-      // the server must reuse these exact codes rather than generating its
-      // own, or the code on screen would silently stop matching what's
-      // actually valid once this order syncs.
-      items: selection.map((s) => ({
-        ticketTypeId: s.tt.id,
-        quantity: s.qty,
-        codes: tickets.filter((t) => t.ticketTypeId === s.tt.id).map((t) => t.code),
-      })),
-      answers: registrationQuestions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? "" })),
-      waiverAccepted,
-      discountCode: discountCode.trim() || undefined,
-      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
-      phoneNumber: online ? phone.trim() : undefined,
-      mobileNetwork: online ? network : undefined,
-      group: isGroup
-        ? { name: groupName.trim(), memberNames: displayedMemberNames.map((n) => n.trim()) }
-        : undefined,
-    });
-
-    // /orders/[id] live-queries this exact order out of Dexie, so it picks
-    // up the PENDING → PAID/PAYMENT_FAILED transition once the outbox flush
-    // resolves — unlike rendering a static snapshot inline here, which
-    // would never reflect a payment confirming in the background.
-    router.push(`/orders/${clientId}`);
-  }
+  const jsonLd = event
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Event",
+        name: event.title,
+        description: event.description,
+        startDate: event.startsAt.toISOString(),
+        ...(event.endsAt ? { endDate: event.endsAt.toISOString() } : {}),
+        eventStatus:
+          event.status === "CANCELLED"
+            ? "https://schema.org/EventCancelled"
+            : "https://schema.org/EventScheduled",
+        eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+        location: {
+          "@type": "Place",
+          name: event.venue,
+          address: { "@type": "PostalAddress", addressLocality: event.city, addressCountry: "TZ" },
+        },
+        image: [event.imageUrl],
+        organizer: { "@type": "Organization", name: event.organizerName },
+        offers: (() => {
+          const { lowestPriceCents, soldOut } = computeEventPricing(event.ticketTypes);
+          if (lowestPriceCents === null) return undefined;
+          return {
+            "@type": "Offer",
+            url: `${SITE_URL}/events/${params.slug}`,
+            price: (lowestPriceCents / 100).toFixed(2),
+            priceCurrency: event.currency,
+            availability: soldOut ? "https://schema.org/SoldOut" : "https://schema.org/InStock",
+          };
+        })(),
+      }
+    : null;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 pb-20 pt-6 sm:px-6">
-      <Link href="/" className="text-sm text-muted hover:text-foreground">← {t("common.backToBrowse")}</Link>
-
-      <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={event.imageUrl} alt={event.title} className="h-64 w-full object-cover sm:h-80" />
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="pill">{event.category}</span>
-            {event.status === "CANCELLED" && (
-              <span className="pill border-danger/40 bg-danger/10 text-danger">{t("event.cancelledPill")}</span>
-            )}
-          </div>
-          <h1 className="text-balance text-2xl font-bold sm:text-3xl">{event.title}</h1>
-          <p className="mt-2 text-muted">{formatDateTime(event.startsAt)}</p>
-          <p className="text-muted">{event.venue} · {event.city}</p>
-          <p className="mt-1 text-xs text-muted">{t("event.organizedBy", { name: event.organizerName })}</p>
-          <p className="mt-6 whitespace-pre-line leading-relaxed text-foreground/90">
-            {event.description}
-          </p>
-
-          {event.status === "LIVE" && (
-            <Link
-              href="/account/wallet"
-              className="mt-4 inline-flex text-sm font-medium text-accent-hover"
-            >
-              {t("event.getWalletLink")}
-            </Link>
-          )}
-
-          {(event.vendors.length > 0 || (event.vendorApplicationsOpen && new Date(event.startsAt) > new Date())) && (
-            <div className="mt-8 border-t border-border pt-6">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-semibold">{t("event.vendorsHeading")}</h2>
-                {event.vendorApplicationsOpen && new Date(event.startsAt) > new Date() && (
-                  <Link href={`/events/${slug}/vendors/apply`} className="text-sm font-medium text-accent-hover">
-                    {t("event.applyAsVendor")}
-                  </Link>
-                )}
-              </div>
-              {event.vendors.length === 0 ? (
-                <p className="text-sm text-muted">{t("event.noVendorsYet")}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {event.vendors.map((v) => (
-                    <li key={v.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
-                      <span>{v.name}</span>
-                      <span className="text-muted">
-                        {v.category}{v.boothNumber ? ` · ${t("common.boothNumber", { number: v.boothNumber })}` : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-
-        {event.status === "CANCELLED" ? (
-          <div className="card h-fit p-5">
-            <p className="font-semibold text-danger">{t("event.cancelledCardTitle")}</p>
-            <p className="mt-2 text-sm text-muted">
-              {t("event.cancelledCardBody")}
-            </p>
-          </div>
-        ) : (
-        <div className="card h-fit p-5">
-          {step === "select" && (
-            <>
-              <h2 className="mb-4 font-semibold">{t("event.selectTickets")}</h2>
-
-              <label className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface2 p-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={isGroup}
-                  onChange={(e) => setIsGroup(e.target.checked)}
-                />
-                {t("event.buyingForGroup")}
-              </label>
-              {isGroup && (
-                <div className="mb-4">
-                  <label className="label" htmlFor="groupName">{t("event.groupNameLabel")}</label>
-                  <input
-                    id="groupName"
-                    className="input"
-                    placeholder={t("event.groupNamePlaceholder")}
-                    maxLength={120}
-                    value={groupName}
-                    onChange={(e) => setGroupName(e.target.value)}
-                  />
-                  <p className="mt-1 text-xs text-muted">
-                    {t("event.groupNameHint")}
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                {event.ticketTypes.map((tt) => {
-                  const remaining = tt.quantityTotal - tt.quantitySold;
-                  const qty = quantities[tt.id] ?? 0;
-                  return (
-                    <div key={tt.id} className="border-b border-border pb-4 last:border-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{tt.name}</p>
-                          <p className="text-sm text-muted">{formatCents(tt.priceCents, event.currency)}</p>
-                          <p className="text-xs text-muted">
-                            {remaining > 0 ? t("event.leftSuffix", { count: remaining }) : t("event.soldOut")}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="btn-secondary h-8 w-8 !rounded-full !p-0"
-                            disabled={qty <= 0}
-                            onClick={() => setQty(tt.id, qty - 1, remaining)}
-                          >
-                            −
-                          </button>
-                          <span className="w-5 text-center text-sm">{qty}</span>
-                          <button
-                            className="btn-secondary h-8 w-8 !rounded-full !p-0"
-                            disabled={remaining <= 0 || qty >= remaining}
-                            onClick={() => setQty(tt.id, qty + 1, remaining)}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {isGroup && totalQty > 0 && (
-                <div className="mt-5 border-t border-border pt-4">
-                  <p className="label">{t("event.memberNamesLabel")}</p>
-                  <p className="mb-2 text-xs text-muted">{t("event.memberNamesHint")}</p>
-                  <div className="space-y-2">
-                    {displayedMemberNames.map((name, i) => (
-                      <input
-                        key={i}
-                        className="input"
-                        placeholder={t("event.memberNamePlaceholder", { number: i + 1 })}
-                        maxLength={80}
-                        value={name}
-                        onChange={(e) => setMemberName(i, e.target.value)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5 flex items-center justify-between text-sm">
-                <span className="text-muted">{t("event.total")}</span>
-                <span className="font-semibold">{formatCents(totalCents, event.currency)}</span>
-              </div>
-              <button
-                className="btn-primary mt-4 w-full"
-                disabled={totalQty === 0 || !groupReady}
-                onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
-              >
-                {t("event.continue")}
-              </button>
-            </>
-          )}
-
-          {step === "questions" && (
-            <>
-              <h2 className="mb-4 font-semibold">{t("event.questionsHeading")}</h2>
-              <div className="space-y-4">
-                <QuestionFields
-                  questions={registrationQuestions}
-                  answers={answers}
-                  onChange={(questionId, value) => setAnswers((a) => ({ ...a, [questionId]: value }))}
-                />
-
-                {event.waiverText && (
-                  <div className="border-t border-border pt-4">
-                    <p className="label">{t("event.waiverLabel")}</p>
-                    <div className="max-h-40 overflow-y-auto whitespace-pre-line rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
-                      {event.waiverText}
-                    </div>
-                    <label className="mt-2 flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={waiverAccepted}
-                        onChange={(e) => setWaiverAccepted(e.target.checked)}
-                      />
-                      {t("event.waiverAccept")}
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                <button className="btn-secondary flex-1" onClick={() => setStep("select")}>
-                  {t("event.back")}
-                </button>
-                <button
-                  className="btn-primary flex-1"
-                  disabled={!answersValid || !waiverOk}
-                  onClick={() => setStep("confirm")}
-                >
-                  {t("event.continue")}
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === "confirm" && (
-            <>
-              <h2 className="mb-4 font-semibold">{t("event.confirmAndPay")}</h2>
-              {isGroup && (
-                <div className="mb-4 rounded-lg border border-border bg-surface2 p-3 text-sm">
-                  <p className="font-medium">{groupName.trim()}</p>
-                  <p className="text-xs text-muted">
-                    {t("event.groupWalletHint", { names: displayedMemberNames.join(", ") })}
-                  </p>
-                </div>
-              )}
-              <div className="space-y-2 text-sm">
-                {selection.map((s) => (
-                  <div key={s.tt.id} className="flex justify-between">
-                    <span>{s.qty}× {s.tt.name}</span>
-                    <span>{formatCents(s.tt.priceCents * s.qty, event.currency)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                  <span>{t("event.total")}</span>
-                  <span>{formatCents(totalCents, event.currency)}</span>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <label className="label" htmlFor="discountCode">{t("event.discountCodeLabel")}</label>
-                <input
-                  id="discountCode"
-                  className="input"
-                  placeholder={t("event.discountCodePlaceholder")}
-                  value={discountCode}
-                  onChange={(e) => setDiscountCode(e.target.value)}
-                />
-                <p className="mt-1 text-xs text-muted">
-                  {t("event.discountCodeHint")}
-                </p>
-              </div>
-
-              {online && (
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="label" htmlFor="network">{t("event.mobileNetworkLabel")}</label>
-                    <select id="network" className="input" value={network} onChange={(e) => setNetwork(e.target.value)}>
-                      {NETWORKS.map((n) => (
-                        <option key={n.value} value={n.value}>{n.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label" htmlFor="phone">{t("event.phoneLabel")}</label>
-                    <input
-                      id="phone"
-                      className="input"
-                      placeholder={t("event.phonePlaceholder")}
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
-                {online ? t("event.onlinePaymentHint") : t("event.offlinePaymentHint")}
-              </div>
-
-              {!user && (
-                <p className="mt-3 text-xs text-warn">
-                  {t("event.loginRequiredHint")}
-                </p>
-              )}
-
-              <div className="mt-4 flex gap-2">
-                <button className="btn-secondary flex-1" onClick={() => setStep(hasQuestionsStep ? "questions" : "select")}>
-                  {t("event.back")}
-                </button>
-                <button
-                  className="btn-primary flex-1"
-                  disabled={placing || (online && phone.trim().length < 6)}
-                  onClick={placeOrder}
-                >
-                  {placing ? t("event.placing") : user ? t("event.payAmount", { amount: formatCents(totalCents, event.currency) }) : t("event.loginToPay")}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        )}
-      </div>
-    </div>
+    <>
+      {jsonLd && (
+        // eslint-disable-next-line react/no-danger
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      )}
+      <EventDetailClient />
+    </>
   );
 }

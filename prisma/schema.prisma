@@ -625,6 +625,15 @@ model Event {
   conferenceSessions    ConferenceSession[]
   sessionAttendances    SessionAttendance[]
   exhibitorLeads        ExhibitorLead[]
+
+  // Session 25 — the public marketplace's one query (getPublicEvents/
+  // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
+  // status="LIVE" AND startsAt >= now, and Event had zero indexes beyond
+  // the id/clientId/slug uniques before this — a full table scan on every
+  // /events page load and every homepage hit. Found via a 60s timeout on
+  // this feature's own pagination test once the shared test database's
+  // Event table got large enough to make the scan slow.
+  @@index([status, startsAt])
 }
 
 // Session 13 — group/family ticketing: one buyer (the lead) purchases

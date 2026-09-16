@@ -19,6 +19,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://chaap.africa"),
   title: "Chaap — Event Ticketing That Works Offline",
   description:
     "Browse events, sell tickets, scan gate entry, and settle vendor payouts same-day — all with 100% offline capability.",
