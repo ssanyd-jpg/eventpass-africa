@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { db, newLocalId } from "@/lib/db";
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
@@ -19,15 +19,65 @@ const NETWORKS = [
   { value: "HALOTEL", label: "HaloPesa" },
 ];
 
+// useSearchParams (for the waitlist purchase-link's ?waitlistEntryId=) needs
+// a Suspense boundary around its caller — same wrapping login/page.tsx uses.
 export default function EventDetailClient() {
+  return (
+    <Suspense fallback={null}>
+      <EventDetailContent />
+    </Suspense>
+  );
+}
+
+function EventDetailContent() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAppSession();
   const online = useOnlineStatus();
   const { t } = useTranslation();
   const events = useLiveQuery(() => db.events.toArray(), []);
   const event = events?.find((e) => e.slug === slug);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // A "Buy your ticket now" link from a NOTIFIED waitlist entry
+  // (/waitlist/[entryId]) carries this so the completed purchase can mark
+  // that entry CONVERTED server-side — see handleSellTickets.
+  const waitlistEntryId = searchParams.get("waitlistEntryId");
+
+  // Session 26 — sold-out waitlist signup, keyed per ticket type since
+  // several tiers on the same event can independently be sold out.
+  const [waitlistFormFor, setWaitlistFormFor] = useState<string | null>(null);
+  const [waitlistName, setWaitlistName] = useState("");
+  const [waitlistPhone, setWaitlistPhone] = useState("");
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+
+  async function joinWaitlist(ticketTypeId: string) {
+    if (!waitlistName.trim() || !waitlistPhone.trim()) {
+      setWaitlistError("Enter your name and phone number.");
+      return;
+    }
+    setWaitlistSubmitting(true);
+    setWaitlistError(null);
+    const res = await fetch(`/api/events/${slug}/waitlist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticketTypeId,
+        name: waitlistName.trim(),
+        phone: waitlistPhone.trim(),
+        email: waitlistEmail.trim() || undefined,
+      }),
+    });
+    setWaitlistSubmitting(false);
+    if (!res.ok) {
+      setWaitlistError("Couldn't join the waitlist. Try again.");
+      return;
+    }
+    const data = await res.json();
+    router.push(`/waitlist/${data.entryId}`);
+  }
   const [step, setStep] = useState<"select" | "questions" | "confirm">("select");
   const [placing, setPlacing] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -198,6 +248,7 @@ export default function EventDetailClient() {
       group: isGroup
         ? { name: groupName.trim(), memberNames: displayedMemberNames.map((n) => n.trim()) }
         : undefined,
+      waitlistEntryId: waitlistEntryId ?? undefined,
     });
 
     // /orders/[id] live-queries this exact order out of Dexie, so it picks
@@ -311,6 +362,7 @@ export default function EventDetailClient() {
                 {event.ticketTypes.map((tt) => {
                   const remaining = tt.quantityTotal - tt.quantitySold;
                   const qty = quantities[tt.id] ?? 0;
+                  const soldOutWithWaitlist = remaining <= 0 && event.waitlistEnabled;
                   return (
                     <div key={tt.id} className="border-b border-border pb-4 last:border-0 last:pb-0">
                       <div className="flex items-start justify-between gap-3">
@@ -321,24 +373,73 @@ export default function EventDetailClient() {
                             {remaining > 0 ? t("event.leftSuffix", { count: remaining }) : t("event.soldOut")}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="btn-secondary h-8 w-8 !rounded-full !p-0"
-                            disabled={qty <= 0}
-                            onClick={() => setQty(tt.id, qty - 1, remaining)}
-                          >
-                            −
+                        {!soldOutWithWaitlist && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="btn-secondary h-8 w-8 !rounded-full !p-0"
+                              disabled={qty <= 0}
+                              onClick={() => setQty(tt.id, qty - 1, remaining)}
+                            >
+                              −
+                            </button>
+                            <span className="w-5 text-center text-sm">{qty}</span>
+                            <button
+                              className="btn-secondary h-8 w-8 !rounded-full !p-0"
+                              disabled={remaining <= 0 || qty >= remaining}
+                              onClick={() => setQty(tt.id, qty + 1, remaining)}
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                        {soldOutWithWaitlist && waitlistFormFor !== tt.id && (
+                          <button className="btn-secondary shrink-0" onClick={() => setWaitlistFormFor(tt.id)}>
+                            Join waitlist
                           </button>
-                          <span className="w-5 text-center text-sm">{qty}</span>
-                          <button
-                            className="btn-secondary h-8 w-8 !rounded-full !p-0"
-                            disabled={remaining <= 0 || qty >= remaining}
-                            onClick={() => setQty(tt.id, qty + 1, remaining)}
-                          >
-                            +
-                          </button>
-                        </div>
+                        )}
                       </div>
+
+                      {soldOutWithWaitlist && waitlistFormFor === tt.id && (
+                        <div className="mt-3 space-y-2 rounded-lg border border-border bg-surface2 p-3">
+                          <input
+                            className="input"
+                            placeholder="Your name"
+                            value={waitlistName}
+                            onChange={(e) => setWaitlistName(e.target.value)}
+                          />
+                          <input
+                            className="input"
+                            placeholder="Phone (e.g. 0712 345 678)"
+                            value={waitlistPhone}
+                            onChange={(e) => setWaitlistPhone(e.target.value)}
+                          />
+                          <input
+                            className="input"
+                            placeholder="Email (optional)"
+                            value={waitlistEmail}
+                            onChange={(e) => setWaitlistEmail(e.target.value)}
+                          />
+                          {waitlistError && <p className="text-xs text-danger">{waitlistError}</p>}
+                          <div className="flex gap-2">
+                            <button
+                              className="btn-secondary flex-1"
+                              onClick={() => {
+                                setWaitlistFormFor(null);
+                                setWaitlistError(null);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="btn-primary flex-1"
+                              disabled={waitlistSubmitting}
+                              onClick={() => joinWaitlist(tt.id)}
+                            >
+                              {waitlistSubmitting ? "Joining…" : "Join waitlist"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

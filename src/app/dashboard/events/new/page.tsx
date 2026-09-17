@@ -145,6 +145,8 @@ export default function NewEventPage() {
       // once the event exists.
       vendorApplicationsOpen: false,
       vendorStallFeeCents: 0,
+      // Same "configurable via Edit once the event exists" reasoning above.
+      waitlistEnabled: false,
       organizationId: user.organizationId,
       organizerName: user.organizationName ?? user.name ?? "",
       createdAt: new Date().toISOString(),

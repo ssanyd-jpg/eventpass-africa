@@ -153,6 +153,36 @@ jobs to once a day — on Hobby, change the schedule to something like
 `0 9 * * *` and accept that a very-last-minute event announced with under
 ~24h notice may not get a reminder in.)
 
+## 7. Waitlist notifications (Vercel Cron)
+
+Session 26 — when an organiser enables the waitlist on an event (per-event
+toggle at `/dashboard/events/[id]/waitlist`), a sold-out ticket tier shows
+"Join waitlist" instead of "Sold out" on the public event page. Joining is
+free and requires no account (guest entries are supported).
+
+Two things drive who gets notified:
+
+- **Immediately**, when a ticket actually becomes available — an order
+  cancellation/refund, a declined mobile-money payment releasing its
+  reserved inventory, or an organiser raising a ticket type's quantity —
+  `releaseWaitlistCapacity()` (`src/lib/waitlist.ts`) notifies the next
+  person in that ticket type's queue by WhatsApp (falling back to SMS/log,
+  same as every other notification), with a 2-hour link to buy.
+- **Every 30 minutes**, `src/app/api/cron/waitlist/route.ts` calls
+  `expireStaleWaitlistNotifications()`, which expires any notified entry
+  whose 2-hour window closed without a purchase and immediately cascades
+  the same notification to the next person in line — a spot never sits
+  idle waiting for the next tick.
+
+The cron route is gated by the same `CRON_SECRET` bearer token as the
+reminders route above — no separate env var needed. `vercel.json` schedules
+it at `*/30 * * * *`. (Vercel's Hobby plan limits cron jobs to once a day —
+on Hobby, change the schedule to once daily and accept that a freed spot may
+sit unclaimed for up to a day before the next person on the list is
+notified; the immediate on-cancellation/on-capacity-increase notification
+above still fires right away regardless of plan, since that path doesn't go
+through this cron at all. Pro plan removes the once-daily limit.)
+
 ## Post-deploy checklist
 
 - [ ] Log in as the seeded admin (`admin@chaap.dev` if you ran

@@ -97,6 +97,7 @@ export async function GET(request: Request) {
     gunStartAt: e.gunStartAt ? e.gunStartAt.toISOString() : null,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
+    waitlistEnabled: e.waitlistEnabled,
     organizationId: e.organizationId,
     organizerName: e.organization.name,
     createdAt: e.createdAt.toISOString(),

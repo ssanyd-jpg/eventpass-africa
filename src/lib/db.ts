@@ -59,6 +59,9 @@ export interface LocalEvent {
   gunStartAt: string | null;
   vendorApplicationsOpen: boolean;
   vendorStallFeeCents: number;
+  // Session 26 — organiser opt-in for the sold-out waitlist. Drives whether
+  // EventDetailClient shows "Join waitlist" instead of "Sold out".
+  waitlistEnabled: boolean;
   organizationId: string;
   organizerName: string;
   createdAt: string;

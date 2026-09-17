@@ -37,7 +37,8 @@ export type AuditAction =
   | "FORECAST_SAVED"
   | "TIMING_POINTS_SAVED"
   | "GUN_STARTED"
-  | "CONFERENCE_SESSIONS_SAVED";
+  | "CONFERENCE_SESSIONS_SAVED"
+  | "WAITLIST_NOTIFIED";
 
 interface LogAuditInput {
   organizationId: string;

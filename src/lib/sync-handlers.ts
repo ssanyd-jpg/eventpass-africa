@@ -11,6 +11,7 @@ import { normalizeTanzaniaPhone } from "@/lib/sms";
 import { buildOrderConfirmationHtml } from "@/lib/email";
 import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timing";
 import { EVENT_TYPES } from "@/lib/event-modes";
+import { releaseWaitlistCapacity, convertWaitlistEntry } from "@/lib/waitlist";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -590,6 +591,9 @@ export function shapeEvent(e: any, organizerName: string) {
     gunStartAt: e.gunStartAt ? e.gunStartAt.toISOString() : null,
     vendorApplicationsOpen: e.vendorApplicationsOpen,
     vendorStallFeeCents: e.vendorStallFeeCents,
+    // Session 26 — same "missing here wipes it on every round-trip" fix as
+    // eventType/gunStartAt above.
+    waitlistEnabled: e.waitlistEnabled ?? false,
     organizationId: e.organizationId,
     organizerName,
     createdAt: e.createdAt.toISOString(),
@@ -1009,6 +1013,16 @@ export async function handleSellTickets(userId: string, payload: any) {
     // round-trip rather than a local one.
   }, { timeout: 15000, maxWait: 10000 });
 
+  // Session 26 — a buyer who followed their "Join waitlist" notification's
+  // purchase link (EventDetailClient passes the entryId straight through)
+  // just bought their spot: mark it CONVERTED so the expiry cron doesn't
+  // later mistake it for a no-show and hand the same spot to someone else.
+  // No-op (updateMany matches nothing) if the entry isn't NOTIFIED or wasn't
+  // sent at all — never blocks the sale either way.
+  if (payload.waitlistEntryId) {
+    await convertWaitlistEntry(String(payload.waitlistEntryId));
+  }
+
   // Deferred until handleCheckOrderPaymentStatus confirms payment for a
   // still-PENDING order — sending it now would tell the buyer they have
   // valid tickets before Airpay has actually confirmed anything.
@@ -1170,6 +1184,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
   if (payload.carryOverEnabled !== undefined) data.carryOverEnabled = Boolean(payload.carryOverEnabled);
   if (payload.eventType !== undefined) data.eventType = String(payload.eventType);
   if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
+  if (payload.waitlistEnabled !== undefined) data.waitlistEnabled = Boolean(payload.waitlistEnabled);
   if (payload.vendorStallFeeCents !== undefined) data.vendorStallFeeCents = Number(payload.vendorStallFeeCents);
   if (payload.waiverText !== undefined) {
     data.waiverText = payload.waiverText === null || payload.waiverText === "" ? null : String(payload.waiverText);
@@ -1201,16 +1216,28 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
         if (Number(tt.quantityTotal) < current.quantitySold) {
           return { ok: false, reason: "QUANTITY_BELOW_SOLD" };
         }
+        const newQuantityTotal = Number(tt.quantityTotal);
         await prisma.ticketType.update({
           where: { id: tt.id },
           data: {
             name: String(tt.name),
             description: String(tt.description ?? ""),
             priceCents: Number(tt.priceCents),
-            quantityTotal: Number(tt.quantityTotal),
+            quantityTotal: newQuantityTotal,
             isFastTrack: Boolean(tt.isFastTrack ?? false),
           },
         });
+        // Session 26 — organiser raised capacity on a ticket type that may
+        // have a waitlist (e.g. after this same save also flips
+        // waitlistEnabled on) — resolve against the just-computed `data`
+        // when this save touches it in the same request, else the event's
+        // current value.
+        if (newQuantityTotal > current.quantityTotal) {
+          const waitlistEnabled = data.waitlistEnabled !== undefined ? Boolean(data.waitlistEnabled) : event.waitlistEnabled;
+          if (waitlistEnabled) {
+            await releaseWaitlistCapacity(tt.id, newQuantityTotal - current.quantityTotal);
+          }
+        }
         if (tt.clientId) ticketTypeIdByClientId.set(String(tt.clientId), tt.id);
       } else {
         const existingByClientId = await prisma.ticketType.findUnique({ where: { clientId: String(tt.clientId) } });
@@ -1472,6 +1499,13 @@ export async function handleRefundOrder(userId: string, organizationId: string, 
     });
   }, { timeout: 15000, maxWait: 10000 });
 
+  // Session 26 — each refunded item just freed real capacity; notify the
+  // waitlist (no-op per ticket type when the event never opted in — see
+  // releaseWaitlistCapacity's own waitlistEnabled gate).
+  for (const item of order.items) {
+    await releaseWaitlistCapacity(item.ticketTypeId, item.quantity);
+  }
+
   await sendNotification({
     type: "REFUND_ISSUED",
     channel: "EMAIL",
@@ -1579,6 +1613,12 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
   }
 
+  // Session 26 — same "capacity actually freed, tell the waitlist" hook as
+  // handleRefundOrder/handleCancelPendingOrder.
+  for (const item of order.items) {
+    await releaseWaitlistCapacity(item.ticketTypeId, item.quantity);
+  }
+
   const buyer = await prisma.user.findUnique({ where: { id: outcome.userId }, select: { email: true, name: true, phone: true } });
   if (buyer) {
     const retryUrl = `${process.env.NEXTAUTH_URL ?? ""}/events/${outcome.event.slug}`;
@@ -1648,6 +1688,12 @@ export async function handleCancelPendingOrder(userId: string, payload: any) {
   if (!outcome) {
     const fresh = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: fullOrderInclude });
     return { ok: true, order: shapeOrder(fresh), ticketTypeUpdates: [] };
+  }
+
+  // Session 26 — same "capacity actually freed, tell the waitlist" hook as
+  // handleRefundOrder above.
+  for (const item of order.items) {
+    await releaseWaitlistCapacity(item.ticketTypeId, item.quantity);
   }
 
   return { ok: true, order: shapeOrder(outcome), ticketTypeUpdates };

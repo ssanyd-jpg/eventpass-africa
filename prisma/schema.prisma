@@ -40,6 +40,7 @@ model User {
   floatDeclarationsMade       FloatDeclaration[]  @relation("FloatDeclarationDeclaredBy")
   eventForecastsSaved         EventForecast[]     @relation("EventForecastSavedBy")
   ticketGroupsLed             TicketGroup[]       @relation("TicketGroupLead")
+  waitlistEntries             WaitlistEntry[]
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -598,6 +599,13 @@ model Event {
   // Order.waiverText snapshots the exact text a given buyer saw/agreed to at
   // purchase time, same reasoning Order.currency snapshots Event.currency.
   waiverText  String?
+  // Session 26 — organiser opt-in for the sold-out waitlist. When true, a
+  // ticket type with quantitySold >= quantityTotal shows "Join waitlist"
+  // instead of "Sold out" on the public event page (see
+  // EventDetailClient.tsx) and freed/added capacity notifies the next
+  // WaitlistEntry in queue (see releaseWaitlistCapacity in
+  // src/lib/waitlist.ts).
+  waitlistEnabled Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -625,6 +633,7 @@ model Event {
   conferenceSessions    ConferenceSession[]
   sessionAttendances    SessionAttendance[]
   exhibitorLeads        ExhibitorLead[]
+  waitlistEntries       WaitlistEntry[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -813,10 +822,51 @@ model TicketType {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  orderItems    OrderItem[]
-  tickets       Ticket[]
-  broadcasts    Broadcast[]
-  discountCodes DiscountCode[]
+  orderItems      OrderItem[]
+  tickets         Ticket[]
+  broadcasts      Broadcast[]
+  discountCodes   DiscountCode[]
+  waitlistEntries WaitlistEntry[]
+}
+
+// Session 26 — one guest or logged-in attendee waiting for a spot on a
+// sold-out ticket type. Queued per (eventId, ticketTypeId), not per event —
+// a sold-out General tier and an available VIP tier on the same event have
+// independent waitlists. userId is nullable: no login is required to join
+// (see the no-auth marketplace convention Session 25 established for the
+// public event pages this form lives on).
+model WaitlistEntry {
+  id    String  @id @default(cuid())
+  name  String
+  phone String
+  email String?
+  // 1-based join order within (eventId, ticketTypeId) — assigned once at
+  // creation from a running per-ticket-type count and never renumbered, so
+  // it doubles as a stable "you are #N" display even after people ahead of
+  // this entry convert or expire. See joinWaitlist in src/lib/waitlist.ts.
+  position Int
+  // WAITING (queued) -> NOTIFIED (a spot opened, 2h to buy — see
+  // notifyWaitlistEntry) -> CONVERTED (bought before the window closed) or
+  // EXPIRED (missed it, cascades to notify the next WAITING entry). Never
+  // moves backward.
+  status     String    @default("WAITING")
+  notifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // The one query this whole feature runs: "who's next" (status=WAITING,
+  // lowest position) and the expiry cron's "who's overdue" (status=NOTIFIED)
+  // both filter by ticketTypeId + status.
+  @@index([ticketTypeId, status, position])
+  @@index([eventId])
 }
 
 model Order {

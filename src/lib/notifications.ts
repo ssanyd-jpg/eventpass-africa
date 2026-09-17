@@ -22,7 +22,9 @@ export type NotificationType =
   | "SPONSOR_MAGIC_LINK"
   // Session 24
   | "WALLET_TOPUP_CONFIRMED"
-  | "EVENT_REMINDER";
+  | "EVENT_REMINDER"
+  // Session 26
+  | "WAITLIST_SPOT_AVAILABLE";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

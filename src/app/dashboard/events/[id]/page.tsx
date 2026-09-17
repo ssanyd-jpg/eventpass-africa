@@ -272,6 +272,9 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/forecast`} className="btn-secondary">
             Revenue forecast ↗
           </Link>
+          <Link href={`/dashboard/events/${event.id}/waitlist`} className="btn-secondary">
+            Waitlist ↗
+          </Link>
           {hasFeature(event.eventType, "chipTiming") && (
             <Link href={`/dashboard/events/${event.id}/timing`} className="btn-secondary">
               Timing ↗
