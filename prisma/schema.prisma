@@ -277,6 +277,12 @@ model Credential {
   vendorId String?
   vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
+  // Session 30 — a volunteer's wristband, resolved at scan time the same way
+  // a ticket/wallet/vendor credential is. Volunteer.wristbandCredentialId
+  // points the other way (see its own comment) purely for display.
+  volunteerId String?
+  volunteer   Volunteer? @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
   chipTimes ChipTime[]
   sessionAttendances SessionAttendance[]
   exhibitorLeads     ExhibitorLead[]
@@ -284,6 +290,7 @@ model Credential {
   @@index([organizationId, ticketId])
   @@index([organizationId, walletId])
   @@index([organizationId, vendorId])
+  @@index([organizationId, volunteerId])
   @@index([organizationId, nfcUid])
   @@index([clientId])
 }
@@ -635,6 +642,7 @@ model Event {
   exhibitorLeads        ExhibitorLead[]
   waitlistEntries       WaitlistEntry[]
   densityAlerts         DensityAlert[]
+  volunteers            Volunteer[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -895,6 +903,48 @@ model DensityAlert {
   // (rendered below the zone density section) both filter by eventId +
   // resolvedAt.
   @@index([eventId, resolvedAt])
+}
+
+// Session 30 — a person working an event in a non-attendee capacity (gate
+// crew, water station, medical, timing mat). zoneAccess is a comma-joined
+// String, not a native Postgres array — same reasoning already established
+// for RegistrationQuestion.options (see its own comment): this data has no
+// independent lifecycle of its own, so neither an array column nor a child
+// table earns its keep over a plain delimited string, split/joined in
+// application code (see src/lib/volunteers.ts).
+model Volunteer {
+  id         String   @id @default(cuid())
+  name       String
+  phone      String
+  email      String?
+  role       String
+  shiftStart DateTime
+  shiftEnd   DateTime
+  zoneAccess String   @default("")
+  // INVITED | CONFIRMED | CHECKED_IN | NO_SHOW — plain-string convention,
+  // see MobileMoneyAccount.provider.
+  status     String   @default("INVITED")
+  // Denormalized pointer to the Credential created when this volunteer's
+  // wristband was provisioned (set once, alongside creating that row — see
+  // checkInVolunteer in src/lib/volunteers.ts). The actual scan-time lookup
+  // goes the other way, via Credential.volunteerId, mirroring
+  // Credential.ticketId/walletId/vendorId's own reverse-FK convention — this
+  // field exists only for the spec's literal "links to Credential" display
+  // need, same dual-field reasoning as DensityAlert.resolutionNote.
+  wristbandCredentialId String?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  credentials Credential[]
+
+  // Live monitoring's assigned-vs-checked-in and no-show counts filter by
+  // eventId + status; wristband check-in and the volunteer portal both
+  // look a volunteer up by eventId + phone.
+  @@index([eventId, status])
+  @@index([eventId, phone])
 }
 
 // Session 26 — one guest or logged-in attendee waiting for a spot on a

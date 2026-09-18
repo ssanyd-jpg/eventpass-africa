@@ -8,10 +8,10 @@ import { db, newLocalId, type LocalCredential, type LocalWallet } from "@/lib/db
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
-import { formatCents, generateTicketCode } from "@/lib/format";
+import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import CameraScanner from "@/components/CameraScanner";
-import { findAttendeeCandidates } from "./actions";
+import { findAttendeeCandidates, checkInVolunteerAction } from "./actions";
 import type { AttendeeCandidate } from "@/lib/wristband-handlers";
 
 type Candidate = AttendeeCandidate;
@@ -27,6 +27,17 @@ type Confirmation = {
   groupName?: string | null;
   provisionedCount?: number;
   totalMembers?: number;
+};
+
+// Session 30 — a volunteer wristband's confirmation is a different shape
+// entirely (role/shift/zones, no wallet or ticket), so it gets its own
+// state and panel rather than being shoehorned into Confirmation above.
+type VolunteerConfirmation = {
+  name: string;
+  role: string;
+  shiftStart: string;
+  shiftEnd: string;
+  zoneAccess: string;
 };
 
 export default function ProvisionPage() {
@@ -66,6 +77,15 @@ export default function ProvisionPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Session 30 — volunteer check-in mode, selected once a wristband is
+  // scanned and before searching. Independent of the attendee search state
+  // above; only one of confirmation/volunteerConfirmation is ever set.
+  const [mode, setMode] = useState<"attendee" | "volunteer">("attendee");
+  const [volunteerPhone, setVolunteerPhone] = useState("");
+  const [volunteerBusy, setVolunteerBusy] = useState(false);
+  const [volunteerError, setVolunteerError] = useState<string | null>(null);
+  const [volunteerConfirmation, setVolunteerConfirmation] = useState<VolunteerConfirmation | null>(null);
 
   const handleTagRead = useCallback((reading: NFCReading) => {
     if (!reading.uid) {
@@ -300,6 +320,26 @@ export default function ProvisionPage() {
     }
   }
 
+  async function runVolunteerCheckIn() {
+    if (!scannedUid || !event) return;
+    const phone = volunteerPhone.trim();
+    if (!phone) return;
+    setVolunteerBusy(true);
+    setVolunteerError(null);
+    try {
+      const result = await checkInVolunteerAction(event.id, phone, scannedUid);
+      if (!result) {
+        setVolunteerError(t("provision.volunteerNotFound"));
+        return;
+      }
+      setVolunteerConfirmation(result);
+    } catch {
+      setVolunteerError(t("provision.volunteerError"));
+    } finally {
+      setVolunteerBusy(false);
+    }
+  }
+
   function reset() {
     setScannedUid(null);
     setManualUid("");
@@ -310,18 +350,22 @@ export default function ProvisionPage() {
     setNewEmail("");
     setError(null);
     setConfirmation(null);
+    setMode("attendee");
+    setVolunteerPhone("");
+    setVolunteerError(null);
+    setVolunteerConfirmation(null);
   }
 
   // Immediately ready for the next attendee — auto-resets 3s after a
   // successful provision.
   useEffect(() => {
-    if (!confirmation) return;
+    if (!confirmation && !volunteerConfirmation) return;
     resetTimerRef.current = setTimeout(reset, 3000);
     return () => {
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmation]);
+  }, [confirmation, volunteerConfirmation]);
 
   if (!user) return null;
   if (user.organizationRole === "GATE_CREW") return null;
@@ -396,6 +440,31 @@ export default function ProvisionPage() {
             {t("provision.another")}
           </button>
         </div>
+      ) : volunteerConfirmation ? (
+        <div className="card mt-5 p-5">
+          <p className="font-semibold text-ok">{t("provision.volunteerCheckedIn")}</p>
+          <p className="mt-1 text-sm text-muted">{volunteerConfirmation.name} — {volunteerConfirmation.role}</p>
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted">{t("provision.volunteerShift")}</span>
+              <span className="font-mono">
+                {formatDateTime(volunteerConfirmation.shiftStart)} –{" "}
+                {new Date(volunteerConfirmation.shiftEnd).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted">{t("provision.volunteerZoneAccess")}</span>
+              <span className="font-mono">{volunteerConfirmation.zoneAccess || "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted">{t("provision.uidLast4")}</span>
+              <span className="font-mono">•• {uidLast4}</span>
+            </div>
+          </div>
+          <button type="button" className="btn-primary mt-5 w-full" onClick={reset}>
+            {t("provision.another")}
+          </button>
+        </div>
       ) : !scannedUid ? (
         <div className="mt-5">
           <p className="mb-3 text-sm text-muted">{t("provision.scanPrompt")}</p>
@@ -421,6 +490,49 @@ export default function ProvisionPage() {
         </div>
       ) : (
         <div className="mt-5">
+          <div className="mb-4 flex gap-2 border-b border-border pb-3">
+            <button
+              type="button"
+              className={mode === "attendee" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setMode("attendee")}
+            >
+              {t("provision.modeAttendee")}
+            </button>
+            <button
+              type="button"
+              className={mode === "volunteer" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setMode("volunteer")}
+            >
+              {t("provision.modeVolunteer")}
+            </button>
+          </div>
+
+          {mode === "volunteer" ? (
+            <div>
+              {!online && <p className="mb-3 text-sm text-warn">{t("provision.volunteerOfflineNote")}</p>}
+              <label className="label" htmlFor="volunteerPhone">{t("provision.volunteerPhoneLabel")}</label>
+              <div className="mt-1 flex gap-2">
+                <input
+                  id="volunteerPhone"
+                  autoFocus
+                  className="input flex-1"
+                  placeholder={t("provision.volunteerPhonePlaceholder")}
+                  value={volunteerPhone}
+                  onChange={(e) => setVolunteerPhone(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!online || volunteerBusy || !volunteerPhone.trim()}
+                  onClick={runVolunteerCheckIn}
+                >
+                  {volunteerBusy ? "…" : t("provision.volunteerCheckIn")}
+                </button>
+              </div>
+              {volunteerError && <p className="mt-3 text-sm text-danger">{volunteerError}</p>}
+            </div>
+          ) : (
+            <>
           {!online && <p className="mb-3 text-sm text-warn">{t("provision.offlineSearchNote")}</p>}
           <label className="label" htmlFor="attendeeQuery">{t("provision.searchLabel")}</label>
           <input
@@ -508,6 +620,8 @@ export default function ProvisionPage() {
           )}
 
           {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+            </>
+          )}
         </div>
       )}
     </div>

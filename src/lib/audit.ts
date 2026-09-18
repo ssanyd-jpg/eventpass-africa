@@ -39,7 +39,13 @@ export type AuditAction =
   | "GUN_STARTED"
   | "CONFERENCE_SESSIONS_SAVED"
   | "WAITLIST_NOTIFIED"
-  | "DENSITY_ALERT_RESOLVED";
+  | "DENSITY_ALERT_RESOLVED"
+  // Session 30
+  | "VOLUNTEER_ADDED"
+  | "VOLUNTEERS_IMPORTED"
+  | "VOLUNTEER_INVITED"
+  | "VOLUNTEER_STATUS_UPDATED"
+  | "VOLUNTEER_CHECKED_IN";
 
 interface LogAuditInput {
   organizationId: string;

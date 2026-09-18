@@ -5,6 +5,7 @@ import { checkInsByHour, transactionsByVendorByHour, liveEventStats } from "@/li
 import { getLiveEventData } from "@/lib/analytics-data";
 import { getLiveActivityFeed } from "@/lib/live-activity";
 import { runDensityMonitoring } from "@/lib/crowd-density";
+import { getVolunteerCounts } from "@/lib/volunteers";
 import { logIfSlow } from "@/lib/perf-log";
 
 // Polled by the live-event dashboard page every 30s — deliberately a plain
@@ -58,6 +59,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
       take: 20,
     }),
   ]);
+  // Session 30 — assigned/checked-in/no-show volunteer counts, same "no new
+  // polling mechanism needed" reuse of this route's existing 30s interval.
+  const volunteers = await getVolunteerCounts(params.id);
 
   logIfSlow(`GET /api/dashboard/events/${params.id}/live`, startedAt);
 
@@ -87,5 +91,6 @@ export async function GET(request: Request, { params }: { params: { id: string }
       resolutionNote: a.resolutionNote,
       message: a.message,
     })),
+    volunteers,
   });
 }

@@ -10,6 +10,7 @@ import Spinner from "@/components/Spinner";
 import type { HourPoint, VendorHourlyStats, LiveEventStats } from "@/lib/analytics";
 import type { LiveActivityEntry } from "@/lib/live-activity";
 import type { ZoneDensityResult, DensityAlertType } from "@/lib/crowd-density";
+import type { VolunteerCounts } from "@/lib/volunteers";
 import { resolveDensityAlertAction } from "./actions";
 
 const POLL_INTERVAL_MS = 30000;
@@ -65,6 +66,7 @@ interface LiveData {
   zoneDensity: ZoneDensityResult[];
   unresolvedAlerts: DensityAlertEntry[];
   resolvedAlerts: ResolvedDensityAlertEntry[];
+  volunteers: VolunteerCounts;
 }
 
 export default function LiveEventPage() {
@@ -178,7 +180,7 @@ export default function LiveEventPage() {
     );
   }
 
-  const { stats, checkIns, vendorHourly, currency, activity, zoneDensity, unresolvedAlerts, resolvedAlerts } = data;
+  const { stats, checkIns, vendorHourly, currency, activity, zoneDensity, unresolvedAlerts, resolvedAlerts, volunteers } = data;
   const maxCellCount = Math.max(1, ...vendorHourly.flatMap((v) => v.hours.map((h) => h.count)));
   const checkInPct = stats.capacityTotal > 0 ? Math.round((stats.totalCheckedIn / stats.capacityTotal) * 100) : 0;
 
@@ -343,6 +345,31 @@ export default function LiveEventPage() {
               ))}
             </div>
           )}
+        </>
+      )}
+
+      {volunteers.assigned > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 font-semibold">Volunteers</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="card p-5">
+              <p className="text-xs uppercase tracking-wide text-muted">Checked in</p>
+              <p className="mt-1 text-2xl font-bold">{volunteers.checkedIn} / {volunteers.assigned}</p>
+            </div>
+            <div className="card p-5">
+              <p className="text-xs uppercase tracking-wide text-muted">No-shows</p>
+              <p className={`mt-1 text-2xl font-bold ${volunteers.noShows > 0 ? "text-danger" : ""}`}>{volunteers.noShows}</p>
+              <p className="mt-1 text-xs text-muted">shift started, not checked in</p>
+            </div>
+          </div>
+          <div className="mt-3 card divide-y divide-border">
+            {volunteers.byRole.map((r) => (
+              <div key={r.role} className="flex items-center justify-between gap-3 p-3 text-sm">
+                <span className="font-medium">{r.role}</span>
+                <span className="text-muted">{r.checkedIn} / {r.assigned} checked in</span>
+              </div>
+            ))}
+          </div>
         </>
       )}
 

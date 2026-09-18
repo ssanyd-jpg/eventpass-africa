@@ -275,6 +275,9 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/waitlist`} className="btn-secondary">
             Waitlist ↗
           </Link>
+          <Link href={`/dashboard/events/${event.id}/volunteers`} className="btn-secondary">
+            Volunteers ↗
+          </Link>
           {hasFeature(event.eventType, "chipTiming") && (
             <Link href={`/dashboard/events/${event.id}/timing`} className="btn-secondary">
               Timing ↗
