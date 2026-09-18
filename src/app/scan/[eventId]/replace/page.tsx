@@ -220,7 +220,13 @@ export default function ReplaceWristbandPage() {
       }));
       await db.credentials.bulkPut(newRows);
 
-      await queueOp("REPLACE_CREDENTIAL", { clientId, oldNfcUid, newNfcUid: newUid, reason });
+      await queueOp("REPLACE_CREDENTIAL", {
+        clientId,
+        eventId: eventId,
+        oldNfcUid,
+        newNfcUid: newUid,
+        reason,
+      });
 
       setConfirmation({
         attendeeLabel: attendeeLabelRef.current,
