@@ -24,7 +24,9 @@ export type NotificationType =
   | "WALLET_TOPUP_CONFIRMED"
   | "EVENT_REMINDER"
   // Session 26
-  | "WAITLIST_SPOT_AVAILABLE";
+  | "WAITLIST_SPOT_AVAILABLE"
+  // Session 29
+  | "DENSITY_ALERT";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

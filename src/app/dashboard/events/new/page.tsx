@@ -122,6 +122,9 @@ export default function NewEventPage() {
       // reasoning as isFastTrack above.
       pricingStrategy: "FIXED" as const,
       pricingTiers: [],
+      // Physical capacity (crowd-density monitoring) is configured via Edit
+      // once the event exists — same reasoning as isFastTrack above.
+      physicalCapacity: null,
     }));
 
     const localEvent: LocalEvent = {

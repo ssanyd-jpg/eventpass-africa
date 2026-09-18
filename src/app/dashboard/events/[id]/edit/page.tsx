@@ -33,6 +33,10 @@ interface DraftTicketType {
   // Session 27 — FIXED (priceMajor as-is) | TIERED (see pricingTiers).
   pricingStrategy: "FIXED" | "TIERED";
   pricingTiers: DraftPricingTier[];
+  // Session 29 — safe physical headcount for this zone (crowd-density
+  // monitoring). "" = not set, same string-input convention as priceMajor/
+  // quantity above.
+  physicalCapacity: string;
 }
 
 interface DraftQuestion {
@@ -239,6 +243,7 @@ export default function EditEventPage() {
         quantitySold: tt.quantitySold,
         isFastTrack: tt.isFastTrack ?? false,
         pricingStrategy: tt.pricingStrategy ?? "FIXED",
+        physicalCapacity: tt.physicalCapacity != null ? String(tt.physicalCapacity) : "",
         pricingTiers: (tt.pricingTiers ?? []).map((pt) => ({
           key: pt.id,
           id: pt.id,
@@ -496,6 +501,7 @@ export default function EditEventPage() {
         fromQuantity: tier.fromQuantity,
         priceCents: tier.priceCents,
       })),
+      physicalCapacity: t.physicalCapacity.trim() ? parseInt(t.physicalCapacity, 10) : null,
     }));
 
     // The server payload keeps `id` genuinely undefined for new ticket
@@ -510,6 +516,7 @@ export default function EditEventPage() {
       isFastTrack: t.isFastTrack,
       pricingStrategy: t.pricingStrategy,
       pricingTiers: tiersForTicketType(t),
+      physicalCapacity: t.physicalCapacity.trim() ? parseInt(t.physicalCapacity, 10) : null,
     }));
 
     const vendorStallFeeCents = Math.round(parseFloat(vendorStallFeeMajor || "0") * 100);
@@ -777,7 +784,7 @@ export default function EditEventPage() {
               onClick={() =>
                 setTicketTypes((rows) => [
                   ...rows,
-                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false, pricingStrategy: "FIXED", pricingTiers: [] },
+                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false, pricingStrategy: "FIXED", pricingTiers: [], physicalCapacity: "" },
                 ])
               }
             >
@@ -830,6 +837,19 @@ export default function EditEventPage() {
                 {t.quantitySold > 0 && (
                   <p className="col-span-4 -mt-1 text-xs text-muted">{t.quantitySold} already sold</p>
                 )}
+                <div className="col-span-4 flex items-center gap-2">
+                  <input
+                    placeholder="Physical capacity (safety)"
+                    type="number"
+                    min="0"
+                    className="input max-w-[220px]"
+                    value={t.physicalCapacity}
+                    onChange={(e) => updateTicketType(t.key, { physicalCapacity: e.target.value })}
+                  />
+                  <p className="text-xs text-muted">
+                    Safe headcount for this zone — leave blank to disable crowd-density alerts.
+                  </p>
+                </div>
                 <div className="col-span-4 rounded-lg border border-border p-3">
                   <label className="flex items-center gap-2 text-xs text-muted">
                     <input

@@ -39,6 +39,8 @@ export async function createTestEvent(
     // Session 27 — opt a fixture ticket type into dynamic pricing.
     pricingStrategy?: "FIXED" | "TIERED";
     pricingTiers?: Array<{ fromQuantity: number; priceCents: number; label?: string }>;
+    // Session 29 — opt a fixture ticket type into crowd-density monitoring.
+    physicalCapacity?: number;
   }> = [{ priceCents: 200000, quantityTotal: 10 }],
   currency = "TZS",
   vendorOptions: { vendorApplicationsOpen?: boolean; vendorStallFeeCents?: number } = {},
@@ -67,6 +69,7 @@ export async function createTestEvent(
           quantitySold: tt.quantitySold ?? 0,
           isFastTrack: tt.isFastTrack ?? false,
           pricingStrategy: tt.pricingStrategy ?? "FIXED",
+          physicalCapacity: tt.physicalCapacity ?? null,
           pricingTiers: tt.pricingTiers
             ? { create: tt.pricingTiers.map((t) => ({ fromQuantity: t.fromQuantity, priceCents: t.priceCents, label: t.label })) }
             : undefined,

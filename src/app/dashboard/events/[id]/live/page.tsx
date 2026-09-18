@@ -9,6 +9,8 @@ import LineSeries from "@/components/charts/LineSeries";
 import Spinner from "@/components/Spinner";
 import type { HourPoint, VendorHourlyStats, LiveEventStats } from "@/lib/analytics";
 import type { LiveActivityEntry } from "@/lib/live-activity";
+import type { ZoneDensityResult, DensityAlertType } from "@/lib/crowd-density";
+import { resolveDensityAlertAction } from "./actions";
 
 const POLL_INTERVAL_MS = 30000;
 const CLOCK_TICK_MS = 15000; // just for refreshing the "Xm ago" text between polls
@@ -26,6 +28,33 @@ const TYPE_STYLE: Record<LiveActivityEntry["type"], string> = {
   SPONSOR_TAP: "pill border-warn/40 bg-warn/10 text-warn",
 };
 
+// APPROACHING pulses amber, AT_CAPACITY/OVERCROWDED pulse red — "Zones
+// approaching or at capacity show a pulsing red/amber indicator" per spec.
+const DENSITY_DOT_STYLE: Record<DensityAlertType, string> = {
+  APPROACHING: "bg-warn animate-pulse",
+  AT_CAPACITY: "bg-danger animate-pulse",
+  OVERCROWDED: "bg-danger animate-pulse",
+};
+const DENSITY_BAR_STYLE: Record<"ok" | "APPROACHING" | "AT_CAPACITY" | "OVERCROWDED", string> = {
+  ok: "bg-ok",
+  APPROACHING: "bg-warn",
+  AT_CAPACITY: "bg-danger",
+  OVERCROWDED: "bg-danger",
+};
+
+interface DensityAlertEntry {
+  id: string;
+  zoneName: string;
+  alertType: DensityAlertType;
+  triggeredAt: string;
+  message: string;
+}
+interface ResolvedDensityAlertEntry extends DensityAlertEntry {
+  resolvedAt: string;
+  resolvedBy: string | null;
+  resolutionNote: string | null;
+}
+
 interface LiveData {
   eventTitle: string;
   currency: string;
@@ -33,6 +62,9 @@ interface LiveData {
   checkIns: HourPoint[];
   vendorHourly: VendorHourlyStats[];
   activity: (Omit<LiveActivityEntry, "at"> & { at: string })[];
+  zoneDensity: ZoneDensityResult[];
+  unresolvedAlerts: DensityAlertEntry[];
+  resolvedAlerts: ResolvedDensityAlertEntry[];
 }
 
 export default function LiveEventPage() {
@@ -57,6 +89,12 @@ export default function LiveEventPage() {
   // from a single response.
   const consecutiveZeroRef = useRef(0);
   const [gateAlert, setGateAlert] = useState(false);
+
+  // Resolution note draft per open alert, and which alert is currently
+  // submitting — keyed by alertId so multiple zones' forms don't collide.
+  const [resolveNotes, setResolveNotes] = useState<Record<string, string>>({});
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -102,6 +140,24 @@ export default function LiveEventPage() {
     return () => clearInterval(clock);
   }, []);
 
+  async function handleResolveAlert(alertId: string) {
+    setResolveError(null);
+    setResolvingId(alertId);
+    try {
+      await resolveDensityAlertAction(id, alertId, resolveNotes[alertId] ?? "");
+      setResolveNotes((notes) => {
+        const rest = { ...notes };
+        delete rest[alertId];
+        return rest;
+      });
+      await load();
+    } catch {
+      setResolveError("Couldn't resolve that alert. Try again.");
+    } finally {
+      setResolvingId(null);
+    }
+  }
+
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (!data && !initialError) {
@@ -122,7 +178,7 @@ export default function LiveEventPage() {
     );
   }
 
-  const { stats, checkIns, vendorHourly, currency, activity } = data;
+  const { stats, checkIns, vendorHourly, currency, activity, zoneDensity, unresolvedAlerts, resolvedAlerts } = data;
   const maxCellCount = Math.max(1, ...vendorHourly.flatMap((v) => v.hours.map((h) => h.count)));
   const checkInPct = stats.capacityTotal > 0 ? Math.round((stats.totalCheckedIn / stats.capacityTotal) * 100) : 0;
 
@@ -217,6 +273,78 @@ export default function LiveEventPage() {
           <p className="mt-1 text-2xl font-bold">{formatCents(stats.unspentBalanceCents, currency)}</p>
         </div>
       </div>
+
+      {zoneDensity.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 font-semibold">Zone density</h2>
+          <div className="space-y-3">
+            {zoneDensity.map((zone) => (
+              <div key={zone.zoneName} className="card p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {zone.alertType && <span className={`h-2 w-2 rounded-full ${DENSITY_DOT_STYLE[zone.alertType]}`} />}
+                    <span className="font-medium">{zone.zoneName}</span>
+                  </div>
+                  <span className="text-sm text-muted">
+                    {zone.occupancy} / {zone.physicalCapacity} ({zone.fillPercentage}%)
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface2">
+                  <div
+                    className={`h-full rounded-full transition-all ${DENSITY_BAR_STYLE[zone.alertType ?? "ok"]}`}
+                    style={{ width: `${Math.min(100, zone.fillPercentage)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {unresolvedAlerts.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {unresolvedAlerts.map((alert) => (
+                <div key={alert.id} className="rounded-lg border border-danger/40 bg-danger/10 p-4 text-sm">
+                  <p className="font-semibold text-danger">{alert.message}</p>
+                  <p className="mt-1 text-xs text-muted">Triggered {formatDateTime(new Date(alert.triggeredAt))}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input
+                      placeholder="Resolution note (e.g. Additional barriers added)"
+                      className="input flex-1"
+                      value={resolveNotes[alert.id] ?? ""}
+                      onChange={(e) => setResolveNotes((notes) => ({ ...notes, [alert.id]: e.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary !px-3 !py-1.5 text-xs"
+                      disabled={resolvingId === alert.id}
+                      onClick={() => handleResolveAlert(alert.id)}
+                    >
+                      {resolvingId === alert.id ? "Resolving…" : "Mark resolved"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {resolveError && <p className="text-sm text-danger">{resolveError}</p>}
+            </div>
+          )}
+
+          {resolvedAlerts.length > 0 && (
+            <div className="mt-3 card divide-y divide-border">
+              {resolvedAlerts.map((alert) => (
+                <div key={alert.id} className="p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{alert.zoneName}</span>
+                    <span className="text-xs text-muted">Resolved {formatDateTime(new Date(alert.resolvedAt))}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    {alert.resolvedBy && `${alert.resolvedBy} — `}
+                    {alert.resolutionNote || "No note added."}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       <h2 className="mb-3 mt-8 font-semibold">Check-in arrival curve</h2>
       <div className="card p-5">

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { checkInsByHour, transactionsByVendorByHour, liveEventStats } from "@/lib/analytics";
 import { getLiveEventData } from "@/lib/analytics-data";
 import { getLiveActivityFeed } from "@/lib/live-activity";
+import { runDensityMonitoring } from "@/lib/crowd-density";
 import { logIfSlow } from "@/lib/perf-log";
 
 // Polled by the live-event dashboard page every 30s — deliberately a plain
@@ -42,6 +43,21 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const checkIns = checkInsByHour(data.tickets, data.event.startsAt, now);
   const vendorHourly = transactionsByVendorByHour(data.walletTxs, data.event.startsAt, now);
   const activity = await getLiveActivityFeed(params.id);
+  // Session 29 — recomputes zone density and (best-effort) fires any new
+  // safety alerts on every poll of this same 30s-interval route, per the
+  // spec's "no new polling mechanism needed."
+  const density = await runDensityMonitoring(params.id);
+  const [unresolvedAlerts, resolvedAlerts] = await Promise.all([
+    prisma.densityAlert.findMany({
+      where: { eventId: params.id, resolvedAt: null },
+      orderBy: { triggeredAt: "desc" },
+    }),
+    prisma.densityAlert.findMany({
+      where: { eventId: params.id, resolvedAt: { not: null } },
+      orderBy: { resolvedAt: "desc" },
+      take: 20,
+    }),
+  ]);
 
   logIfSlow(`GET /api/dashboard/events/${params.id}/live`, startedAt);
 
@@ -53,5 +69,23 @@ export async function GET(request: Request, { params }: { params: { id: string }
     checkIns,
     vendorHourly,
     activity: activity.map((a) => ({ ...a, at: a.at.toISOString() })),
+    zoneDensity: density.zones,
+    unresolvedAlerts: unresolvedAlerts.map((a) => ({
+      id: a.id,
+      zoneName: a.zoneName,
+      alertType: a.alertType,
+      triggeredAt: a.triggeredAt.toISOString(),
+      message: a.message,
+    })),
+    resolvedAlerts: resolvedAlerts.map((a) => ({
+      id: a.id,
+      zoneName: a.zoneName,
+      alertType: a.alertType,
+      triggeredAt: a.triggeredAt.toISOString(),
+      resolvedAt: a.resolvedAt!.toISOString(),
+      resolvedBy: a.resolvedBy,
+      resolutionNote: a.resolutionNote,
+      message: a.message,
+    })),
   });
 }

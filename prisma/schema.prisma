@@ -634,6 +634,7 @@ model Event {
   sessionAttendances    SessionAttendance[]
   exhibitorLeads        ExhibitorLead[]
   waitlistEntries       WaitlistEntry[]
+  densityAlerts         DensityAlert[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -823,6 +824,15 @@ model TicketType {
   // src/lib/pricing.ts). Plain-string convention, same as every other
   // enum-shaped field in this schema (see MobileMoneyAccount.provider).
   pricingStrategy String @default("FIXED")
+  // Session 29 — the codebase has no separate zone/gate model, and a ticket
+  // type is already the closest existing "zone" concept (General Admission,
+  // VIP, Pitch-side, etc. each sell as their own ticket type and each
+  // attendee checks in against exactly one). physicalCapacity is the safe
+  // physical headcount for that zone, independent of quantityTotal (tickets
+  // sold) — a zone can be sold out on paper while still safely under
+  // capacity, or the reverse. null = no crowd-density monitoring for this
+  // ticket type (see checkDensityThresholds in src/lib/crowd-density.ts).
+  physicalCapacity Int?
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -854,6 +864,37 @@ model PricingTier {
 
   @@unique([ticketTypeId, fromQuantity])
   @@index([ticketTypeId])
+}
+
+// Session 29 — real-time crowd-density safety monitoring. zoneName is a
+// plain string snapshot of TicketType.name at trigger time (not a relation)
+// so a renamed/removed ticket type never orphans a past safety record —
+// same never-mutate-history discipline as Order.currency snapshotting
+// Event.currency. alertType is APPROACHING | AT_CAPACITY | OVERCROWDED,
+// plain-string convention (see MobileMoneyAccount.provider). Never deleted —
+// a permanent incident log, same append-only discipline as AuditLog.
+// resolvedBy is the resolving staff member's name, snapshotted the same way
+// AuditLog.actorName is; resolutionNote is the free-text reason they typed
+// (e.g. "Additional barriers added") — a separate field from `message`,
+// which is the original safety-alert text generated when the alert fired.
+model DensityAlert {
+  id             String    @id @default(cuid())
+  zoneName       String
+  alertType      String
+  triggeredAt    DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  resolutionNote String?
+  message        String
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // The live monitoring dashboard's two queries: "any unresolved alert for
+  // this zone right now" (checked every 30s poll) and "resolved alerts log"
+  // (rendered below the zone density section) both filter by eventId +
+  // resolvedAt.
+  @@index([eventId, resolvedAt])
 }
 
 // Session 26 — one guest or logged-in attendee waiting for a spot on a

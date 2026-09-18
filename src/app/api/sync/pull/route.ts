@@ -119,6 +119,7 @@ export async function GET(request: Request) {
         fromQuantity: pt.fromQuantity,
         priceCents: pt.priceCents,
       })),
+      physicalCapacity: tt.physicalCapacity,
     })),
     vendors: e.vendors,
     waiverText: e.waiverText ?? null,

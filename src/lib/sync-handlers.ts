@@ -171,6 +171,9 @@ export const payloadSchemas = {
           // Session 27 — FIXED | TIERED, see PricingTier's schema comment.
           pricingStrategy: z.enum(["FIXED", "TIERED"]).optional(),
           pricingTiers: z.array(pricingTierInputSchema).optional(),
+          // Session 29 — see TicketType.physicalCapacity's schema comment.
+          // null clears it (no more density monitoring for this zone).
+          physicalCapacity: z.number().int().min(0).nullable().optional(),
         })
       )
       .optional(),
@@ -631,6 +634,8 @@ export function shapeEvent(e: any, organizerName: string) {
         fromQuantity: pt.fromQuantity,
         priceCents: pt.priceCents,
       })),
+      // Session 29 — see TicketType.physicalCapacity's schema comment.
+      physicalCapacity: tt.physicalCapacity ?? null,
     })),
     // Public summary shape only (approved vendors, no contact info) — this
     // is the same `events` Dexie table the public pull writes to, so the
@@ -1294,6 +1299,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
             quantityTotal: newQuantityTotal,
             isFastTrack: Boolean(tt.isFastTrack ?? false),
             pricingStrategy,
+            physicalCapacity: tt.physicalCapacity != null ? Number(tt.physicalCapacity) : null,
           },
         });
         if (Array.isArray(tt.pricingTiers)) {
@@ -1324,6 +1330,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
               quantityTotal: Number(tt.quantityTotal),
               isFastTrack: Boolean(tt.isFastTrack ?? false),
               pricingStrategy,
+              physicalCapacity: tt.physicalCapacity != null ? Number(tt.physicalCapacity) : null,
             },
           });
           if (Array.isArray(tt.pricingTiers)) {

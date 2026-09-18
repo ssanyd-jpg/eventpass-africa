@@ -24,6 +24,9 @@ export interface LocalTicketType {
   // getCurrentPrice in src/lib/pricing.ts for the resolution rule).
   pricingStrategy: "FIXED" | "TIERED";
   pricingTiers: LocalPricingTier[];
+  // Session 29 — see TicketType.physicalCapacity's schema comment. null =
+  // no crowd-density monitoring for this ticket type.
+  physicalCapacity: number | null;
 }
 
 export interface LocalEventVendorSummary {
