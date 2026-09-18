@@ -308,6 +308,7 @@ export const payloadSchemas = {
   // is already scoped to the caller's own organizationId server-side.
   REPLACE_CREDENTIAL: z.object({
     clientId: z.string().min(1),
+    eventId: z.string().min(1),
     oldNfcUid: z.string().min(1),
     newNfcUid: z.string().min(1),
     reason: z.enum(["LOST", "DAMAGED", "STOLEN"]),
@@ -2444,8 +2445,23 @@ function shapeCredential(c: any) {
 export async function handleProvisionCredential(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.clientId);
 
-  const existingCredentials = await prisma.credential.findMany({ where: { clientId } });
+  const existingCredentials = await prisma.credential.findMany({
+    where: { clientId, organizationId },
+    include: {
+      wallet: { select: { eventId: true } },
+      ticket: { select: { eventId: true } },
+      vendor: { select: { eventId: true } },
+    },
+  });
   if (existingCredentials.length > 0) {
+    const requestedEventId = String(payload.eventId);
+    const belongsToEvent = (credential: (typeof existingCredentials)[number]) =>
+      credential.wallet?.eventId === requestedEventId ||
+      credential.ticket?.eventId === requestedEventId ||
+      credential.vendor?.eventId === requestedEventId;
+    if (!existingCredentials.some(belongsToEvent)) {
+      return { ok: false, reason: "CREDENTIAL_EVENT_MISMATCH" };
+    }
     const walletId = existingCredentials.find((c) => c.walletId)?.walletId ?? "";
     const ticketId = existingCredentials.find((c) => c.ticketId)?.ticketId ?? null;
     const [walletRow, ticketRow, event] = await Promise.all([
@@ -2496,9 +2512,18 @@ export async function handleProvisionCredential(userId: string, organizationId: 
   // dance below entirely: the credentials just link straight to the ticket
   // and the group's already-existing shared wallet.
   if (payload.ticketId) {
-    const ticket = await prisma.ticket.findUnique({ where: { id: String(payload.ticketId) } });
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: String(payload.ticketId) },
+      select: { id: true, eventId: true, order: { select: { status: true } }, ticketGroupId: true, groupMemberName: true, code: true },
+    });
     if (!ticket) {
       return { ok: false, retry: true, reason: "TICKET_NOT_SYNCED_YET" };
+    }
+    if (ticket.eventId !== event.id) {
+      return { ok: false, reason: "TICKET_WRONG_EVENT" };
+    }
+    if (ticket.order.status !== "PAID") {
+      return { ok: false, reason: "ORDER_NOT_PAID" };
     }
     if (!ticket.ticketGroupId) {
       return { ok: false, reason: "NOT_A_GROUP_TICKET" };
@@ -2509,6 +2534,9 @@ export async function handleProvisionCredential(userId: string, organizationId: 
     });
     if (group.sharedWallet.event.organizationId !== organizationId) {
       return { ok: false, reason: "FORBIDDEN" };
+    }
+    if (group.sharedWallet.eventId !== event.id) {
+      return { ok: false, reason: "GROUP_WALLET_WRONG_EVENT" };
     }
 
     const credentials = await prisma.$transaction(async (tx) => {
@@ -2690,9 +2718,39 @@ export async function handleProvisionCredential(userId: string, organizationId: 
 // points at it.
 export async function handleReplaceCredential(userId: string, organizationId: string, payload: any) {
   const clientId = String(payload.clientId);
+  const eventId = String(payload.eventId);
 
-  const existingCredentials = await prisma.credential.findMany({ where: { clientId } });
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, organizationId: true },
+  });
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+
+  // Idempotency is scoped to the caller's organization and requested event.
+  // A colliding clientId from another event is rejected instead of returning
+  // or mutating another event's credential.
+  const existingCredentials = await prisma.credential.findMany({
+    where: { clientId, organizationId },
+    include: {
+      wallet: { select: { eventId: true } },
+      ticket: { select: { eventId: true } },
+      vendor: { select: { eventId: true } },
+    },
+  });
   if (existingCredentials.length > 0) {
+    const belongsToEvent = (credential: (typeof existingCredentials)[number]) =>
+      credential.wallet?.eventId === eventId ||
+      credential.ticket?.eventId === eventId ||
+      credential.vendor?.eventId === eventId;
+    if (!existingCredentials.some(belongsToEvent)) {
+      return { ok: false, reason: "CREDENTIAL_EVENT_MISMATCH" };
+    }
+
     const wallet = await prisma.wallet.findUnique({
       where: { id: existingCredentials.find((c) => c.walletId)?.walletId ?? "" },
       include: walletInclude,
@@ -2709,8 +2767,6 @@ export async function handleReplaceCredential(userId: string, organizationId: st
   const newNfcUid = String(payload.newNfcUid);
   const reason = String(payload.reason);
 
-  // Resolved server-side from the authenticated actor, same reasoning as
-  // handleProvisionCredential's own actorName lookup.
   const actor = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
   const actorName = actor?.name ?? actor?.email ?? "Unknown";
 
@@ -2718,28 +2774,71 @@ export async function handleReplaceCredential(userId: string, organizationId: st
     async (tx) => {
       const oldCredentials = await tx.credential.findMany({
         where: { organizationId, nfcUid: oldNfcUid, status: "ACTIVE" },
+        include: {
+          wallet: { select: { eventId: true } },
+          ticket: { select: { eventId: true } },
+          vendor: { select: { eventId: true } },
+        },
       });
       if (oldCredentials.length === 0) {
-        return { notFound: true as const };
+        return { notFound: true as const, eventMismatch: false as const, newUidEventConflict: false as const };
+      }
+
+      const eventCredentials = oldCredentials.filter(
+        (credential) =>
+          credential.wallet?.eventId === eventId ||
+          credential.ticket?.eventId === eventId ||
+          credential.vendor?.eventId === eventId
+      );
+      if (eventCredentials.length === 0) {
+        return { notFound: false as const, eventMismatch: true as const, newUidEventConflict: false as const };
+      }
+
+      // Never mutate an active credential belonging to another event just
+      // because the same replacement UID was supplied for this event.
+      const activeNewUidCredentials = await tx.credential.findMany({
+        where: { organizationId, nfcUid: newNfcUid, status: "ACTIVE" },
+        include: {
+          wallet: { select: { eventId: true } },
+          ticket: { select: { eventId: true } },
+          vendor: { select: { eventId: true } },
+        },
+      });
+      const newUidBelongsToOtherEvent = activeNewUidCredentials.some(
+        (credential) =>
+          credential.wallet?.eventId !== eventId &&
+          credential.ticket?.eventId !== eventId &&
+          credential.vendor?.eventId !== eventId
+      );
+      if (newUidBelongsToOtherEvent) {
+        return { notFound: false as const, eventMismatch: false as const, newUidEventConflict: true as const };
       }
 
       const now = new Date();
       await tx.credential.updateMany({
-        where: { id: { in: oldCredentials.map((c) => c.id) } },
+        where: { id: { in: eventCredentials.map((c) => c.id) } },
         data: { status: "SUPERSEDED", supersededAt: now, supersededByUserId: userId, supersededReason: reason },
       });
 
-      // A physical tag can only meaningfully belong to one person at a time
-      // — same collision guard handleProvisionCredential uses, in case the
-      // replacement tag was already (mistakenly) provisioned for someone
-      // else and is still marked ACTIVE.
-      await tx.credential.updateMany({
-        where: { organizationId, nfcUid: newNfcUid, status: "ACTIVE" },
-        data: { status: "SUPERSEDED", supersededAt: now, supersededByUserId: userId, supersededReason: reason },
-      });
+      // Same-event collision: preserve the existing behavior, but only for
+      // credential rows belonging to this event.
+      const sameEventNewUidIds = activeNewUidCredentials
+        .filter(
+          (credential) =>
+            credential.wallet?.eventId === eventId ||
+            credential.ticket?.eventId === eventId ||
+            credential.vendor?.eventId === eventId
+        )
+        .map((c) => c.id);
+      if (sameEventNewUidIds.length > 0) {
+        await tx.credential.updateMany({
+          where: { id: { in: sameEventNewUidIds } },
+          data: { status: "SUPERSEDED", supersededAt: now, supersededByUserId: userId, supersededReason: reason },
+        });
+      }
 
       const credentials = [];
-      for (const old of oldCredentials) {
+      for (const old of eventCredentials) {
         const created = await tx.credential.create({
           data: {
             clientId,
@@ -2756,22 +2855,28 @@ export async function handleReplaceCredential(userId: string, organizationId: st
         credentials.push(created);
       }
 
-      const walletId = oldCredentials.find((c) => c.walletId)?.walletId ?? null;
+      const walletId = eventCredentials.find((c) => c.walletId)?.walletId ?? null;
       const wallet = walletId ? await tx.wallet.findUnique({ where: { id: walletId }, include: walletInclude }) : null;
 
-      return { notFound: false as const, credentials, wallet };
+      return {
+        notFound: false as const,
+        eventMismatch: false as const,
+        newUidEventConflict: false as const,
+        credentials,
+        wallet,
+      };
     },
     { timeout: 15000, maxWait: 10000 }
   );
 
   if (outcome.notFound) {
-    // Either the uid was never provisioned, or (the interesting case) it
-    // was already replaced — by this same request being retried after the
-    // clientId short-circuit above would normally catch it, or genuinely by
-    // someone else in between. Either way there is nothing ACTIVE left to
-    // supersede, so this is a clean, non-retryable error rather than a
-    // silent no-op.
     return { ok: false, reason: "CREDENTIAL_NOT_FOUND" };
+  }
+  if (outcome.eventMismatch) {
+    return { ok: false, reason: "CREDENTIAL_EVENT_MISMATCH" };
+  }
+  if (outcome.newUidEventConflict) {
+    return { ok: false, reason: "NEW_UID_ACTIVE_IN_OTHER_EVENT" };
   }
 
   return {
@@ -2781,7 +2886,6 @@ export async function handleReplaceCredential(userId: string, organizationId: st
     reason,
   };
 }
-
 export async function handleTopupWallet(userId: string, payload: any) {
   const clientId = String(payload.clientId);
 
