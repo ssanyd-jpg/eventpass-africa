@@ -147,7 +147,7 @@ export default async function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/dashboard/events/new" className="btn-primary chaap-primary">
+              <Link href="/register" className="btn-primary chaap-primary">
                 CREATE AN EVENT <Arrow />
               </Link>
               <Link href="/events" className="btn-secondary chaap-secondary">
@@ -165,8 +165,8 @@ export default async function HomePage() {
                 <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Attendees</p>
               </div>
               <div className="border-l border-white/10 pl-5">
-                <p className="text-3xl font-black tracking-tight text-white">1,500+</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Organisers</p>
+                <p className="text-3xl font-black tracking-tight text-white">{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Cashless volume</p>
               </div>
               <div className="border-l border-white/10 pl-5">
                 <p className="text-3xl font-black tracking-tight text-[#f6bf22]">AFRICA</p>
