@@ -67,7 +67,7 @@ export default function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
-          <NavLink href="/">{t("nav.browse")}</NavLink>
+          <NavLink href="/events">{t("nav.browse")}</NavLink>
           {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
           {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
           {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
@@ -115,7 +115,7 @@ export default function Navbar() {
         </div>
       </div>
       <div className="flex gap-5 border-t border-border px-4 py-2 md:hidden">
-        <NavLink href="/">{t("nav.browse")}</NavLink>
+        <NavLink href="/events">{t("nav.browse")}</NavLink>
         {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
         {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
         {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
