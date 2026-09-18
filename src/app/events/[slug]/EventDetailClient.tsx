@@ -4,13 +4,35 @@ import { Suspense, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { db, newLocalId } from "@/lib/db";
+import { db, newLocalId, type LocalTicketType } from "@/lib/db";
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import QuestionFields from "@/components/QuestionFields";
 import Spinner from "@/components/Spinner";
+
+// Session 27 — a client-safe copy of the same resolution rule as
+// currentPriceCents/nextTierInfo in src/lib/pricing.ts. Duplicated rather
+// than imported: that module also exports a Prisma-backed getCurrentPrice,
+// and importing it here would pull @/lib/prisma into the browser bundle.
+// Same "client computes an optimistic estimate, server is authoritative"
+// tradeoff this component already makes for discount codes.
+function currentTierPriceCents(tt: LocalTicketType): number {
+  if (tt.pricingStrategy !== "TIERED" || tt.pricingTiers.length === 0) return tt.priceCents;
+  const reached = tt.pricingTiers
+    .filter((t) => tt.quantitySold >= t.fromQuantity)
+    .sort((a, b) => b.fromQuantity - a.fromQuantity);
+  return reached.length > 0 ? reached[0].priceCents : tt.priceCents;
+}
+
+function nextTierFor(tt: LocalTicketType): { priceCents: number; atQuantity: number } | null {
+  if (tt.pricingStrategy !== "TIERED" || tt.pricingTiers.length === 0) return null;
+  const upcoming = tt.pricingTiers
+    .filter((t) => tt.quantitySold < t.fromQuantity)
+    .sort((a, b) => a.fromQuantity - b.fromQuantity);
+  return upcoming.length > 0 ? { priceCents: upcoming[0].priceCents, atQuantity: upcoming[0].fromQuantity } : null;
+}
 
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
@@ -101,7 +123,7 @@ function EventDetailContent() {
       .filter((s) => s.qty > 0);
   }, [event, quantities]);
 
-  const totalCents = selection.reduce((sum, s) => sum + s.tt.priceCents * s.qty, 0);
+  const totalCents = selection.reduce((sum, s) => sum + currentTierPriceCents(s.tt) * s.qty, 0);
   const totalQty = selection.reduce((sum, s) => sum + s.qty, 0);
 
   // Padded/truncated to the current totalQty for rendering and validation —
@@ -194,7 +216,7 @@ function EventDetailContent() {
         ticketTypeId: s.tt.id,
         ticketTypeName: s.tt.name,
         quantity: s.qty,
-        unitPriceCents: s.tt.priceCents,
+        unitPriceCents: currentTierPriceCents(s.tt),
       })),
       tickets,
       waiverText: event.waiverText ?? null,
@@ -363,12 +385,20 @@ function EventDetailContent() {
                   const remaining = tt.quantityTotal - tt.quantitySold;
                   const qty = quantities[tt.id] ?? 0;
                   const soldOutWithWaitlist = remaining <= 0 && event.waitlistEnabled;
+                  const currentPriceCents = currentTierPriceCents(tt);
+                  const nextTier = nextTierFor(tt);
                   return (
                     <div key={tt.id} className="border-b border-border pb-4 last:border-0 last:pb-0">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium">{tt.name}</p>
-                          <p className="text-sm text-muted">{formatCents(tt.priceCents, event.currency)}</p>
+                          <p className="text-sm text-muted">{formatCents(currentPriceCents, event.currency)}</p>
+                          {nextTier && (
+                            <p className="text-xs text-accent-hover">
+                              Price increases to {formatCents(nextTier.priceCents, event.currency)} after{" "}
+                              {nextTier.atQuantity} tickets sold ({tt.quantitySold} sold so far)
+                            </p>
+                          )}
                           <p className="text-xs text-muted">
                             {remaining > 0 ? t("event.leftSuffix", { count: remaining }) : t("event.soldOut")}
                           </p>
@@ -536,7 +566,7 @@ function EventDetailContent() {
                 {selection.map((s) => (
                   <div key={s.tt.id} className="flex justify-between">
                     <span>{s.qty}× {s.tt.name}</span>
-                    <span>{formatCents(s.tt.priceCents * s.qty, event.currency)}</span>
+                    <span>{formatCents(currentTierPriceCents(s.tt) * s.qty, event.currency)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-border pt-2 font-semibold">

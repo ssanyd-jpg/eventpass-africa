@@ -118,6 +118,10 @@ export default function NewEventPage() {
       // type named "VIP" already fast-tracks by name (see
       // isFastTrackTicketType) without needing this flag at creation time.
       isFastTrack: false,
+      // Dynamic pricing is configured via Edit once the event exists — same
+      // reasoning as isFastTrack above.
+      pricingStrategy: "FIXED" as const,
+      pricingTiers: [],
     }));
 
     const localEvent: LocalEvent = {

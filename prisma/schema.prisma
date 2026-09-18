@@ -818,6 +818,11 @@ model TicketType {
   // its name contains "VIP" (case-insensitive) — see isFastTrackTicketType
   // in src/lib/ticket-types.ts, the single source of truth for that OR.
   isFastTrack Boolean @default(false)
+  // Session 27 — FIXED (use priceCents as-is) | TIERED (use the highest
+  // PricingTier whose fromQuantity has been reached — see getCurrentPrice in
+  // src/lib/pricing.ts). Plain-string convention, same as every other
+  // enum-shaped field in this schema (see MobileMoneyAccount.provider).
+  pricingStrategy String @default("FIXED")
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -827,6 +832,28 @@ model TicketType {
   broadcasts      Broadcast[]
   discountCodes   DiscountCode[]
   waitlistEntries WaitlistEntry[]
+  pricingTiers    PricingTier[]
+}
+
+// Session 27 — one price step for a TIERED TicketType. fromQuantity is the
+// cumulative quantitySold at which this tier's price takes over ("activate
+// when this many tickets sold"); getCurrentPrice picks the tier with the
+// highest fromQuantity that quantitySold has reached, so price only ever
+// steps up, never back down once a threshold is crossed (see
+// src/lib/pricing.ts). Never deleted server-side — same never-delete,
+// upsert-by-id-or-clientId convention as DiscountCode/RegistrationQuestion.
+model PricingTier {
+  id           String  @id @default(cuid())
+  clientId     String? @unique
+  label        String?
+  fromQuantity Int
+  priceCents   Int
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketTypeId, fromQuantity])
+  @@index([ticketTypeId])
 }
 
 // Session 26 — one guest or logged-in attendee waiting for a spot on a

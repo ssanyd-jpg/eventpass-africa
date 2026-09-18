@@ -30,9 +30,16 @@ export async function addMembership(organizationId: string, userId: string, role
 
 export async function createTestEvent(
   organizationId: string,
-  ticketTypes: Array<{ priceCents: number; quantityTotal: number; quantitySold?: number; name?: string; isFastTrack?: boolean }> = [
-    { priceCents: 200000, quantityTotal: 10 },
-  ],
+  ticketTypes: Array<{
+    priceCents: number;
+    quantityTotal: number;
+    quantitySold?: number;
+    name?: string;
+    isFastTrack?: boolean;
+    // Session 27 — opt a fixture ticket type into dynamic pricing.
+    pricingStrategy?: "FIXED" | "TIERED";
+    pricingTiers?: Array<{ fromQuantity: number; priceCents: number; label?: string }>;
+  }> = [{ priceCents: 200000, quantityTotal: 10 }],
   currency = "TZS",
   vendorOptions: { vendorApplicationsOpen?: boolean; vendorStallFeeCents?: number } = {},
   waiverText: string | null = null
@@ -59,10 +66,14 @@ export async function createTestEvent(
           quantityTotal: tt.quantityTotal,
           quantitySold: tt.quantitySold ?? 0,
           isFastTrack: tt.isFastTrack ?? false,
+          pricingStrategy: tt.pricingStrategy ?? "FIXED",
+          pricingTiers: tt.pricingTiers
+            ? { create: tt.pricingTiers.map((t) => ({ fromQuantity: t.fromQuantity, priceCents: t.priceCents, label: t.label })) }
+            : undefined,
         })),
       },
     },
-    include: { ticketTypes: true },
+    include: { ticketTypes: { include: { pricingTiers: true } } },
   });
 }
 

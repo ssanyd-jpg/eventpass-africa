@@ -11,6 +11,15 @@ import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { eventHasEnded } from "@/lib/carry-over";
 import { EVENT_MODE_CONFIG, EVENT_TYPES, type EventType } from "@/lib/event-modes";
 
+interface DraftPricingTier {
+  key: string;
+  id?: string;
+  clientId: string;
+  label: string;
+  fromQuantity: string;
+  priceMajor: string;
+}
+
 interface DraftTicketType {
   key: string;
   id?: string;
@@ -21,6 +30,9 @@ interface DraftTicketType {
   quantitySold: number;
   // Session 14 — explicit VIP fast-track opt-in, independent of name.
   isFastTrack: boolean;
+  // Session 27 — FIXED (priceMajor as-is) | TIERED (see pricingTiers).
+  pricingStrategy: "FIXED" | "TIERED";
+  pricingTiers: DraftPricingTier[];
 }
 
 interface DraftQuestion {
@@ -226,6 +238,15 @@ export default function EditEventPage() {
         quantity: String(tt.quantityTotal),
         quantitySold: tt.quantitySold,
         isFastTrack: tt.isFastTrack ?? false,
+        pricingStrategy: tt.pricingStrategy ?? "FIXED",
+        pricingTiers: (tt.pricingTiers ?? []).map((pt) => ({
+          key: pt.id,
+          id: pt.id,
+          clientId: pt.clientId ?? pt.id,
+          label: pt.label ?? "",
+          fromQuantity: String(pt.fromQuantity),
+          priceMajor: String(pt.priceCents / 100),
+        })),
       }));
       setTicketTypes(loadedTicketTypes);
       setDiscountCodes(
@@ -287,6 +308,32 @@ export default function EditEventPage() {
     setTicketTypes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  function addTicketTypeTier(ticketKey: string) {
+    setTicketTypes((rows) =>
+      rows.map((r) =>
+        r.key === ticketKey
+          ? { ...r, pricingTiers: [...r.pricingTiers, { key: crypto.randomUUID(), clientId: newLocalId(), label: "", fromQuantity: "", priceMajor: "" }] }
+          : r
+      )
+    );
+  }
+
+  function updateTicketTypeTier(ticketKey: string, tierKey: string, patch: Partial<DraftPricingTier>) {
+    setTicketTypes((rows) =>
+      rows.map((r) =>
+        r.key === ticketKey
+          ? { ...r, pricingTiers: r.pricingTiers.map((t) => (t.key === tierKey ? { ...t, ...patch } : t)) }
+          : r
+      )
+    );
+  }
+
+  function removeTicketTypeTier(ticketKey: string, tierKey: string) {
+    setTicketTypes((rows) =>
+      rows.map((r) => (r.key === ticketKey ? { ...r, pricingTiers: r.pricingTiers.filter((t) => t.key !== tierKey) } : r))
+    );
+  }
+
   function updateQuestion(key: string, patch: Partial<DraftQuestion>) {
     setQuestions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
@@ -313,6 +360,29 @@ export default function EditEventPage() {
       if (parseInt(t.quantity, 10) < t.quantitySold) {
         setError(`"${t.name}" already has ${t.quantitySold} sold — quantity can't go below that.`);
         return;
+      }
+      if (t.pricingStrategy === "TIERED") {
+        const validTiers = t.pricingTiers.filter((tier) => tier.label.trim() || tier.fromQuantity || tier.priceMajor);
+        if (validTiers.length === 0) {
+          setError(`"${t.name}" has dynamic pricing on but no tiers — add at least one.`);
+          return;
+        }
+        for (const tier of validTiers) {
+          if (tier.fromQuantity === "" || tier.priceMajor === "") {
+            setError(`"${t.name}" has a tier missing a quantity or price.`);
+            return;
+          }
+        }
+        for (let i = 1; i < validTiers.length; i++) {
+          if (parseInt(validTiers[i].fromQuantity, 10) <= parseInt(validTiers[i - 1].fromQuantity, 10)) {
+            setError(`"${t.name}"'s tiers must be in ascending quantity order.`);
+            return;
+          }
+          if (parseFloat(validTiers[i].priceMajor) <= parseFloat(validTiers[i - 1].priceMajor)) {
+            setError(`"${t.name}"'s tiers must be in ascending price order.`);
+            return;
+          }
+        }
       }
     }
 
@@ -389,6 +459,22 @@ export default function EditEventPage() {
       sortOrder: index,
     }));
 
+    // Only fully-filled tier rows ride along — a blank row added but never
+    // filled in is dropped rather than rejected, same leniency as
+    // validTypes/validQuestions/validDiscountCodes above.
+    const tiersForTicketType = (t: DraftTicketType) =>
+      t.pricingStrategy === "TIERED"
+        ? t.pricingTiers
+            .filter((tier) => tier.label.trim() || tier.fromQuantity || tier.priceMajor)
+            .map((tier) => ({
+              id: tier.id,
+              clientId: tier.clientId,
+              label: tier.label.trim() || null,
+              fromQuantity: parseInt(tier.fromQuantity, 10),
+              priceCents: Math.round(parseFloat(tier.priceMajor) * 100),
+            }))
+        : [];
+
     // For local storage every ticket type needs a stable string id — reuse
     // the real server id when editing an existing one, otherwise the
     // client-generated id doubles as a placeholder until it syncs (same
@@ -402,10 +488,18 @@ export default function EditEventPage() {
       quantityTotal: parseInt(t.quantity, 10),
       quantitySold: t.quantitySold,
       isFastTrack: t.isFastTrack,
+      pricingStrategy: t.pricingStrategy,
+      pricingTiers: tiersForTicketType(t).map((tier) => ({
+        id: tier.id ?? tier.clientId,
+        clientId: tier.clientId,
+        label: tier.label,
+        fromQuantity: tier.fromQuantity,
+        priceCents: tier.priceCents,
+      })),
     }));
 
     // The server payload keeps `id` genuinely undefined for new ticket
-    // types so it knows to create rather than update.
+    // types (and new tiers) so it knows to create rather than update.
     const payloadTicketTypes = validTypes.map((t) => ({
       id: t.id,
       clientId: t.clientId,
@@ -414,6 +508,8 @@ export default function EditEventPage() {
       priceCents: Math.round(parseFloat(t.priceMajor) * 100),
       quantityTotal: parseInt(t.quantity, 10),
       isFastTrack: t.isFastTrack,
+      pricingStrategy: t.pricingStrategy,
+      pricingTiers: tiersForTicketType(t),
     }));
 
     const vendorStallFeeCents = Math.round(parseFloat(vendorStallFeeMajor || "0") * 100);
@@ -516,6 +612,8 @@ export default function EditEventPage() {
         priceCents: t.priceCents,
         quantityTotal: t.quantityTotal,
         isFastTrack: t.isFastTrack,
+        pricingStrategy: t.pricingStrategy,
+        pricingTiers: t.pricingTiers,
       })),
       registrationQuestions: payloadQuestions,
       discountCodes: payloadDiscountCodes,
@@ -679,7 +777,7 @@ export default function EditEventPage() {
               onClick={() =>
                 setTicketTypes((rows) => [
                   ...rows,
-                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false },
+                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false, pricingStrategy: "FIXED", pricingTiers: [] },
                 ])
               }
             >
@@ -732,6 +830,67 @@ export default function EditEventPage() {
                 {t.quantitySold > 0 && (
                   <p className="col-span-4 -mt-1 text-xs text-muted">{t.quantitySold} already sold</p>
                 )}
+                <div className="col-span-4 rounded-lg border border-border p-3">
+                  <label className="flex items-center gap-2 text-xs text-muted">
+                    <input
+                      type="checkbox"
+                      checked={t.pricingStrategy === "TIERED"}
+                      onChange={(e) =>
+                        updateTicketType(t.key, { pricingStrategy: e.target.checked ? "TIERED" : "FIXED" })
+                      }
+                    />
+                    Price increases automatically as this tier sells out (dynamic pricing)
+                  </label>
+                  {t.pricingStrategy === "TIERED" && (
+                    <div className="mt-3 space-y-2">
+                      {t.pricingTiers.map((tier) => (
+                        <div key={tier.key} className="grid grid-cols-[1fr_110px_110px_auto] items-center gap-2">
+                          <input
+                            placeholder="Label (e.g. Early bird)"
+                            className="input"
+                            value={tier.label}
+                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { label: e.target.value })}
+                          />
+                          <input
+                            placeholder="From qty sold"
+                            type="number"
+                            min="0"
+                            className="input"
+                            value={tier.fromQuantity}
+                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { fromQuantity: e.target.value })}
+                          />
+                          <input
+                            placeholder={`Price (${currency})`}
+                            type="number"
+                            min="0"
+                            step="500"
+                            className="input"
+                            value={tier.priceMajor}
+                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { priceMajor: e.target.value })}
+                          />
+                          <button
+                            type="button"
+                            className="text-xs text-muted hover:text-danger"
+                            onClick={() => removeTicketTypeTier(t.key, tier.key)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-accent-hover"
+                        onClick={() => addTicketTypeTier(t.key)}
+                      >
+                        + Add tier
+                      </button>
+                      <p className="text-xs text-muted">
+                        Tiers must be in ascending quantity-sold and price order, e.g. Early bird (0) → Standard
+                        (100) → Late (300). The price never drops back once a threshold is reached.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

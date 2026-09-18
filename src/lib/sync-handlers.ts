@@ -12,6 +12,7 @@ import { buildOrderConfirmationHtml } from "@/lib/email";
 import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timing";
 import { EVENT_TYPES } from "@/lib/event-modes";
 import { releaseWaitlistCapacity, convertWaitlistEntry } from "@/lib/waitlist";
+import { currentPriceCents, validatePricingTiers } from "@/lib/pricing";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -39,6 +40,17 @@ const registrationQuestionInputSchema = z.object({
   options: z.string().max(1000).optional(),
   required: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+});
+
+// Session 27 — one price step of a TIERED ticket type. id present means an
+// update to an existing tier; absent means create (resolved by clientId) —
+// same id-or-clientId shape as registrationQuestionInputSchema.
+const pricingTierInputSchema = z.object({
+  id: z.string().optional(),
+  clientId: z.string().min(1),
+  label: z.string().max(60).nullable().optional(),
+  fromQuantity: z.number().int().min(0),
+  priceCents: z.number().int().min(0),
 });
 
 // ticketTypeId may reference a real, already-persisted TicketType.id, OR
@@ -156,6 +168,9 @@ export const payloadSchemas = {
           quantityTotal: z.number().int().min(1),
           // Session 14 — explicit VIP fast-track opt-in, independent of name.
           isFastTrack: z.boolean().optional(),
+          // Session 27 — FIXED | TIERED, see PricingTier's schema comment.
+          pricingStrategy: z.enum(["FIXED", "TIERED"]).optional(),
+          pricingTiers: z.array(pricingTierInputSchema).optional(),
         })
       )
       .optional(),
@@ -514,7 +529,7 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
   const existing = await prisma.event.findUnique({
     where: { clientId },
     include: {
-      ticketTypes: true,
+      ticketTypes: { include: { pricingTiers: true } },
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
@@ -556,7 +571,7 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
       },
     },
     include: {
-      ticketTypes: true,
+      ticketTypes: { include: { pricingTiers: true } },
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
@@ -607,6 +622,15 @@ export function shapeEvent(e: any, organizerName: string) {
       quantityTotal: tt.quantityTotal,
       quantitySold: tt.quantitySold,
       isFastTrack: tt.isFastTrack ?? false,
+      // Session 27 — see PricingTier's own doc comment in schema.prisma.
+      pricingStrategy: tt.pricingStrategy ?? "FIXED",
+      pricingTiers: (tt.pricingTiers ?? []).map((pt: any) => ({
+        id: pt.id,
+        clientId: pt.clientId,
+        label: pt.label,
+        fromQuantity: pt.fromQuantity,
+        priceCents: pt.priceCents,
+      })),
     })),
     // Public summary shape only (approved vendors, no contact info) — this
     // is the same `events` Dexie table the public pull writes to, so the
@@ -749,8 +773,11 @@ export async function handleSellTickets(userId: string, payload: any) {
   if (payload.paymentMethod === "AIRPAY_ONLINE") {
     let precheckTotalCents = 0;
     for (const item of items) {
-      const tt = await prisma.ticketType.findUnique({ where: { id: item.ticketTypeId }, select: { priceCents: true } });
-      if (tt) precheckTotalCents += tt.priceCents * item.quantity;
+      const tt = await prisma.ticketType.findUnique({
+        where: { id: item.ticketTypeId },
+        select: { priceCents: true, pricingStrategy: true, quantitySold: true, pricingTiers: true },
+      });
+      if (tt) precheckTotalCents += currentPriceCents(tt, tt.pricingTiers) * item.quantity;
     }
 
     // Opportunistic capture — this checkout phone number is the only
@@ -831,12 +858,17 @@ export async function handleSellTickets(userId: string, payload: any) {
     const ticketsData: any[] = [];
 
     for (const item of items) {
-      const tt = await tx.ticketType.findUnique({ where: { id: item.ticketTypeId } });
+      const tt = await tx.ticketType.findUnique({ where: { id: item.ticketTypeId }, include: { pricingTiers: true } });
       if (!tt) continue;
 
       if (tt.quantitySold + item.quantity > tt.quantityTotal) {
         oversold = true;
       }
+
+      // Priced against quantitySold as of this read, before the increment
+      // below — the buyer pays the tier that was current the instant their
+      // purchase claimed inventory, matching the precheck above.
+      const unitPriceCents = currentPriceCents(tt, tt.pricingTiers);
 
       const updatedTt = await tx.ticketType.update({
         where: { id: tt.id },
@@ -844,11 +876,11 @@ export async function handleSellTickets(userId: string, payload: any) {
       });
       ticketTypeUpdates.push({ id: updatedTt.id, quantitySold: updatedTt.quantitySold });
 
-      totalCents += tt.priceCents * item.quantity;
+      totalCents += unitPriceCents * item.quantity;
       orderItemsData.push({
         ticketTypeId: tt.id,
         quantity: item.quantity,
-        unitPriceCents: tt.priceCents,
+        unitPriceCents,
       });
 
       for (let i = 0; i < item.quantity; i++) {
@@ -939,7 +971,7 @@ export async function handleSellTickets(userId: string, payload: any) {
     if (rawCode) {
       const dc = await tx.discountCode.findUnique({
         where: { eventId_code: { eventId: event.id, code: rawCode } },
-        include: { ticketType: true },
+        include: { ticketType: { include: { pricingTiers: true } } },
       });
       const matchingItem = dc ? items.find((it) => it.ticketTypeId === dc.ticketTypeId) : undefined;
 
@@ -961,7 +993,7 @@ export async function handleSellTickets(userId: string, payload: any) {
           data: { redemptionCount: { increment: 1 } },
         });
         if (res.count === 1) {
-          const lineTotalCents = dc.ticketType.priceCents * matchingItem.quantity;
+          const lineTotalCents = currentPriceCents(dc.ticketType, dc.ticketType.pricingTiers) * matchingItem.quantity;
           discountCents = dc.type === "PERCENT_OFF"
             ? Math.round(lineTotalCents * ((dc.percentOff ?? 0) / 100))
             : Math.min(dc.amountOffCents ?? 0, lineTotalCents);
@@ -1208,8 +1240,44 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
   // here (e.g. an organizer creating "VIP" and a VIP-only code in one save).
   const ticketTypeIdByClientId = new Map<string, string>();
 
+  // Session 27 — same upsert-by-id-or-clientId, never-delete shape as
+  // discountCodes below, but nested one level under its own ticket type
+  // (a PricingTier only ever belongs to one TicketType, so it rides inside
+  // that ticket type's own payload entry rather than a separate top-level
+  // array).
+  async function upsertPricingTiers(ticketTypeId: string, tiers: any[]) {
+    for (const tier of tiers) {
+      const tierData = {
+        label: tier.label != null ? String(tier.label) : null,
+        fromQuantity: Number(tier.fromQuantity),
+        priceCents: Number(tier.priceCents),
+        ticketTypeId,
+      };
+      if (tier.id) {
+        const current = await prisma.pricingTier.findUnique({ where: { id: tier.id } });
+        if (!current || current.ticketTypeId !== ticketTypeId) continue;
+        await prisma.pricingTier.update({ where: { id: tier.id }, data: tierData });
+      } else {
+        const existingByClientId = await prisma.pricingTier.findUnique({ where: { clientId: String(tier.clientId) } });
+        if (!existingByClientId) {
+          await prisma.pricingTier.create({ data: { clientId: String(tier.clientId), ...tierData } });
+        }
+      }
+    }
+  }
+
   if (Array.isArray(payload.ticketTypes)) {
     for (const tt of payload.ticketTypes as any[]) {
+      const pricingStrategy = String(tt.pricingStrategy ?? "FIXED");
+      if (pricingStrategy === "TIERED") {
+        const tierCheck = validatePricingTiers(
+          ((tt.pricingTiers ?? []) as any[]).map((t) => ({ fromQuantity: Number(t.fromQuantity), priceCents: Number(t.priceCents) }))
+        );
+        if (!tierCheck.ok) {
+          return { ok: false, reason: tierCheck.reason };
+        }
+      }
+
       if (tt.id) {
         const current = await prisma.ticketType.findUnique({ where: { id: tt.id } });
         if (!current || current.eventId !== event.id) continue;
@@ -1225,8 +1293,12 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
             priceCents: Number(tt.priceCents),
             quantityTotal: newQuantityTotal,
             isFastTrack: Boolean(tt.isFastTrack ?? false),
+            pricingStrategy,
           },
         });
+        if (Array.isArray(tt.pricingTiers)) {
+          await upsertPricingTiers(tt.id, tt.pricingTiers);
+        }
         // Session 26 — organiser raised capacity on a ticket type that may
         // have a waitlist (e.g. after this same save also flips
         // waitlistEnabled on) — resolve against the just-computed `data`
@@ -1251,8 +1323,12 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
               priceCents: Number(tt.priceCents),
               quantityTotal: Number(tt.quantityTotal),
               isFastTrack: Boolean(tt.isFastTrack ?? false),
+              pricingStrategy,
             },
           });
+          if (Array.isArray(tt.pricingTiers)) {
+            await upsertPricingTiers(createdTt.id, tt.pricingTiers);
+          }
           ticketTypeIdByClientId.set(String(tt.clientId), createdTt.id);
         } else {
           ticketTypeIdByClientId.set(String(tt.clientId), existingByClientId.id);
@@ -1392,7 +1468,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
     where: { id: event.id },
     data,
     include: {
-      ticketTypes: true,
+      ticketTypes: { include: { pricingTiers: true } },
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
@@ -1415,7 +1491,7 @@ export async function handleCancelEvent(userId: string, organizationId: string, 
     where: { id: event.id },
     data: { status: "CANCELLED" },
     include: {
-      ticketTypes: true,
+      ticketTypes: { include: { pricingTiers: true } },
       organization: { select: { name: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },

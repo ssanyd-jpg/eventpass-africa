@@ -42,7 +42,16 @@ export async function getForecastPageData(eventId: string, now: Date = new Date(
       title: true,
       currency: true,
       organizationId: true,
-      ticketTypes: { select: { name: true, priceCents: true, quantityTotal: true } },
+      ticketTypes: {
+        select: {
+          name: true,
+          priceCents: true,
+          quantityTotal: true,
+          quantitySold: true,
+          pricingStrategy: true,
+          pricingTiers: { select: { fromQuantity: true, priceCents: true } },
+        },
+      },
       forecast: {
         select: {
           expectedAttendance: true,
@@ -60,6 +69,9 @@ export async function getForecastPageData(eventId: string, now: Date = new Date(
     name: t.name,
     priceCents: t.priceCents,
     quantityTotal: t.quantityTotal,
+    quantitySold: t.quantitySold,
+    pricingStrategy: t.pricingStrategy as "FIXED" | "TIERED",
+    pricingTiers: t.pricingTiers,
   }));
 
   // The organiser's other events that have already started — the pool the

@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       ? { OR: [{ updatedAt: { gt: since } }, { ticketTypes: { some: { updatedAt: { gt: since } } } }] }
       : undefined,
     include: {
-      ticketTypes: true,
+      ticketTypes: { include: { pricingTiers: true } },
       organization: { select: { name: true } },
       // Public summary only — no contact info/badgeCode. Full vendor
       // detail (all statuses) goes out separately in myVendors below,
@@ -111,6 +111,14 @@ export async function GET(request: Request) {
       quantityTotal: tt.quantityTotal,
       quantitySold: tt.quantitySold,
       isFastTrack: tt.isFastTrack,
+      pricingStrategy: tt.pricingStrategy,
+      pricingTiers: tt.pricingTiers.map((pt) => ({
+        id: pt.id,
+        clientId: pt.clientId,
+        label: pt.label,
+        fromQuantity: pt.fromQuantity,
+        priceCents: pt.priceCents,
+      })),
     })),
     vendors: e.vendors,
     waiverText: e.waiverText ?? null,

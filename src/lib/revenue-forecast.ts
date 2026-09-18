@@ -30,9 +30,62 @@ export interface ForecastInputs {
   durationDays: number;
 }
 
+// Session 27 — one price step of a TIERED ticket type, same shape as
+// PricingTier in schema.prisma (kept as a plain interface here, same
+// no-Prisma discipline as the rest of this file).
+export interface PricingTierStep {
+  fromQuantity: number;
+  priceCents: number;
+}
+
 export interface TicketTier {
   priceCents: number;
   quantityTotal: number; // capacity — used to pro-rate projected attendance across tiers
+  // Session 27 — optional, default to FIXED/0/[] so every pre-existing
+  // caller/fixture (FIXED-only) keeps compiling unchanged. Only needed to
+  // resolve a TIERED tier's future price as projected sales cross a
+  // threshold — see tierRevenueCents below.
+  quantitySold?: number;
+  pricingStrategy?: "FIXED" | "TIERED";
+  pricingTiers?: PricingTierStep[];
+}
+
+// The price a TIERED tier charges once quantitySold has reached
+// `atQuantitySold` — same highest-reached-threshold rule as
+// currentPriceCents in src/lib/pricing.ts (duplicated, not imported: this
+// module is deliberately Prisma-free and testable in isolation, and
+// pricing.ts pulls in @/lib/prisma for its DB-backed getCurrentPrice).
+function tierPriceAt(t: TicketTier, atQuantitySold: number): number {
+  if (t.pricingStrategy !== "TIERED" || !t.pricingTiers || t.pricingTiers.length === 0) return t.priceCents;
+  const reached = t.pricingTiers
+    .filter((tier) => atQuantitySold >= tier.fromQuantity)
+    .sort((a, b) => b.fromQuantity - a.fromQuantity);
+  return reached.length > 0 ? reached[0].priceCents : t.priceCents;
+}
+
+// Values `additionalSold` more tickets on top of the tier's current
+// quantitySold. FIXED collapses to priceCents * additionalSold exactly as
+// before. TIERED walks the price ladder in segments, so a projection that
+// spans a threshold charges each portion at the price that actually applies
+// there instead of one flat price for the whole projected batch.
+function tierRevenueCents(t: TicketTier, additionalSold: number): number {
+  if (t.pricingStrategy !== "TIERED" || !t.pricingTiers || t.pricingTiers.length === 0) {
+    return t.priceCents * additionalSold;
+  }
+  const start = t.quantitySold ?? 0;
+  const end = start + additionalSold;
+  const breakpoints = t.pricingTiers
+    .map((tier) => tier.fromQuantity)
+    .filter((q) => q > start && q < end)
+    .sort((a, b) => a - b);
+  const points = [start, ...breakpoints, end];
+  let revenue = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const segLength = points[i + 1] - points[i];
+    if (segLength <= 0) continue;
+    revenue += tierPriceAt(t, points[i]) * segLength;
+  }
+  return revenue;
 }
 
 export interface ScenarioProjection {
@@ -58,7 +111,7 @@ function projectedTicketRevenueCents(tiers: TicketTier[], projectedAttendance: n
   if (totalCapacity <= 0) return 0;
   return tiers.reduce((sum, t) => {
     const tierAttendance = projectedAttendance * (t.quantityTotal / totalCapacity);
-    return sum + t.priceCents * tierAttendance;
+    return sum + tierRevenueCents(t, tierAttendance);
   }, 0);
 }
 

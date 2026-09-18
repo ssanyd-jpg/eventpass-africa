@@ -1,6 +1,14 @@
 import Dexie, { type Table } from "dexie";
 import type { EventType } from "@/lib/event-modes";
 
+export interface LocalPricingTier {
+  id: string;
+  clientId?: string | null;
+  label: string | null;
+  fromQuantity: number;
+  priceCents: number;
+}
+
 export interface LocalTicketType {
   id: string;
   clientId?: string | null;
@@ -12,6 +20,10 @@ export interface LocalTicketType {
   // Session 14 — explicit VIP fast-track opt-in, independent of name. See
   // isFastTrackTicketType in src/lib/ticket-types.ts for the full rule.
   isFastTrack: boolean;
+  // Session 27 — FIXED (priceCents as-is) | TIERED (see pricingTiers, and
+  // getCurrentPrice in src/lib/pricing.ts for the resolution rule).
+  pricingStrategy: "FIXED" | "TIERED";
+  pricingTiers: LocalPricingTier[];
 }
 
 export interface LocalEventVendorSummary {
