@@ -1,94 +1,321 @@
 import Link from "next/link";
 import { getFeaturedEvents, getPlatformStats } from "@/lib/marketplace";
 import { formatCents } from "@/lib/format";
-import PublicEventCard from "@/components/PublicEventCard";
 import HomeBrowse from "@/components/HomeBrowse";
+
+const FEATURES = [
+  { title: "EVENT REGISTRATION", description: "Simple. Secure. Scalable.", icon: "ticket" },
+  { title: "SECURE PAYMENTS", description: "Multiple local & global options.", icon: "card" },
+  { title: "ATTENDEE MANAGEMENT", description: "Everything in one place.", icon: "people" },
+  { title: "REAL-TIME ANALYTICS", description: "Data that drives better events.", icon: "chart" },
+  { title: "SPORTS & COMPETITIONS", description: "From local to global.", icon: "trophy" },
+  { title: "EVENT PROMOTION", description: "Reach more people.", icon: "megaphone" },
+  { title: "CHECK-IN SOLUTIONS", description: "QR, RFID & beyond.", icon: "qr" },
+] as const;
 
 const HOW_IT_WORKS = [
   {
-    title: "Buy your ticket",
-    description: "Browse events and buy tickets online or offline — synced automatically once you're back online.",
+    number: "01",
+    title: "CONNECT",
+    description: "Bring your event, organisers, attendees and partners into one connected platform.",
   },
   {
-    title: "Get your wristband",
-    description: "Tap your wristband at the gate for instant check-in. No printing, no paper tickets.",
+    number: "02",
+    title: "MANAGE",
+    description: "Tickets, payments, check-in, wallets, vendors and event operations in one place.",
   },
   {
-    title: "Tap to pay",
-    description: "Load your wallet and tap to pay at any vendor on-site — no cash, no queues.",
+    number: "03",
+    title: "EXPERIENCE",
+    description: "Give attendees faster entry, smoother payments and a more memorable event.",
   },
 ];
 
-// Server Component: fetches live platform data (featured events, stats) via
-// Prisma directly, so the marketing sections below are real server-rendered
-// HTML a crawler (or a slow first paint) can see immediately. The old
-// homepage — fully "use client", reading events out of Dexie/IndexedDB —
-// still exists, unchanged in behavior, as <HomeBrowse /> beneath these
-// sections: that's the offline-first buyer app, not the public marketplace,
-// and Session 25 only adds a discovery layer on top of it.
+function FeatureIcon({ type }: { type: (typeof FEATURES)[number]["icon"] }) {
+  const common = {
+    width: 34,
+    height: 34,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  switch (type) {
+    case "ticket":
+      return (
+        <svg {...common}>
+          <path d="M4 6h16v12H4z" />
+          <path d="M8 6v3M8 15v3M16 6v3M16 15v3" />
+          <path d="M9 12h6" />
+        </svg>
+      );
+    case "card":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M3 9h18M7 14h4" />
+        </svg>
+      );
+    case "people":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8" r="3" />
+          <circle cx="17" cy="9" r="2.5" />
+          <path d="M3.5 18c.7-3 2.5-4.5 5.5-4.5S13.8 15 14.5 18M14 14.5c2.8-.4 5 .9 6 3.5" />
+        </svg>
+      );
+    case "chart":
+      return (
+        <svg {...common}>
+          <path d="M4 19V5M4 19h16" />
+          <rect x="7" y="13" width="2.5" height="4" />
+          <rect x="11" y="10" width="2.5" height="7" />
+          <rect x="15" y="7" width="2.5" height="10" />
+        </svg>
+      );
+    case "trophy":
+      return (
+        <svg {...common}>
+          <path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" />
+          <path d="M8 6H5a3 3 0 0 0 3 3M16 6h3a3 3 0 0 1-3 3M12 12v4M8 20h8M9 16h6" />
+        </svg>
+      );
+    case "megaphone":
+      return (
+        <svg {...common}>
+          <path d="M4 12h4l8-4v8l-8-4H4z" />
+          <path d="M8 15l1.5 4H7l-2-5M19 9l2-1M19 15l2 1M20 12h2" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" />
+        </svg>
+      );
+  }
+}
+
+function Arrow() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function EventDate({ startsAt }: { startsAt: string | Date }) {
+  const date = new Date(startsAt);
+  return (
+    <div className="chaap-event-date">
+      <span>{date.toLocaleDateString("en-US", { month: "short" }).toUpperCase()}</span>
+      <strong>{date.getDate()}</strong>
+    </div>
+  );
+}
+
 export default async function HomePage() {
-  const [featuredEvents, stats] = await Promise.all([getFeaturedEvents(3), getPlatformStats()]);
+  const [featuredEvents, stats] = await Promise.all([getFeaturedEvents(4), getPlatformStats()]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6">
-      <section className="mb-12 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent-soft via-surface to-surface p-8 sm:p-12">
-        <p className="mb-3 text-xs font-bold tracking-[0.3em] text-silver">EAST AFRICA&apos;S EVENT PLATFORM</p>
-        <h1 className="max-w-xl text-balance text-3xl font-bold leading-tight sm:text-4xl">
-          Chaap — East Africa&apos;s event platform
-        </h1>
-        <p className="mt-3 max-w-lg text-muted">
-          Buy tickets, get your wristband, and tap to pay — cashless and built to work offline, anywhere in East
-          Africa.
-        </p>
-        <Link href="/events" className="btn-primary mt-6 inline-flex">
-          Browse events
-        </Link>
+    <div className="chaap-home">
+      <section className="chaap-hero">
+        <div className="chaap-hero-grid" />
+        <div className="chaap-orb chaap-orb-blue" />
+        <div className="chaap-orb chaap-orb-gold" />
+
+        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1.05fr_.95fr] lg:gap-10 lg:py-16">
+          <div className="relative z-10">
+            <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-[11px] font-semibold tracking-[0.34em] text-white/70">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#16b9ff] shadow-[0_0_14px_#16b9ff]" />
+              AFRICA&apos;S EVENT PLATFORM
+            </div>
+
+            <h1 className="max-w-3xl text-5xl font-black uppercase leading-[0.9] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
+              <span className="block text-silver">CONNECT.</span>
+              <span className="block chaap-gradient-blue">MANAGE.</span>
+              <span className="block chaap-gradient-gold">EXPERIENCE.</span>
+            </h1>
+
+            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg">
+              CHAAP Africa is the all-in-one event platform for a more connected Africa.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/dashboard/events/new" className="btn-primary chaap-primary">
+                CREATE AN EVENT <Arrow />
+              </Link>
+              <Link href="/events" className="btn-secondary chaap-secondary">
+                EXPLORE EVENTS <Arrow />
+              </Link>
+            </div>
+
+            <div className="mt-10 grid max-w-2xl grid-cols-2 gap-y-6 border-t border-white/10 pt-7 sm:grid-cols-4 sm:gap-x-7">
+              <div>
+                <p className="text-3xl font-black tracking-tight text-white">{stats.totalEventsHosted.toLocaleString()}+</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Events</p>
+              </div>
+              <div className="border-l border-white/10 pl-5">
+                <p className="text-3xl font-black tracking-tight text-white">{stats.totalTicketsSold.toLocaleString()}+</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Attendees</p>
+              </div>
+              <div className="border-l border-white/10 pl-5">
+                <p className="text-3xl font-black tracking-tight text-white">1,500+</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Organisers</p>
+              </div>
+              <div className="border-l border-white/10 pl-5">
+                <p className="text-3xl font-black tracking-tight text-[#f6bf22]">AFRICA</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Across Africa</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative flex min-h-[420px] items-center justify-center lg:min-h-[520px]">
+            <div className="chaap-hero-ring" />
+            <div className="chaap-hero-ring chaap-hero-ring-alt" />
+            <div className="chaap-hero-map" />
+            <div className="chaap-hero-art">
+              <img src="/icon.svg" alt="CHAAP Africa panther and DNA mark" />
+            </div>
+            <div className="chaap-hero-copy">PEOPLE · EVENTS · EXPERIENCES</div>
+            <div className="chaap-hero-caption">
+              <span>A STRONGER</span>
+              <strong>AFRICA</strong>
+            </div>
+          </div>
+        </div>
       </section>
 
-      {featuredEvents.length > 0 && (
-        <section className="mb-12">
-          <h2 className="mb-4 text-xl font-bold">Featured events</h2>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredEvents.map((event) => (
-              <PublicEventCard key={event.id} event={event} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="mb-12">
-        <h2 className="mb-4 text-xl font-bold">How it works</h2>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {HOW_IT_WORKS.map((step, i) => (
-            <div key={step.title} className="card p-5">
-              <span className="pill mb-3 inline-flex border-accent/40 bg-accent-soft text-accent-hover">
-                Step {i + 1}
-              </span>
-              <h3 className="font-semibold">{step.title}</h3>
-              <p className="mt-1 text-sm text-muted">{step.description}</p>
+      <section className="border-y border-white/10 bg-black/40">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 sm:grid-cols-4">
+          {[
+            ["EVENTS HOSTED", stats.totalEventsHosted.toLocaleString()],
+            ["TICKETS SOLD", stats.totalTicketsSold.toLocaleString()],
+            ["CASHLESS VOLUME", formatCents(stats.totalCashlessVolumeCents, stats.currency)],
+            ["OFFLINE CAPABLE", "100%"],
+          ].map(([label, value], index) => (
+            <div key={label} className={["chaap-stat-band", index > 0 ? "border-l border-white/10" : ""].join(" ")}>
+              <p className="text-2xl font-black text-white sm:text-3xl">{value}</p>
+              <p className="mt-1 text-[10px] font-semibold tracking-[0.18em] text-white/45">{label}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="mb-12 grid grid-cols-1 gap-6 rounded-2xl border border-border bg-surface2 p-8 sm:grid-cols-3">
-        <div>
-          <p className="text-3xl font-bold tabular-nums">{stats.totalEventsHosted.toLocaleString()}</p>
-          <p className="mt-1 text-sm text-muted">Events hosted</p>
-        </div>
-        <div>
-          <p className="text-3xl font-bold tabular-nums">{stats.totalTicketsSold.toLocaleString()}</p>
-          <p className="mt-1 text-sm text-muted">Tickets sold</p>
-        </div>
-        <div>
-          <p className="text-3xl font-bold tabular-nums">
-            {formatCents(stats.totalCashlessVolumeCents, stats.currency)}
-          </p>
-          <p className="mt-1 text-sm text-muted">Cashless volume processed</p>
+      <section id="solutions" className="relative overflow-hidden py-10 sm:py-14">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8">
+          <div className="mb-7 flex items-end justify-between gap-4">
+            <div>
+              <p className="chaap-eyebrow">PLATFORM CAPABILITIES</p>
+              <h2 className="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">Everything your event needs.</h2>
+            </div>
+            <Link href="/events" className="hidden items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#16b9ff] sm:flex">
+              Explore platform <Arrow />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-[#060b12] sm:grid-cols-3 lg:grid-cols-7">
+            {FEATURES.map((feature, index) => (
+              <div
+                key={feature.title}
+                className={[
+                  "chaap-feature",
+                  index > 0 ? "border-l border-white/10" : "",
+                  index >= 3 ? "border-t border-white/10 lg:border-t-0" : "",
+                ].join(" ")}
+              >
+                <div className="chaap-feature-icon"><FeatureIcon type={feature.icon} /></div>
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <HomeBrowse />
+      <section id="organisers" className="border-y border-white/10 bg-[radial-gradient(circle_at_25%_0%,rgba(0,149,255,.08),transparent_38%),radial-gradient(circle_at_80%_100%,rgba(246,191,34,.06),transparent_38%)] py-14 sm:py-18">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8">
+          <div className="grid gap-5 lg:grid-cols-3">
+            {HOW_IT_WORKS.map((item) => (
+              <div key={item.number} className="chaap-process-card">
+                <span>{item.number}</span>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {featuredEvents.length > 0 && (
+        <section id="attendees" className="py-12 sm:py-16">
+          <div className="mx-auto max-w-7xl px-5 sm:px-8">
+            <div className="mb-6 flex items-end justify-between gap-4">
+              <div>
+                <p className="chaap-eyebrow">WHAT&apos;S HAPPENING</p>
+                <h2 className="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">Upcoming events</h2>
+              </div>
+              <Link href="/events" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#16b9ff]">
+                View all events <Arrow />
+              </Link>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {featuredEvents.map((event) => (
+                <Link key={event.id} href={"/events/" + event.slug} className="chaap-event-card group">
+                  <div className="relative aspect-[16/10] overflow-hidden">
+                    <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
+                    <EventDate startsAt={event.startsAt} />
+                    <span className="absolute bottom-3 left-3 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white backdrop-blur">
+                      {event.eventType}
+                    </span>
+                  </div>
+                  <div className="flex items-end justify-between gap-3 p-4">
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-2 text-sm font-bold uppercase leading-tight text-white">{event.title}</h3>
+                      <p className="mt-2 truncate text-xs text-white/50">{event.city}</p>
+                    </div>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-white/65 transition group-hover:border-[#16b9ff]/60 group-hover:text-white">
+                      <Arrow />
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section id="about" className="chaap-cta-section">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[1.2fr_.8fr]">
+          <div>
+            <p className="chaap-eyebrow">BUILT FOR AFRICA</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-black uppercase tracking-tight sm:text-4xl">
+              Connect people, manage events, create experiences.
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
+              From registration and ticketing to check-in, RFID and cashless payments, CHAAP brings the moving parts of an event together.
+            </p>
+          </div>
+          <div className="flex lg:justify-end">
+            <Link href="/events" className="btn-primary chaap-primary">
+              EXPLORE CHAAP <Arrow />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 pb-16 pt-8 sm:px-8" id="contact">
+        <HomeBrowse />
+      </section>
     </div>
   );
 }
