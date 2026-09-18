@@ -2281,7 +2281,7 @@ describe("handleProvisionCredential — security hardening", () => {
 
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("TICKET_WRONG_EVENT");
-    expect(await prisma.credential.count({ where: { clientId: result.clientId ?? "__none__" } })).toBe(0);
+    expect(await prisma.credential.count({ where: { ticketId: sale.order.tickets[0].id } })).toBe(0);
   });
 
   it("rejects an unpaid group ticket", async () => {
@@ -2346,6 +2346,133 @@ describe("handleReplaceCredential", () => {
   function uniqueClientId() {
     return `replace-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
   }
+
+  it("rejects replacement when the old UID belongs to a different event", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const eventA = await createTestEvent(organizationId);
+    const eventB = await createTestEvent(organizationId);
+    const walletA = await createTestWallet(eventA.id, attendee.id);
+    const oldUid = uniqueUid();
+    const newUid = uniqueUid();
+
+    await prisma.credential.create({
+      data: {
+        organizationId,
+        nfcUid: oldUid,
+        walletId: walletA.id,
+        code: walletA.code,
+        createdByUserId: organizer.id,
+        createdByName: "Organizer",
+      },
+    });
+
+    const result: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: eventB.id,
+      oldNfcUid: oldUid,
+      newNfcUid: newUid,
+      reason: "LOST",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("CREDENTIAL_EVENT_MISMATCH");
+
+    const oldRow = await prisma.credential.findFirstOrThrow({ where: { nfcUid: oldUid } });
+    expect(oldRow.status).toBe("ACTIVE");
+    expect(await prisma.credential.findFirst({ where: { nfcUid: newUid } })).toBeNull();
+  });
+
+  it("does not supersede an ACTIVE replacement UID belonging to another event", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendeeA = await createTestUser();
+    const attendeeB = await createTestUser();
+    const eventA = await createTestEvent(organizationId);
+    const eventB = await createTestEvent(organizationId);
+    const walletA = await createTestWallet(eventA.id, attendeeA.id);
+    const walletB = await createTestWallet(eventB.id, attendeeB.id);
+    const oldUid = uniqueUid();
+    const newUid = uniqueUid();
+
+    await prisma.credential.create({
+      data: {
+        organizationId,
+        nfcUid: oldUid,
+        walletId: walletA.id,
+        code: walletA.code,
+        createdByUserId: organizer.id,
+        createdByName: "Organizer",
+      },
+    });
+    await prisma.credential.create({
+      data: {
+        organizationId,
+        nfcUid: newUid,
+        walletId: walletB.id,
+        code: walletB.code,
+        createdByUserId: organizer.id,
+        createdByName: "Organizer",
+      },
+    });
+
+    const result: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId: uniqueClientId(),
+      eventId: eventA.id,
+      oldNfcUid: oldUid,
+      newNfcUid: newUid,
+      reason: "DAMAGED",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("NEW_UID_ACTIVE_IN_OTHER_EVENT");
+
+    const oldRow = await prisma.credential.findFirstOrThrow({ where: { nfcUid: oldUid } });
+    const newRow = await prisma.credential.findFirstOrThrow({ where: { nfcUid: newUid } });
+    expect(oldRow.status).toBe("ACTIVE");
+    expect(newRow.status).toBe("ACTIVE");
+  });
+
+  it("scopes replacement replay idempotency to the event", async () => {
+    const { user: organizer, organizationId } = await newOrganizer();
+    const attendee = await createTestUser();
+    const eventA = await createTestEvent(organizationId);
+    const eventB = await createTestEvent(organizationId);
+    const walletA = await createTestWallet(eventA.id, attendee.id);
+    const oldUid = uniqueUid();
+    const newUid = uniqueUid();
+    const clientId = uniqueClientId();
+
+    await prisma.credential.create({
+      data: {
+        clientId: "seed-replace",
+        organizationId,
+        nfcUid: oldUid,
+        walletId: walletA.id,
+        code: walletA.code,
+        createdByUserId: organizer.id,
+        createdByName: "Organizer",
+      },
+    });
+
+    const first: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId,
+      eventId: eventA.id,
+      oldNfcUid: oldUid,
+      newNfcUid: newUid,
+      reason: "STOLEN",
+    });
+    expect(first.ok).toBe(true);
+
+    const replayWrongEvent: any = await handleReplaceCredential(organizer.id, organizationId, {
+      clientId,
+      eventId: eventB.id,
+      oldNfcUid: oldUid,
+      newNfcUid: uniqueUid(),
+      reason: "STOLEN",
+    });
+    expect(replayWrongEvent.ok).toBe(false);
+    expect(replayWrongEvent.reason).toBe("CREDENTIAL_EVENT_MISMATCH");
+  });
 
   // Directly seeds an ACTIVE wallet-linked Credential, bypassing
   // handleProvisionCredential entirely — keeps these tests isolated from
