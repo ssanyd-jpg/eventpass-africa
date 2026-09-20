@@ -456,3 +456,37 @@ body {
   .chaap-reference-stats { grid-template-columns:repeat(2,1fr); }
   .chaap-reference-stats > div { min-height:80px; padding:13px 20px; }
 }
+
+
+/* CHAAP final deep-gold cinematic sunset */
+.chaap-reference-art{
+  background-position:68% center;
+  background-size:cover;
+  filter:saturate(1.65) contrast(1.16) brightness(.72) sepia(.22);
+}
+.chaap-reference-art::before{
+  content:"";
+  position:absolute;
+  width:150px;
+  height:150px;
+  right:3.8%;
+  top:53%;
+  border-radius:50%;
+  background:radial-gradient(circle,#fff8cf 0%,#ffd34a 10%,#ff9d00 34%,rgba(255,132,0,.36) 62%,transparent 74%);
+  box-shadow:0 0 55px rgba(255,157,0,.72),0 0 140px rgba(255,126,0,.42);
+  opacity:.95;
+}
+.chaap-reference-art::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(ellipse at 91% 52%,rgba(255,154,0,.72) 0%,rgba(255,126,0,.48) 16%,rgba(224,82,0,.28) 34%,transparent 57%),
+    linear-gradient(180deg,rgba(102,31,0,.30) 0%,rgba(255,133,0,.28) 34%,rgba(255,170,22,.16) 57%,rgba(12,6,2,.18) 100%),
+    linear-gradient(90deg,rgba(2,6,11,.98) 0%,rgba(2,6,11,.88) 25%,rgba(40,12,0,.22) 58%,rgba(110,35,0,.08) 100%);
+}
+.chaap-reference-overlay{
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.76) 38%,rgba(35,10,0,.22) 61%,rgba(255,120,0,.04) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.82),transparent 38%,rgba(70,20,0,.18));
+}
