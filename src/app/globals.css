@@ -345,3 +345,16 @@ body {
 .chaap-brand { display:flex; align-items:center; width:330px; min-width:330px; }
 .chaap-brand img { display:block; width:320px; height:auto; object-fit:contain; }
 @media (max-width:1100px) { .chaap-brand { width:250px; min-width:250px; } .chaap-brand img { width:245px; } }
+
+/* CHAAP Kilimanjaro sunset visual direction */
+.chaap-hero{position:relative;overflow:hidden;background:#02060a url("/chaap-kilimanjaro.svg") center/cover no-repeat!important;border-bottom:1px solid rgba(255,255,255,.12)}
+.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,rgba(2,6,10,.98) 0%,rgba(2,6,10,.9) 25%,rgba(2,6,10,.5) 50%,rgba(2,6,10,.08) 76%,rgba(2,6,10,.18) 100%),linear-gradient(0deg,rgba(2,6,10,.82),transparent 48%,rgba(2,6,10,.12))}
+.chaap-hero-grid,.chaap-hero-africa-glow,.chaap-hero-noise{display:none!important}
+.chaap-hero>.mx-auto{position:relative;z-index:2;max-width:1500px!important;min-height:520px!important;grid-template-columns:1fr 1fr!important}
+.chaap-hero-visual{min-height:520px!important}.chaap-hero-visual>*{display:none!important}
+.chaap-display{font-size:clamp(4rem,6.1vw,6.8rem);line-height:.86;letter-spacing:-.06em}
+.chaap-hero-lead{color:#f5f5f5;max-width:580px}
+.chaap-hero-bottom{max-width:1500px!important;background:linear-gradient(90deg,rgba(2,6,10,.9),rgba(2,6,10,.6),rgba(2,6,10,.12));border-top:1px solid rgba(255,255,255,.15)}
+.chaap-hero-bottom>div{padding:14px 28px}.chaap-hero-bottom strong{font-size:24px}.chaap-hero-bottom span{color:rgba(255,255,255,.72)}
+#solutions{padding-top:0!important;background:#02070d}#solutions>.mx-auto{max-width:none!important;padding:0!important}#solutions>.mx-auto>div:first-child{display:none}#solutions>.mx-auto>div:last-child{border-radius:0!important;border:0!important;background:rgba(2,7,13,.96)!important;display:grid;grid-template-columns:repeat(7,1fr)}#solutions .chaap-feature{min-height:125px;padding:16px 10px;border-right:1px solid rgba(255,255,255,.12)!important}#solutions .chaap-feature:last-child{border-right:0!important}
+@media(max-width:900px){.chaap-hero{background-position:center top!important}.chaap-hero:before{background:linear-gradient(180deg,rgba(2,6,10,.9),rgba(2,6,10,.55) 55%,rgba(2,6,10,.3))}.chaap-hero>.mx-auto{grid-template-columns:1fr!important;min-height:600px!important}.chaap-hero-visual{display:none}#solutions>.mx-auto>div:last-child{grid-template-columns:repeat(2,1fr)}}
