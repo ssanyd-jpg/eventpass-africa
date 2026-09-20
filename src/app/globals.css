@@ -548,88 +548,104 @@ body {
 }
 
 
-/* CHAAP reference v2: panther + Africa + deep-gold sunset */
+/* CHAAP reference v3: visible panther + Africa night map + deep-gold sunset */
 .chaap-reference-hero{
-  min-height:700px;
+  position:relative;
+  min-height:650px;
+  overflow:hidden;
   background:#02060b;
 }
 .chaap-reference-art{
+  position:absolute!important;
+  inset:0!important;
+  z-index:0;
+  overflow:hidden;
   background:
-    radial-gradient(circle at 90% 48%,rgba(255,226,120,.98) 0 1%,rgba(255,173,25,.78) 3%,rgba(255,118,0,.28) 14%,transparent 34%),
-    linear-gradient(180deg,rgba(80,25,0,.28),rgba(255,125,0,.20) 42%,rgba(2,6,11,.08) 72%),
-    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.94) 27%,rgba(2,6,11,.24) 63%,rgba(2,6,11,.04) 100%);
-  background-position:center;
-  background-size:cover;
-  filter:saturate(1.18) contrast(1.12);
+    radial-gradient(circle at 88% 47%,rgba(255,235,105,1) 0 1.1%,rgba(255,190,35,.96) 2.2%,rgba(255,137,10,.66) 7%,rgba(186,70,0,.36) 18%,rgba(70,24,0,.14) 32%,transparent 48%),
+    radial-gradient(ellipse at 78% 42%,rgba(255,143,18,.24),transparent 38%),
+    linear-gradient(90deg,#01050a 0%,#05080d 30%,rgba(40,12,0,.66) 57%,rgba(84,29,0,.76) 100%);
 }
 .chaap-reference-art::before{
   content:"";
   position:absolute;
-  inset:0 0 0 36%;
-  background:url("https://upload.wikimedia.org/wikipedia/commons/f/f0/Black_Panther.JPG") 68% center/cover no-repeat;
-  filter:grayscale(.82) contrast(1.55) brightness(.52) sepia(.28) saturate(1.35);
+  z-index:2;
+  inset:2% 7% -8% 38%;
+  background:url("https://upload.wikimedia.org/wikipedia/commons/f/f0/Black_Panther.JPG") 72% center/cover no-repeat;
+  filter:brightness(.62) contrast(1.45) saturate(.72);
+  opacity:.98;
   mix-blend-mode:screen;
-  opacity:.86;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 18%,black 88%,transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0%,black 18%,black 88%,transparent 100%);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.5) 9%,#000 25%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.5) 9%,#000 25%,#000 88%,transparent 100%);
 }
 .chaap-reference-art::after{
   content:"";
   position:absolute;
-  inset:0 3% 2% 46%;
+  z-index:1;
+  inset:4% 0 0 40%;
   background:
-    url("https://svs.gsfc.nasa.gov/vis/a030000/a030800/a030877/frames/5760x3240_16x9_01p/BlackMarble_2016_1400m_africa_m_labeled.png") 62% 48%/54% auto no-repeat,
-    radial-gradient(circle at 74% 35%,rgba(18,184,255,.46) 0 1px,transparent 2px),
-    radial-gradient(circle at 67% 48%,rgba(255,199,45,.75) 0 1.5px,transparent 3px),
-    radial-gradient(circle at 78% 59%,rgba(255,199,45,.66) 0 1px,transparent 2px),
-    radial-gradient(circle at 61% 67%,rgba(18,184,255,.5) 0 1px,transparent 2px),
-    linear-gradient(90deg,transparent,rgba(255,153,0,.16) 55%,transparent);
-  background-blend-mode:screen,screen,screen,screen,screen,normal;
-  opacity:.62;
+    url("https://upload.wikimedia.org/wikipedia/commons/c/c2/SOS_-_Change_in_Night_Lights_between_2012_and_2023_%28SVS5475_-_2012-2024_KSC_SOS_04_plus2_0900_2k%29.png") 71% 49%/88% auto no-repeat,
+    radial-gradient(circle at 80% 27%,rgba(255,218,83,.9) 0 1px,transparent 3px),
+    radial-gradient(circle at 67% 55%,rgba(18,185,255,.8) 0 1px,transparent 3px),
+    radial-gradient(circle at 75% 65%,rgba(255,191,34,.8) 0 1.2px,transparent 3px),
+    linear-gradient(90deg,transparent 0%,rgba(2,6,11,.06) 20%,rgba(2,6,11,.18) 100%);
+  opacity:.48;
   mix-blend-mode:screen;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 18%,black 92%,transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0%,black 18%,black 92%,transparent 100%);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 15%,#000 92%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,#000 15%,#000 92%,transparent 100%);
 }
+.chaap-reference-art{
+  box-shadow:inset 0 -120px 120px rgba(0,0,0,.5);
+}
+.chaap-reference-art > *{position:relative;z-index:5}
 .chaap-reference-overlay{
+  position:absolute!important;
+  inset:0!important;
+  z-index:3;
   background:
-    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.80) 38%,rgba(2,6,11,.14) 62%,rgba(2,6,11,.02) 100%),
-    linear-gradient(0deg,rgba(2,6,11,.84),transparent 37%,rgba(60,17,0,.14));
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.96) 22%,rgba(2,6,11,.72) 38%,rgba(2,6,11,.08) 63%,rgba(2,6,11,.02) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.72) 0%,transparent 38%,rgba(3,6,10,.08) 100%);
+  pointer-events:none;
 }
-.chaap-reference-copy{padding-top:92px;padding-bottom:32px;max-width:690px}
-.chaap-reference-title{font-size:clamp(4.2rem,6.45vw,7rem);text-shadow:0 8px 35px rgba(0,0,0,.32)}
-.chaap-reference-lead{margin-top:22px;font-size:19px}
-.chaap-reference-primary,.chaap-reference-secondary{min-height:60px}
-.chaap-reference-sidecopy{top:78px;right:6%;z-index:4}
-.chaap-reference-sidecopy strong{color:#ffc51d}
-.chaap-reference-stats{grid-template-columns:repeat(4,1fr);background:linear-gradient(90deg,rgba(2,6,11,.98),rgba(2,6,11,.84),rgba(2,6,11,.62))}
+.chaap-reference-copy{position:relative;z-index:6;padding-top:108px;padding-bottom:40px;max-width:690px}
+.chaap-reference-title{font-size:clamp(4.2rem,6.45vw,7rem);line-height:.9;text-shadow:0 8px 35px rgba(0,0,0,.45)}
+.chaap-reference-lead{margin-top:25px;font-size:19px}
+.chaap-reference-sidecopy{z-index:7}
+.chaap-reference-stats{position:relative;z-index:8;grid-template-columns:repeat(4,1fr);background:linear-gradient(90deg,rgba(2,6,11,.98),rgba(2,6,11,.9),rgba(2,6,11,.72))}
 .chaap-reference-stats>div{min-height:104px;padding:20px 34px}
-.chaap-reference-stats strong{font-size:31px}
-.chaap-reference-stats span{font-size:10px}
-.chaap-reference-features{background:#02060b}
-.chaap-reference-features>div{background:linear-gradient(180deg,#050b12,#02060b)!important;border-top:1px solid rgba(255,255,255,.08)!important}
-.chaap-reference-features .chaap-feature{min-height:145px;padding:24px 18px 20px;transition:background .25s ease,transform .25s ease}
-.chaap-reference-features .chaap-feature:hover{background:rgba(255,255,255,.035)!important;transform:translateY(-2px)}
-.chaap-reference-features .chaap-feature-icon{filter:drop-shadow(0 0 10px rgba(22,185,255,.18))}
-.chaap-home #events{background:radial-gradient(circle at 78% 0,rgba(246,191,34,.08),transparent 30%),#03080e!important}
-.chaap-event-card{border:1px solid rgba(255,255,255,.08);overflow:hidden;background:#071019;box-shadow:0 12px 35px rgba(0,0,0,.22)}
-.chaap-event-card .chaap-event-date{background:rgba(2,6,11,.88);border:1px solid rgba(246,191,34,.45);backdrop-filter:blur(8px)}
-.chaap-home #about{position:relative;overflow:hidden;background:radial-gradient(circle at 80% 50%,rgba(246,191,34,.09),transparent 30%),linear-gradient(135deg,#02060b,#06101a)!important}
-.chaap-home #about:after{content:"";position:absolute;width:320px;height:320px;right:-110px;top:-120px;border:1px solid rgba(246,191,34,.16);border-radius:50%;box-shadow:0 0 0 45px rgba(246,191,34,.025),0 0 0 90px rgba(246,191,34,.018);pointer-events:none}
-.chaap-home #contact{padding-top:48px}
+.chaap-reference-stats strong{font-size:31px;color:#eef2f6}
+.chaap-reference-stats span{font-size:10px;color:rgba(255,255,255,.55)}
+/* subtle DNA energy ribbon */
+.chaap-reference-hero::after{
+  content:"";
+  position:absolute;
+  z-index:4;
+  right:31%;
+  top:10%;
+  width:180px;
+  height:540px;
+  opacity:.78;
+  transform:rotate(-22deg);
+  background:
+    repeating-linear-gradient(12deg,transparent 0 29px,rgba(25,186,255,.82) 30px 32px,transparent 33px 59px),
+    repeating-linear-gradient(168deg,transparent 0 29px,rgba(255,194,37,.8) 30px 32px,transparent 33px 59px);
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
+  pointer-events:none;
+}
 @media(max-width:1000px){
- .chaap-reference-art::before{inset:25% 0 0 34%;background-size:auto 100%;background-position:68% center;opacity:.62}
- .chaap-reference-art::after{inset:0 0 0 42%;background-size:62% auto,auto,auto,auto,auto,cover}
+ .chaap-reference-art::before{inset:18% -5% -4% 28%;background-position:72% center;background-size:cover;opacity:.84}
+ .chaap-reference-art::after{inset:6% -8% 0 35%;background-size:105% auto,auto,auto,auto,cover;opacity:.34}
+ .chaap-reference-hero::after{right:22%;width:130px}
  .chaap-reference-sidecopy{display:none}
  .chaap-reference-stats{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:700px){
  .chaap-reference-hero{min-height:720px}
- .chaap-reference-art::before{inset:35% 0 0 8%;background-size:cover;background-position:70% center;opacity:.52}
- .chaap-reference-art::after{inset:30% 0 0 18%;opacity:.4;background-size:72% auto,auto,auto,auto,auto,cover}
- .chaap-reference-overlay{background:linear-gradient(180deg,#02060b 0%,rgba(2,6,11,.88) 46%,rgba(2,6,11,.22) 100%)}
- .chaap-reference-copy{padding-top:52px}
- .chaap-reference-title{font-size:clamp(3.6rem,15vw,5rem)}
+ .chaap-reference-art::before{inset:34% -18% -2% 0;background-position:70% center;background-size:cover;opacity:.65}
+ .chaap-reference-art::after{inset:34% -25% 0 12%;background-size:125% auto,auto,auto,auto,cover;opacity:.28}
+ .chaap-reference-overlay{background:linear-gradient(180deg,#02060b 0%,rgba(2,6,11,.92) 48%,rgba(2,6,11,.16) 100%)}
+ .chaap-reference-copy{padding-top:56px}
+ .chaap-reference-title{font-size:clamp(3.55rem,15vw,5rem)}
  .chaap-reference-lead{font-size:15px}
- .chaap-reference-stats{grid-template-columns:repeat(2,1fr)}
- .chaap-reference-stats>div{min-height:80px;padding:13px 20px}
+ .chaap-reference-hero::after{right:7%;top:40%;height:320px;width:90px;opacity:.48}
 }
