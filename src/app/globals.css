@@ -262,7 +262,7 @@ body {
   border-bottom:1px solid rgba(255,255,255,.08);
 }
 .chaap-reference-art {
-  position:absolute; inset:0; z-index:-2;
+  position:absolute; inset:0; z-index:0;
   background-image:url("https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&w=2400&q=90");
   background-repeat:no-repeat;
   background-position:center center;
@@ -270,7 +270,7 @@ body {
   opacity:1;
 }
 .chaap-reference-overlay {
-  position:absolute; inset:0; z-index:-1;
+  position:absolute; inset:0; z-index:1;
   background:
     linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.82) 37%,rgba(2,6,11,.16) 61%,rgba(2,6,11,0) 100%),
     linear-gradient(0deg,rgba(2,6,11,.72),transparent 35%,rgba(2,6,11,.15));
