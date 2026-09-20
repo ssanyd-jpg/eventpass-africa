@@ -649,3 +649,30 @@ body {
  .chaap-reference-lead{font-size:15px}
  .chaap-reference-hero::after{right:7%;top:40%;height:320px;width:90px;opacity:.48}
 }
+
+
+/* CHAAP homepage: use the approved reference artwork exactly for the visual hero */
+.chaap-reference-hero{
+  min-height: 650px !important;
+  height: 650px;
+  background:#02060b !important;
+}
+.chaap-reference-art{
+  background-image:url("https://export-download.canva.com/4a434716-7106-4620-adf8-791681587d60/0/0001-2769104385047012978.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQYCGKMUH5AO7UJ26%2F20260919%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260919T215228Z&X-Amz-Expires=88265&X-Amz-Signature=e0cb0cedb65c980c41fb22e688112472f5a7d1d114b63478bc0020087f3d88ed&X-Amz-SignedHeaders=host%3Bx-amz-expected-bucket-owner") !important;
+  background-position:center top !important;
+  background-size:100% auto !important;
+  background-repeat:no-repeat !important;
+  filter:none !important;
+}
+.chaap-reference-art::before,
+.chaap-reference-art::after,
+.chaap-reference-overlay,
+.chaap-reference-hero::after{display:none !important}
+.chaap-reference-copy,
+.chaap-reference-sidecopy,
+.chaap-reference-stats{visibility:hidden !important;pointer-events:none !important}
+.chaap-reference-hero > .mx-auto{height:0;min-height:0 !important}
+@media(max-width:700px){
+  .chaap-reference-hero{height:680px;min-height:680px !important}
+  .chaap-reference-art{background-size:auto 680px !important;background-position:center top !important}
+}
