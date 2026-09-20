@@ -263,10 +263,11 @@ body {
 }
 .chaap-reference-art {
   position:absolute; inset:0; z-index:0;
-  background-image:url("https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&w=2400&q=90");
+  background-image:url("https://upload.wikimedia.org/wikipedia/commons/b/b5/Mount_Kilimanjaro_at_Sunset_%28Explored%29.jpg");
   background-repeat:no-repeat;
   background-position:center center;
   background-size:cover;
+  background-color:#1a0d08;
   opacity:1;
 }
 .chaap-reference-overlay {
