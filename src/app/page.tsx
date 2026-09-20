@@ -124,79 +124,28 @@ export default async function HomePage() {
 
   return (
     <div className="chaap-home">
-      <section className="chaap-hero">
-        <div className="chaap-hero-grid" />
-        <div className="chaap-hero-africa-glow" />
-        <div className="chaap-hero-noise" />
-
-        <div className="mx-auto grid max-w-[1440px] grid-cols-1 items-center gap-4 px-5 py-12 sm:px-8 lg:min-h-[650px] lg:grid-cols-[.92fr_1.08fr] lg:gap-0 lg:px-10 lg:py-8">
+            <section className="chaap-hero">
+        <div className="mx-auto grid max-w-[1500px] grid-cols-1 items-center gap-0 px-5 py-10 sm:px-8 lg:min-h-[520px] lg:grid-cols-[.88fr_1.12fr] lg:px-10 lg:py-7">
           <div className="relative z-20 max-w-2xl lg:pr-4">
-            <div className="chaap-kicker">
-              <span />
-              AFRICA&apos;S EVENT PLATFORM
-            </div>
-
+            <div className="chaap-kicker"><span />AFRICA&apos;S EVENT PLATFORM</div>
             <h1 className="chaap-display">
-              <span>CONNECT</span>
-              <span className="chaap-display-blue">PEOPLE.</span>
-              <span className="chaap-display-gold">POWER EXPERIENCES.</span>
+              <span>CONNECT.</span>
+              <span className="chaap-display-blue">MANAGE.</span>
+              <span className="chaap-display-gold">EXPERIENCE.</span>
             </h1>
-
-            <p className="chaap-hero-lead">
-              CHAAP Africa is the all-in-one event platform for a more connected Africa.
-            </p>
-
+            <p className="chaap-hero-lead">CHAAP Africa is the all-in-one event platform for a more connected Africa.</p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="btn-primary chaap-primary">
-                CREATE AN EVENT <Arrow />
-              </Link>
-              <Link href="/events" className="btn-secondary chaap-secondary">
-                EXPLORE EVENTS <Arrow />
-              </Link>
-            </div>
-
-            <div className="chaap-hero-pills">
-              <span>TICKETING</span><i />
-              <span>CASHLESS</span><i />
-              <span>RFID</span><i />
-              <span>CHECK-IN</span>
+              <Link href="/register" className="btn-primary chaap-primary">CREATE AN EVENT <Arrow /></Link>
+              <Link href="/events" className="btn-secondary chaap-secondary">EXPLORE EVENTS <Arrow /></Link>
             </div>
           </div>
-
-          <div className="chaap-hero-visual">
-            <div className="chaap-visual-aura" />
-            <div className="chaap-africa-outline" />
-            <div className="chaap-dna-line chaap-dna-one" />
-            <div className="chaap-dna-line chaap-dna-two" />
-            <div className="chaap-hero-art">
-              <img src="/chaap-hero-art.svg" alt="CHAAP Africa panther, DNA and connected Africa hero artwork" />
-            </div>
-            <div className="chaap-visual-label chaap-visual-label-top">PEOPLE · EVENTS · EXPERIENCES</div>
-            <div className="chaap-visual-label chaap-visual-label-bottom">BUILT FOR AFRICA</div>
-          </div>
+          <div className="chaap-hero-visual" aria-hidden="true" />
         </div>
-
         <div className="chaap-hero-bottom">
           <div><strong>{stats.totalEventsHosted.toLocaleString()}+</strong><span>EVENTS</span></div>
-          <div><strong>{stats.totalTicketsSold.toLocaleString()}+</strong><span>TICKETS SOLD</span></div>
-          <div><strong>{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</strong><span>CASHLESS VOLUME</span></div>
-          <div><strong>OFFLINE</strong><span>READY</span></div>
-        </div>
-      </section>
-
-      <section className="border-y border-white/10 bg-black/40">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 sm:grid-cols-4">
-          {[
-            ["EVENTS HOSTED", stats.totalEventsHosted.toLocaleString()],
-            ["TICKETS SOLD", stats.totalTicketsSold.toLocaleString()],
-            ["CASHLESS VOLUME", formatCents(stats.totalCashlessVolumeCents, stats.currency)],
-            ["OFFLINE CAPABLE", "100%"],
-          ].map(([label, value], index) => (
-            <div key={label} className={["chaap-stat-band", index > 0 ? "border-l border-white/10" : ""].join(" ")}>
-              <p className="text-2xl font-black text-white sm:text-3xl">{value}</p>
-              <p className="mt-1 text-[10px] font-semibold tracking-[0.18em] text-white/45">{label}</p>
-            </div>
-          ))}
+          <div><strong>{stats.totalTicketsSold.toLocaleString()}+</strong><span>ATTENDEES</span></div>
+          <div><strong>{stats.totalEventsHosted.toLocaleString()}+</strong><span>ORGANISERS</span></div>
+          <div><strong>AFRICA</strong><span>ACROSS AFRICA</span></div>
         </div>
       </section>
 
@@ -225,22 +174,6 @@ export default async function HomePage() {
                 <div className="chaap-feature-icon"><FeatureIcon type={feature.icon} /></div>
                 <h3>{feature.title}</h3>
                 <p>{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="organisers" className="border-y border-white/10 bg-[radial-gradient(circle_at_25%_0%,rgba(0,149,255,.08),transparent_38%),radial-gradient(circle_at_80%_100%,rgba(246,191,34,.06),transparent_38%)] py-14 sm:py-18">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8">
-          <div className="grid gap-5 lg:grid-cols-3">
-            {HOW_IT_WORKS.map((item) => (
-              <div key={item.number} className="chaap-process-card">
-                <span>{item.number}</span>
-                <div>
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
-                </div>
               </div>
             ))}
           </div>
