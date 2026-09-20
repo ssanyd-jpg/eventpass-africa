@@ -347,8 +347,8 @@ body {
 @media (max-width:1100px) { .chaap-brand { width:250px; min-width:250px; } .chaap-brand img { width:245px; } }
 
 /* CHAAP Kilimanjaro sunset visual direction */
-.chaap-hero{position:relative;overflow:hidden;background:#02060a url("/chaap-kilimanjaro.svg") center/cover no-repeat!important;border-bottom:1px solid rgba(255,255,255,.12)}
-.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,rgba(2,6,10,.98) 0%,rgba(2,6,10,.9) 25%,rgba(2,6,10,.5) 50%,rgba(2,6,10,.08) 76%,rgba(2,6,10,.18) 100%),linear-gradient(0deg,rgba(2,6,10,.82),transparent 48%,rgba(2,6,10,.12))}
+.chaap-hero{position:relative;overflow:hidden;background:#02060a url("/chaap-kili-photo.svg") right center/cover no-repeat!important;border-bottom:1px solid rgba(255,255,255,.12)}
+.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,rgba(2,6,10,.96) 0%,rgba(2,6,10,.86) 28%,rgba(2,6,10,.42) 52%,rgba(2,6,10,.08) 78%,rgba(2,6,10,.04) 100%),linear-gradient(0deg,rgba(2,6,10,.76),transparent 50%,rgba(2,6,10,.08))}
 .chaap-hero-grid,.chaap-hero-africa-glow,.chaap-hero-noise{display:none!important}
 .chaap-hero>.mx-auto{position:relative;z-index:2;max-width:1500px!important;min-height:520px!important;grid-template-columns:1fr 1fr!important}
 .chaap-hero-visual{min-height:520px!important}.chaap-hero-visual>*{display:none!important}
