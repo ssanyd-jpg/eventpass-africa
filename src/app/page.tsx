@@ -13,23 +13,7 @@ const FEATURES = [
   { title: "CHECK-IN SOLUTIONS", description: "QR, RFID & beyond.", icon: "qr" },
 ] as const;
 
-const HOW_IT_WORKS = [
-  {
-    number: "01",
-    title: "CONNECT",
-    description: "Bring your event, organisers, attendees and partners into one connected platform.",
-  },
-  {
-    number: "02",
-    title: "MANAGE",
-    description: "Tickets, payments, check-in, wallets, vendors and event operations in one place.",
-  },
-  {
-    number: "03",
-    title: "EXPERIENCE",
-    description: "Give attendees faster entry, smoother payments and a more memorable event.",
-  },
-];
+
 
 function FeatureIcon({ type }: { type: (typeof FEATURES)[number]["icon"] }) {
   const common = {
