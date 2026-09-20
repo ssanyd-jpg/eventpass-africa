@@ -386,3 +386,73 @@ body {
 .chaap-display-blue{background:linear-gradient(180deg,#55d8ff,#087df2)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
 .chaap-display-gold{background:linear-gradient(180deg,#fff0a0,#ffc329 52%,#e09600)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
 @media(max-width:900px){.chaap-kilimanjaro-photo{inset:35% 0 0 0}.chaap-hero:before{background:linear-gradient(180deg,rgba(3,7,11,.96),rgba(3,7,11,.62) 55%,rgba(3,7,11,.28))}}
+
+
+/* CHAAP final reference body treatment: deep-gold sunset */
+.chaap-reference-hero {
+  min-height: 700px;
+  background: #02060b;
+}
+.chaap-reference-art {
+  background-position: 64% center;
+  background-size: cover;
+  filter: saturate(1.42) contrast(1.12) brightness(.84) sepia(.12);
+}
+.chaap-reference-art::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 86% 42%, rgba(255,166,26,.52) 0%, rgba(244,126,0,.30) 22%, transparent 48%),
+    linear-gradient(180deg, rgba(255,135,0,.16) 0%, rgba(255,166,26,.08) 38%, rgba(8,5,3,.08) 68%, rgba(2,6,11,.32) 100%);
+  mix-blend-mode:screen;
+}
+.chaap-reference-overlay {
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.80) 38%,rgba(2,6,11,.18) 61%,rgba(2,6,11,.02) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.78),transparent 38%,rgba(2,6,11,.08));
+}
+.chaap-reference-copy {
+  padding-top: 92px;
+  padding-bottom: 32px;
+}
+.chaap-reference-title {
+  font-size: clamp(4.2rem, 6.45vw, 7rem);
+}
+.chaap-reference-lead {
+  margin-top: 22px;
+  font-size: 19px;
+}
+.chaap-reference-primary,
+.chaap-reference-secondary {
+  min-height: 60px;
+}
+.chaap-reference-sidecopy {
+  top: 78px;
+  right: 6%;
+}
+.chaap-reference-stats {
+  grid-template-columns: repeat(3,1fr);
+  background: linear-gradient(90deg,rgba(2,6,11,.97),rgba(2,6,11,.86),rgba(2,6,11,.72));
+}
+.chaap-reference-stats > div {
+  min-height: 104px;
+  padding: 20px 42px;
+}
+.chaap-reference-stats strong {
+  font-size: 31px;
+}
+.chaap-reference-stats span {
+  font-size: 10px;
+}
+@media (max-width: 1000px) {
+  .chaap-reference-hero { min-height: 680px; }
+  .chaap-reference-art { background-position: 68% center; }
+}
+@media (max-width: 700px) {
+  .chaap-reference-hero { min-height: 720px; }
+  .chaap-reference-art { background-position: 68% bottom; }
+  .chaap-reference-stats { grid-template-columns:repeat(2,1fr); }
+  .chaap-reference-stats > div { min-height:80px; padding:13px 20px; }
+}
