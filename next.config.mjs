@@ -49,9 +49,8 @@ const csp = [
   // next-pwa's auto-register script and Next's hydration runtime need inline/eval.
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  // picsum.photos redirects actual image fetches to its fastly.picsum.photos
-  // CDN subdomain, so both need to be allowed, not just the apex domain.
-  "img-src 'self' data: https://picsum.photos https://*.picsum.photos https://*.public.blob.vercel-storage.com",
+  // External event/hero photography is intentionally limited to trusted image CDNs.
+  "img-src 'self' data: https://picsum.photos https://*.picsum.photos https://*.public.blob.vercel-storage.com https://upload.wikimedia.org",
   "font-src 'self' data:",
   "connect-src 'self'",
   "frame-ancestors 'none'",
