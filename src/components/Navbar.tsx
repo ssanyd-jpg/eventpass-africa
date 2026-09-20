@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAppSession } from "@/lib/use-app-session";
-import { useTranslation } from "@/lib/use-translation";
-import SyncStatusBadge from "@/components/SyncStatusBadge";
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+  const isAnchor = href.startsWith("#");
+  const active = !isAnchor && (pathname === href || (href !== "/" && pathname.startsWith(href)));
   return (
     <Link
       href={href}
@@ -23,26 +22,8 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   );
 }
 
-function LocaleToggle() {
-  const { locale, setLocale } = useTranslation();
-  return (
-    <div className="flex items-center rounded-full border border-white/10 bg-white/[0.03] p-0.5">
-      {(["en", "sw"] as const).map((l) => (
-        <button
-          key={l}
-          onClick={() => setLocale(l)}
-          className={locale === l ? "rounded-full bg-[#f6bf22] px-2 py-1 text-[10px] font-bold uppercase text-black" : "rounded-full px-2 py-1 text-[10px] font-bold uppercase text-white/45 hover:text-white"}
-        >
-          {l}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function Navbar() {
   const { user } = useAppSession();
-  const router = useRouter();
   const pathname = usePathname();
 
   if (pathname?.startsWith("/vendor")) return null;
@@ -54,14 +35,13 @@ export default function Navbar() {
           <img src="/chaap-reference-logo.webp" alt="CHAAP Africa" />
         </Link>
 
-        <nav className="hidden items-center gap-7 lg:flex">
+        <nav className="hidden items-center gap-8 lg:flex">
           <NavLink href="/">HOME</NavLink>
           <NavLink href="/events">EVENTS</NavLink>
           <NavLink href="#organisers">ORGANISERS</NavLink>
           <NavLink href="#attendees">ATTENDEES</NavLink>
           <NavLink href="#solutions">SOLUTIONS</NavLink>
           <NavLink href="#about">ABOUT</NavLink>
-          <NavLink href="#contact">CONTACT</NavLink>
         </nav>
 
         <div className="flex items-center gap-2.5">
@@ -71,29 +51,25 @@ export default function Navbar() {
               <path d="m20 20-3.5-3.5" />
             </svg>
           </Link>
-          <LocaleToggle />
-          <SyncStatusBadge />
+
           {user ? (
             <div className="flex items-center gap-2">
-              <Link href="/dashboard" className="hidden rounded-lg border border-white/20 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:border-[#16b9ff] sm:inline-flex">
-                Dashboard
+              <Link href="/dashboard" className="hidden rounded-lg border border-[#16b9ff]/60 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[#16b9ff]/10 sm:inline-flex">
+                DASHBOARD
               </Link>
               <button
-                onClick={() => {
-                  signOut({ redirect: false });
-                  router.push("/");
-                }}
+                onClick={() => signOut({ callbackUrl: "/" })}
                 className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white/70 transition hover:text-white"
               >
-                Sign out
+                SIGN OUT
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/login" className="hidden rounded-lg border border-[#16b9ff]/60 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[#16b9ff]/10 sm:inline-flex">
+              <Link href="/login" className="hidden rounded-lg border border-[#16b9ff]/60 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[#16b9ff]/10 sm:inline-flex">
                 LOGIN
               </Link>
-              <Link href="/register" className="rounded-lg px-4 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-black shadow-[0_0_22px_rgba(246,191,34,.25)] sm:px-5" style={{ background: "linear-gradient(135deg,#ffd740,#e9a800)" }}>
+              <Link href="/register" className="rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-black shadow-[0_0_22px_rgba(246,191,34,.25)]" style={{ background: "linear-gradient(135deg,#ffd740,#e9a800)" }}>
                 CREATE EVENT
               </Link>
             </div>
@@ -107,7 +83,6 @@ export default function Navbar() {
         <Link href="#attendees" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">ATTENDEES</Link>
         <Link href="#solutions" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">SOLUTIONS</Link>
         <Link href="#about" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">ABOUT</Link>
-        <Link href="#contact" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">CONTACT</Link>
         {user && <Link href="/dashboard" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-[#16b9ff]">DASHBOARD</Link>}
       </div>
     </header>
