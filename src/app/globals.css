@@ -374,3 +374,14 @@ body {
  .chaap-hero-bottom{grid-template-columns:repeat(2,1fr)}
  #solutions>.mx-auto>div:last-child{grid-template-columns:repeat(2,1fr)}
 }
+
+/* Final CHAAP Kilimanjaro hero */
+.chaap-hero{position:relative;overflow:hidden;background:#03070b!important}
+.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,rgba(3,7,11,.98) 0%,rgba(3,7,11,.9) 30%,rgba(3,7,11,.35) 58%,rgba(3,7,11,.08) 100%),linear-gradient(0deg,rgba(3,7,11,.8),transparent 52%,rgba(3,7,11,.1));pointer-events:none}
+.chaap-hero>.mx-auto{position:relative;z-index:2}
+.chaap-kilimanjaro-photo{position:absolute;inset:0 0 0 34%;background-image:url("https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&w=2200&q=88");background-position:center 62%;background-size:cover;filter:saturate(.95) contrast(1.08);z-index:-1}
+.chaap-kilimanjaro-photo:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(3,7,11,.98),rgba(3,7,11,.35) 45%,rgba(3,7,11,.02)),linear-gradient(0deg,rgba(3,7,11,.72),transparent 48%,rgba(3,7,11,.12))}
+.chaap-display{font-size:clamp(4rem,6.2vw,6.7rem)!important;line-height:.86!important;letter-spacing:-.055em!important}
+.chaap-display-blue{background:linear-gradient(180deg,#55d8ff,#087df2)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+.chaap-display-gold{background:linear-gradient(180deg,#fff0a0,#ffc329 52%,#e09600)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+@media(max-width:900px){.chaap-kilimanjaro-photo{inset:35% 0 0 0}.chaap-hero:before{background:linear-gradient(180deg,rgba(3,7,11,.96),rgba(3,7,11,.62) 55%,rgba(3,7,11,.28))}}
