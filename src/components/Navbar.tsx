@@ -50,12 +50,8 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#03070c]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-3 sm:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-3">
-          <img src="/icon.svg" alt="CHAAP Africa" className="h-11 w-11 rounded-xl" />
-          <span className="hidden leading-none sm:block">
-            <span className="block text-xl font-black tracking-[-0.05em] text-silver">CHAAP</span>
-            <span className="mt-0.5 block text-[9px] font-semibold tracking-[0.42em] text-white/65">AFRICA</span>
-          </span>
+        <Link href="/" className="chaap-brand shrink-0">
+          <img src="/chaap-reference-logo.webp" alt="CHAAP Africa" />
         </Link>
 
         <nav className="hidden items-center gap-7 lg:flex">
