@@ -13,24 +13,6 @@ const FEATURES = [
   { title: "CHECK-IN SOLUTIONS", description: "QR, RFID & beyond.", icon: "qr" },
 ] as const;
 
-const HOW_IT_WORKS = [
-  {
-    number: "01",
-    title: "CONNECT",
-    description: "Bring your event, organisers, attendees and partners into one connected platform.",
-  },
-  {
-    number: "02",
-    title: "MANAGE",
-    description: "Tickets, payments, check-in, wallets, vendors and event operations in one place.",
-  },
-  {
-    number: "03",
-    title: "EXPERIENCE",
-    description: "Give attendees faster entry, smoother payments and a more memorable event.",
-  },
-];
-
 function FeatureIcon({ type }: { type: (typeof FEATURES)[number]["icon"] }) {
   const common = {
     width: 34,
@@ -46,58 +28,19 @@ function FeatureIcon({ type }: { type: (typeof FEATURES)[number]["icon"] }) {
 
   switch (type) {
     case "ticket":
-      return (
-        <svg {...common}>
-          <path d="M4 6h16v12H4z" />
-          <path d="M8 6v3M8 15v3M16 6v3M16 15v3" />
-          <path d="M9 12h6" />
-        </svg>
-      );
+      return <svg {...common}><path d="M4 6h16v12H4z" /><path d="M8 6v3M8 15v3M16 6v3M16 15v3M9 12h6" /></svg>;
     case "card":
-      return (
-        <svg {...common}>
-          <rect x="3" y="5" width="18" height="14" rx="2" />
-          <path d="M3 9h18M7 14h4" />
-        </svg>
-      );
+      return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 14h4" /></svg>;
     case "people":
-      return (
-        <svg {...common}>
-          <circle cx="9" cy="8" r="3" />
-          <circle cx="17" cy="9" r="2.5" />
-          <path d="M3.5 18c.7-3 2.5-4.5 5.5-4.5S13.8 15 14.5 18M14 14.5c2.8-.4 5 .9 6 3.5" />
-        </svg>
-      );
+      return <svg {...common}><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 18c.7-3 2.5-4.5 5.5-4.5S13.8 15 14.5 18M14 14.5c2.8-.4 5 .9 6 3.5" /></svg>;
     case "chart":
-      return (
-        <svg {...common}>
-          <path d="M4 19V5M4 19h16" />
-          <rect x="7" y="13" width="2.5" height="4" />
-          <rect x="11" y="10" width="2.5" height="7" />
-          <rect x="15" y="7" width="2.5" height="10" />
-        </svg>
-      );
+      return <svg {...common}><path d="M4 19V5M4 19h16" /><rect x="7" y="13" width="2.5" height="4" /><rect x="11" y="10" width="2.5" height="7" /><rect x="15" y="7" width="2.5" height="10" /></svg>;
     case "trophy":
-      return (
-        <svg {...common}>
-          <path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" />
-          <path d="M8 6H5a3 3 0 0 0 3 3M16 6h3a3 3 0 0 1-3 3M12 12v4M8 20h8M9 16h6" />
-        </svg>
-      );
+      return <svg {...common}><path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" /><path d="M8 6H5a3 3 0 0 0 3 3M16 6h3a3 3 0 0 1-3 3M12 12v4M8 20h8M9 16h6" /></svg>;
     case "megaphone":
-      return (
-        <svg {...common}>
-          <path d="M4 12h4l8-4v8l-8-4H4z" />
-          <path d="M8 15l1.5 4H7l-2-5M19 9l2-1M19 15l2 1M20 12h2" />
-        </svg>
-      );
+      return <svg {...common}><path d="M4 12h4l8-4v8l-8-4H4z" /><path d="M8 15l1.5 4H7l-2-5M19 9l2-1M19 15l2 1M20 12h2" /></svg>;
     default:
-      return (
-        <svg {...common}>
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-          <path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" />
-        </svg>
-      );
+      return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" /></svg>;
   }
 }
 
@@ -120,179 +63,145 @@ function EventDate({ startsAt }: { startsAt: string | Date }) {
 }
 
 export default async function HomePage() {
-  const [featuredEvents, stats] = await Promise.all([getFeaturedEvents(4), getPlatformStats()]);
+  const [featuredEvents, stats] = await Promise.all([
+    getFeaturedEvents(4),
+    getPlatformStats(),
+  ]);
 
   return (
     <div className="chaap-home">
-      <section className="chaap-hero">
-        <div className="chaap-hero-grid" />
-        <div className="chaap-hero-africa-glow" />
-        <div className="chaap-hero-noise" />
+      <section className="chaap-reference-hero">
+        <div className="chaap-reference-art" aria-hidden="true" />
+        <div className="chaap-reference-overlay" aria-hidden="true" />
 
-        <div className="mx-auto grid max-w-[1440px] grid-cols-1 items-center gap-4 px-5 py-12 sm:px-8 lg:min-h-[650px] lg:grid-cols-[.92fr_1.08fr] lg:gap-0 lg:px-10 lg:py-8">
-          <div className="relative z-20 max-w-2xl lg:pr-4">
-            <div className="chaap-kicker">
-              <span />
-              AFRICA&apos;S EVENT PLATFORM
-            </div>
+        <div className="mx-auto flex min-h-[530px] max-w-[1440px] items-start px-5 sm:px-8 lg:px-10">
+          <div className="chaap-reference-copy relative z-10">
+            <p className="chaap-reference-kicker">AFRICA&apos;S EVENT PLATFORM</p>
 
-            <h1 className="chaap-display">
-              <span>CONNECT.</span>
-              <span className="chaap-display-blue">MANAGE.</span>
-              <span className="chaap-display-gold">EXPERIENCE.</span>
+            <h1 className="chaap-reference-title">
+              <span className="silver">CONNECT.</span>
+              <span className="blue">MANAGE.</span>
+              <span className="gold">EXPERIENCE.</span>
             </h1>
 
-            <p className="chaap-hero-lead">
-              CHAAP Africa is the all-in-one event platform for a more connected Africa.
+            <p className="chaap-reference-lead">
+              CHAAP Africa is the all-in-one event platform
+              <br className="hidden sm:block" /> for a more connected Africa.
             </p>
 
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="btn-primary chaap-primary">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Link href="/register" className="btn-primary chaap-reference-primary">
                 CREATE AN EVENT <Arrow />
               </Link>
-              <Link href="/events" className="btn-secondary chaap-secondary">
+              <Link href="/events" className="btn-secondary chaap-reference-secondary">
                 EXPLORE EVENTS <Arrow />
               </Link>
             </div>
-
-            <div className="chaap-hero-pills">
-              <span>TICKETING</span><i />
-              <span>CASHLESS</span><i />
-              <span>RFID</span><i />
-              <span>CHECK-IN</span>
-            </div>
           </div>
 
-          <div className="chaap-hero-visual">
-            <div className="chaap-kilimanjaro-photo" aria-hidden="true" />
+          <div className="chaap-reference-sidecopy">
+            <span>PEOPLE</span>
+            <span>EVENTS</span>
+            <span>EXPERIENCES</span>
+            <strong>A STRONGER AFRICA</strong>
           </div>
         </div>
 
-        <div className="chaap-hero-bottom">
-          <div><strong>{stats.totalEventsHosted.toLocaleString()}+</strong><span>EVENTS</span></div>
-          <div><strong>{stats.totalTicketsSold.toLocaleString()}+</strong><span>TICKETS SOLD</span></div>
-          <div><strong>{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</strong><span>CASHLESS VOLUME</span></div>
-          <div><strong>OFFLINE</strong><span>READY</span></div>
+        <div className="chaap-reference-stats">
+          <div>
+            <strong>{stats.totalEventsHosted.toLocaleString()}+</strong>
+            <span>EVENTS</span>
+          </div>
+          <div>
+            <strong>{stats.totalTicketsSold.toLocaleString()}+</strong>
+            <span>ATTENDEES</span>
+          </div>
+          <div>
+            <strong>{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</strong>
+            <span>CASHLESS VOLUME</span>
+          </div>
+          <div>
+            <strong>AFRICA</strong>
+            <span>ONE CONNECTED PLATFORM</span>
+          </div>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-black/40">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 sm:grid-cols-4">
-          {[
-            ["EVENTS HOSTED", stats.totalEventsHosted.toLocaleString()],
-            ["TICKETS SOLD", stats.totalTicketsSold.toLocaleString()],
-            ["CASHLESS VOLUME", formatCents(stats.totalCashlessVolumeCents, stats.currency)],
-            ["OFFLINE CAPABLE", "100%"],
-          ].map(([label, value], index) => (
-            <div key={label} className={["chaap-stat-band", index > 0 ? "border-l border-white/10" : ""].join(" ")}>
-              <p className="text-2xl font-black text-white sm:text-3xl">{value}</p>
-              <p className="mt-1 text-[10px] font-semibold tracking-[0.18em] text-white/45">{label}</p>
+      <section id="solutions" className="chaap-reference-features">
+        <div>
+          {FEATURES.map((feature) => (
+            <div key={feature.title} className="chaap-feature">
+              <div className="chaap-feature-icon">
+                <FeatureIcon type={feature.icon} />
+              </div>
+              <h3>{feature.title}</h3>
+              <p>{feature.description}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="solutions" className="relative overflow-hidden py-10 sm:py-14">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8">
-          <div className="mb-7 flex items-end justify-between gap-4">
+      <section className="bg-[#03080e] py-7 sm:py-9" id="events">
+        <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+          <div className="mb-5 flex items-end justify-between gap-4">
             <div>
-              <p className="chaap-eyebrow">PLATFORM CAPABILITIES</p>
-              <h2 className="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">Everything your event needs.</h2>
+              <p className="text-[10px] font-extrabold tracking-[0.24em] text-[#16b9ff]">DISCOVER WHAT&apos;S HAPPENING</p>
+              <h2 className="mt-1 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">Upcoming events</h2>
+              <div className="mt-2 h-[2px] w-12 bg-[#f6bf22]" />
             </div>
-            <Link href="/events" className="hidden items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#16b9ff] sm:flex">
-              Explore platform <Arrow />
+            <Link href="/events" className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[#16b9ff]">
+              View all events <Arrow />
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-[#060b12] sm:grid-cols-3 lg:grid-cols-7">
-            {FEATURES.map((feature, index) => (
-              <div
-                key={feature.title}
-                className={[
-                  "chaap-feature",
-                  index > 0 ? "border-l border-white/10" : "",
-                  index >= 3 ? "border-t border-white/10 lg:border-t-0" : "",
-                ].join(" ")}
-              >
-                <div className="chaap-feature-icon"><FeatureIcon type={feature.icon} /></div>
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="organisers" className="border-y border-white/10 bg-[radial-gradient(circle_at_25%_0%,rgba(0,149,255,.08),transparent_38%),radial-gradient(circle_at_80%_100%,rgba(246,191,34,.06),transparent_38%)] py-14 sm:py-18">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8">
-          <div className="grid gap-5 lg:grid-cols-3">
-            {HOW_IT_WORKS.map((item) => (
-              <div key={item.number} className="chaap-process-card">
-                <span>{item.number}</span>
-                <div>
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {featuredEvents.length > 0 && (
-        <section id="attendees" className="py-12 sm:py-16">
-          <div className="mx-auto max-w-7xl px-5 sm:px-8">
-            <div className="mb-6 flex items-end justify-between gap-4">
-              <div>
-                <p className="chaap-eyebrow">WHAT&apos;S HAPPENING</p>
-                <h2 className="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">Upcoming events</h2>
-              </div>
-              <Link href="/events" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#16b9ff]">
-                View all events <Arrow />
-              </Link>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {featuredEvents.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {featuredEvents.map((event) => (
                 <Link key={event.id} href={"/events/" + event.slug} className="chaap-event-card group">
                   <div className="relative aspect-[16/10] overflow-hidden">
-                    <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
+                    <img
+                      src={event.imageUrl}
+                      alt={event.title}
+                      className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-transparent" />
                     <EventDate startsAt={event.startsAt} />
-                    <span className="absolute bottom-3 left-3 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white backdrop-blur">
-                      {event.eventType}
-                    </span>
-                  </div>
-                  <div className="flex items-end justify-between gap-3 p-4">
-                    <div className="min-w-0">
-                      <h3 className="line-clamp-2 text-sm font-bold uppercase leading-tight text-white">{event.title}</h3>
-                      <p className="mt-2 truncate text-xs text-white/50">{event.city}</p>
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <h3 className="line-clamp-2 text-sm font-extrabold uppercase leading-tight text-white">{event.title}</h3>
                     </div>
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-white/65 transition group-hover:border-[#16b9ff]/60 group-hover:text-white">
+                  </div>
+                  <div className="flex items-center justify-between gap-3 bg-[#071019] px-3 py-3">
+                    <p className="truncate text-xs text-white/60">{event.city}</p>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 text-white/65 transition group-hover:border-[#16b9ff]/60 group-hover:text-white">
                       <Arrow />
                     </span>
                   </div>
                 </Link>
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-[#071019] p-10 text-center text-sm text-white/50">
+              New events are being prepared. Check back soon.
+            </div>
+          )}
+        </div>
+      </section>
 
-      <section id="about" className="chaap-cta-section">
-        <div className="mx-auto grid max-w-7xl items-center gap-8 px-5 py-14 sm:px-8 lg:grid-cols-[1.2fr_.8fr]">
+      <section className="border-t border-white/10 bg-[#02060b] py-14" id="about">
+        <div className="mx-auto grid max-w-7xl gap-8 px-5 sm:px-8 lg:grid-cols-[1.1fr_.9fr] lg:items-center">
           <div>
-            <p className="chaap-eyebrow">BUILT FOR AFRICA</p>
-            <h2 className="mt-3 max-w-3xl text-3xl font-black uppercase tracking-tight sm:text-4xl">
-              Connect people, manage events, create experiences.
+            <p className="text-[10px] font-extrabold tracking-[0.3em] text-[#16b9ff]">BUILT FOR AFRICA</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-black uppercase tracking-tight text-white sm:text-5xl">
+              Connect people. Manage events. Create experiences.
             </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
-              From registration and ticketing to check-in, RFID and cashless payments, CHAAP brings the moving parts of an event together.
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/55 sm:text-base">
+              From registration and ticketing to secure payments, check-in, RFID and real-time event operations, CHAAP brings the moving parts together.
             </p>
           </div>
-          <div className="flex lg:justify-end">
-            <Link href="/events" className="btn-primary chaap-primary">
-              EXPLORE CHAAP <Arrow />
+          <div className="lg:text-right">
+            <Link href="/register" className="btn-primary chaap-reference-primary">
+              CREATE YOUR EVENT <Arrow />
             </Link>
           </div>
         </div>
