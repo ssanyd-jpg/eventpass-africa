@@ -126,27 +126,27 @@ export default async function HomePage() {
     <div className="chaap-home">
       <section className="chaap-hero">
         <div className="chaap-hero-grid" />
-        <div className="chaap-orb chaap-orb-blue" />
-        <div className="chaap-orb chaap-orb-gold" />
+        <div className="chaap-hero-africa-glow" />
+        <div className="chaap-hero-noise" />
 
-        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1.05fr_.95fr] lg:gap-10 lg:py-16">
-          <div className="relative z-10">
-            <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-[11px] font-semibold tracking-[0.34em] text-white/70">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#16b9ff] shadow-[0_0_14px_#16b9ff]" />
+        <div className="mx-auto grid max-w-[1440px] grid-cols-1 items-center gap-4 px-5 py-12 sm:px-8 lg:min-h-[650px] lg:grid-cols-[.92fr_1.08fr] lg:gap-0 lg:px-10 lg:py-8">
+          <div className="relative z-20 max-w-2xl lg:pr-4">
+            <div className="chaap-kicker">
+              <span />
               AFRICA&apos;S EVENT PLATFORM
             </div>
 
-            <h1 className="max-w-3xl text-5xl font-black uppercase leading-[0.9] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
-              <span className="block text-silver">CONNECT.</span>
-              <span className="block chaap-gradient-blue">MANAGE.</span>
-              <span className="block chaap-gradient-gold">EXPERIENCE.</span>
+            <h1 className="chaap-display">
+              <span>CONNECT</span>
+              <span className="chaap-display-blue">PEOPLE.</span>
+              <span className="chaap-display-gold">POWER EXPERIENCES.</span>
             </h1>
 
-            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg">
+            <p className="chaap-hero-lead">
               CHAAP Africa is the all-in-one event platform for a more connected Africa.
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link href="/register" className="btn-primary chaap-primary">
                 CREATE AN EVENT <Arrow />
               </Link>
@@ -155,39 +155,32 @@ export default async function HomePage() {
               </Link>
             </div>
 
-            <div className="mt-10 grid max-w-2xl grid-cols-2 gap-y-6 border-t border-white/10 pt-7 sm:grid-cols-4 sm:gap-x-7">
-              <div>
-                <p className="text-3xl font-black tracking-tight text-white">{stats.totalEventsHosted.toLocaleString()}+</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Events</p>
-              </div>
-              <div className="border-l border-white/10 pl-5">
-                <p className="text-3xl font-black tracking-tight text-white">{stats.totalTicketsSold.toLocaleString()}+</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Attendees</p>
-              </div>
-              <div className="border-l border-white/10 pl-5">
-                <p className="text-3xl font-black tracking-tight text-white">{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Cashless volume</p>
-              </div>
-              <div className="border-l border-white/10 pl-5">
-                <p className="text-3xl font-black tracking-tight text-[#f6bf22]">AFRICA</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Across Africa</p>
-              </div>
+            <div className="chaap-hero-pills">
+              <span>TICKETING</span><i />
+              <span>CASHLESS</span><i />
+              <span>RFID</span><i />
+              <span>CHECK-IN</span>
             </div>
           </div>
 
-          <div className="relative flex min-h-[420px] items-center justify-center lg:min-h-[520px]">
-            <div className="chaap-hero-ring" />
-            <div className="chaap-hero-ring chaap-hero-ring-alt" />
-            <div className="chaap-hero-map" />
+          <div className="chaap-hero-visual">
+            <div className="chaap-visual-aura" />
+            <div className="chaap-africa-outline" />
+            <div className="chaap-dna-line chaap-dna-one" />
+            <div className="chaap-dna-line chaap-dna-two" />
             <div className="chaap-hero-art">
               <img src="/chaap-hero-art.svg" alt="CHAAP Africa panther, DNA and connected Africa hero artwork" />
             </div>
-            <div className="chaap-hero-copy">PEOPLE · EVENTS · EXPERIENCES</div>
-            <div className="chaap-hero-caption">
-              <span>A STRONGER</span>
-              <strong>AFRICA</strong>
-            </div>
+            <div className="chaap-visual-label chaap-visual-label-top">PEOPLE · EVENTS · EXPERIENCES</div>
+            <div className="chaap-visual-label chaap-visual-label-bottom">BUILT FOR AFRICA</div>
           </div>
+        </div>
+
+        <div className="chaap-hero-bottom">
+          <div><strong>{stats.totalEventsHosted.toLocaleString()}+</strong><span>EVENTS</span></div>
+          <div><strong>{stats.totalTicketsSold.toLocaleString()}+</strong><span>TICKETS SOLD</span></div>
+          <div><strong>{formatCents(stats.totalCashlessVolumeCents, stats.currency)}</strong><span>CASHLESS VOLUME</span></div>
+          <div><strong>OFFLINE</strong><span>READY</span></div>
         </div>
       </section>
 
