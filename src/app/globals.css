@@ -490,3 +490,59 @@ body {
     linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.76) 38%,rgba(35,10,0,.22) 61%,rgba(255,120,0,.04) 100%),
     linear-gradient(0deg,rgba(2,6,11,.82),transparent 38%,rgba(70,20,0,.18));
 }
+
+
+/* CHAAP platform body: premium continuation below approved hero */
+.chaap-reference-features{background:#02060b;}
+.chaap-reference-features>div{
+  background:linear-gradient(180deg,#050b12 0%,#02060b 100%) !important;
+  border-top:1px solid rgba(255,255,255,.08) !important;
+}
+.chaap-reference-features .chaap-feature{
+  min-height:145px;
+  padding:24px 18px 20px;
+  transition:background .25s ease,transform .25s ease;
+}
+.chaap-reference-features .chaap-feature:hover{
+  background:rgba(255,255,255,.035) !important;
+  transform:translateY(-2px);
+}
+.chaap-reference-features .chaap-feature-icon{
+  filter:drop-shadow(0 0 10px rgba(22,185,255,.18));
+}
+.chaap-home #events{
+  background:
+    radial-gradient(circle at 78% 0%,rgba(246,191,34,.06),transparent 30%),
+    #03080e !important;
+}
+.chaap-event-card{
+  border:1px solid rgba(255,255,255,.08);
+  overflow:hidden;
+  background:#071019;
+  box-shadow:0 12px 35px rgba(0,0,0,.22);
+}
+.chaap-event-card .chaap-event-date{
+  background:rgba(2,6,11,.88);
+  border:1px solid rgba(246,191,34,.45);
+  backdrop-filter:blur(8px);
+}
+.chaap-home #about{
+  position:relative;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 80% 50%,rgba(246,191,34,.09),transparent 30%),
+    linear-gradient(135deg,#02060b,#06101a) !important;
+}
+.chaap-home #about:after{
+  content:"";
+  position:absolute;
+  width:320px;height:320px;
+  right:-110px;top:-120px;
+  border:1px solid rgba(246,191,34,.16);
+  border-radius:50%;
+  box-shadow:0 0 0 45px rgba(246,191,34,.025),0 0 0 90px rgba(246,191,34,.018);
+  pointer-events:none;
+}
+.chaap-home #contact{
+  padding-top:48px;
+}
