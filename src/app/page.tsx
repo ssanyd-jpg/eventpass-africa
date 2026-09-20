@@ -109,6 +109,10 @@ export default async function HomePage() {
 
         <div className="chaap-reference-stats">
           <div>
+            <strong>{stats.totalEventsHosted.toLocaleString()}+</strong>
+            <span>EVENTS HOSTED</span>
+          </div>
+          <div>
             <strong>{stats.totalTicketsSold.toLocaleString()}+</strong>
             <span>ATTENDEES</span>
           </div>
