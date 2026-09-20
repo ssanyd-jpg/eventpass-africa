@@ -26,7 +26,8 @@ export default function Navbar() {
   const { user } = useAppSession();
   const pathname = usePathname();
 
-  if (pathname?.startsWith("/vendor")) return null;\n  if (pathname === "/") return null;
+  if (pathname?.startsWith("/vendor")) return null;
+  if (pathname === "/") return null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#03070c]/90 backdrop-blur-xl">
