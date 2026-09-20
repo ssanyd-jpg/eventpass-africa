@@ -1,131 +1,89 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAppSession } from "@/lib/use-app-session";
-import { useTranslation } from "@/lib/use-translation";
-import SyncStatusBadge from "@/components/SyncStatusBadge";
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+  const isAnchor = href.startsWith("#");
+  const active = !isAnchor && (pathname === href || (href !== "/" && pathname.startsWith(href)));
   return (
     <Link
       href={href}
-      className={`text-sm font-medium transition ${
-        active ? "text-foreground" : "text-muted hover:text-foreground"
-      }`}
+      className={[
+        "relative text-[11px] font-semibold uppercase tracking-[0.13em] transition after:absolute after:-bottom-5 after:left-0 after:h-0.5 after:w-0 after:rounded-full after:bg-[#f6bf22] after:transition-all hover:text-white",
+        active ? "text-white after:w-full" : "text-white/60",
+      ].join(" ")}
     >
       {children}
     </Link>
   );
 }
 
-function LocaleToggle() {
-  const { locale, setLocale } = useTranslation();
-  return (
-    <div className="pill !p-0.5">
-      {(["en", "sw"] as const).map((l) => (
-        <button
-          key={l}
-          onClick={() => setLocale(l)}
-          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase transition ${
-            locale === l ? "bg-accent text-white" : "text-muted hover:text-foreground"
-          }`}
-        >
-          {l}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function Navbar() {
   const { user } = useAppSession();
-  const router = useRouter();
-  const { t } = useTranslation();
   const pathname = usePathname();
 
-  // The vendor portal (Session 8) is a separate, mobile-first, minimal-
-  // chrome surface built for a phone in bright outdoor light — it has its
-  // own sign-out control and no use for this organiser/buyer nav (whose own
-  // useAppSession() cache doesn't even model a VENDOR session's fields).
-  if (pathname?.startsWith("/vendor")) return null;
+  if (pathname?.startsWith("/vendor")) return null;\n  if (pathname === "/") return null;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-9 w-9 rounded-lg" />
-          <span className="flex flex-col leading-none">
-            <span className="font-display text-base font-extrabold tracking-tight text-silver">
-              CHAAP
-            </span>
-          </span>
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#03070c]/90 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-3 sm:px-8">
+        <Link href="/" className="chaap-brand shrink-0">
+          <img src="/chaap-reference-logo.webp" alt="CHAAP Africa" />
         </Link>
 
-        <nav className="hidden items-center gap-6 md:flex">
-          <NavLink href="/events">{t("nav.browse")}</NavLink>
-          {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
-          {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
-          {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
-          {user && <NavLink href="/account/groups">{t("nav.myGroups")}</NavLink>}
-          {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
-          {user && <NavLink href="/account/loyalty">{t("nav.myStatus")}</NavLink>}
-          {user && <NavLink href="/account/support">{t("nav.support")}</NavLink>}
-          {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/support">{t("nav.supportInbox")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments">{t("nav.payments")}</NavLink>}
-          {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
+        <nav className="hidden items-center gap-8 lg:flex">
+          <NavLink href="/">HOME</NavLink>
+          <NavLink href="/events">EVENTS</NavLink>
+          <NavLink href="#organisers">ORGANISERS</NavLink>
+          <NavLink href="#attendees">ATTENDEES</NavLink>
+          <NavLink href="#solutions">SOLUTIONS</NavLink>
+          <NavLink href="#about">ABOUT</NavLink>
         </nav>
 
-        <div className="flex items-center gap-3">
-          <LocaleToggle />
-          <SyncStatusBadge />
+        <div className="flex items-center gap-2.5">
+          <Link href="/events" aria-label="Search events" className="hidden h-10 w-10 items-center justify-center rounded-full text-white/75 transition hover:bg-white/5 hover:text-white sm:flex">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </Link>
+
           {user ? (
             <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
+              <Link href="/dashboard" className="hidden rounded-lg border border-[#16b9ff]/60 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[#16b9ff]/10 sm:inline-flex">
+                DASHBOARD
+              </Link>
               <button
-                onClick={() => {
-                  signOut({ redirect: false });
-                  router.push("/");
-                }}
-                className="btn-secondary !px-3 !py-1.5 text-xs"
+                onClick={() => signOut({ callbackUrl: "/" })}
+                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white/70 transition hover:text-white"
               >
-                {t("nav.signOut")}
+                SIGN OUT
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/login" className="btn-secondary !px-3 !py-1.5 text-xs">
-                {t("nav.logIn")}
+              <Link href="/login" className="hidden rounded-lg border border-[#16b9ff]/60 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[#16b9ff]/10 sm:inline-flex">
+                LOGIN
               </Link>
-              <Link href="/register" className="btn-primary !px-3 !py-1.5 text-xs">
-                {t("nav.signUp")}
+              <Link href="/register" className="rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-black shadow-[0_0_22px_rgba(246,191,34,.25)]" style={{ background: "linear-gradient(135deg,#ffd740,#e9a800)" }}>
+                CREATE EVENT
               </Link>
             </div>
           )}
         </div>
       </div>
-      <div className="flex gap-5 border-t border-border px-4 py-2 md:hidden">
-        <NavLink href="/events">{t("nav.browse")}</NavLink>
-        {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
-        {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
-        {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments">{t("nav.payments")}</NavLink>}
-        {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
+
+      <div className="flex gap-6 overflow-x-auto border-t border-white/5 px-5 py-2.5 lg:hidden sm:px-8">
+        <Link href="/events" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">EVENTS</Link>
+        <Link href="#organisers" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">ORGANISERS</Link>
+        <Link href="#attendees" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">ATTENDEES</Link>
+        <Link href="#solutions" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">SOLUTIONS</Link>
+        <Link href="#about" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-white/65">ABOUT</Link>
+        {user && <Link href="/dashboard" className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-[#16b9ff]">DASHBOARD</Link>}
       </div>
     </header>
   );

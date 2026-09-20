@@ -3,70 +3,676 @@
 @tailwind utilities;
 
 :root {
-  /* Chaap brand palette */
   --helix-blue: #0066ff;
   --deep-blue: #001a3d;
+  --chaap-blue: #12b8ff;
+  --chaap-gold: #f6bf22;
   --crimson-red: #e6001a;
   --silver: #d9d9d9;
-  --gunmetal: #0d0d0d;
-
-  --background: var(--gunmetal);
+  --gunmetal: #06090d;
+  --background: #06090d;
   --foreground: #f2f2f2;
-  --surface: #131722;
-  --surface-2: #1b2130;
-  --border: #262d40;
-  --muted: #98a0b3;
-  --accent: var(--helix-blue);
-  --accent-hover: #2b80ff;
-  --accent-soft: rgba(0, 102, 255, 0.15);
+  --surface: #10151d;
+  --surface-2: #161d27;
+  --border: #263140;
+  --muted: #93a0b5;
+  --accent: var(--chaap-blue);
+  --accent-hover: #53c9ff;
+  --accent-soft: rgba(18, 184, 255, 0.12);
   --ok: #22c55e;
   --warn: #f59e0b;
-  /* Session 23 — kept independent of --crimson-red (the brand mark's own
-     red) on purpose: at #e6001a, plain danger text measured ~3.7:1 against
-     this dark theme's backgrounds, below WCAG AA's 4.5:1 for normal text.
-     #ff5252 keeps the same hue family but is light enough to clear AA on
-     both the page background and the translucent bg-danger/10 alert tint
-     used across gate/wallet/live-monitoring banners. */
   --danger: #ff5252;
 }
 
-* {
-  border-color: var(--border);
-}
+* { border-color: var(--border); }
+html { scroll-behavior: smooth; }
 
 body {
   color: var(--foreground);
-  background: var(--background);
+  background:
+    radial-gradient(circle at 85% -10%, rgba(0, 139, 255, 0.08), transparent 26%),
+    radial-gradient(circle at 15% 30%, rgba(246, 191, 34, 0.035), transparent 22%),
+    var(--background);
   font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
 }
 
-::selection {
-  background: var(--accent);
-  color: white;
-}
+::selection { background: var(--chaap-gold); color: #05070a; }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 1rem;
-  }
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
-  }
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full border border-border bg-surface2 px-5 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-50;
-  }
-  .input {
-    @apply w-full rounded-lg border border-border bg-surface2 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
-  }
-  .label {
-    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted;
-  }
-  .pill {
-    @apply inline-flex items-center rounded-full border border-border bg-surface2 px-3 py-1 text-xs font-medium text-muted;
-  }
+  .text-balance { text-wrap: balance; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-full border border-border bg-surface2 px-5 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-50; }
+  .input { @apply w-full rounded-lg border border-border bg-surface2 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent; }
+  .label { @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted; }
+  .pill { @apply inline-flex items-center rounded-full border border-border bg-surface2 px-3 py-1 text-xs font-medium text-muted; }
+}
+
+.chaap-home { min-height: 100vh; overflow: clip; background: #05080d; }
+.chaap-hero {
+  position: relative; isolation: isolate; overflow: hidden; border-bottom: 1px solid rgba(18,184,255,.18);
+  background: radial-gradient(circle at 82% 42%, rgba(0,153,255,.16), transparent 22%), radial-gradient(circle at 70% 70%, rgba(246,191,34,.08), transparent 22%), linear-gradient(115deg,#030507 0%,#07121d 58%,#020508 100%);
+}
+.chaap-hero-grid {
+  position:absolute; inset:0; opacity:.18; pointer-events:none;
+  background-image: linear-gradient(rgba(26,95,140,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(26,95,140,.14) 1px, transparent 1px);
+  background-size:72px 72px; mask-image:linear-gradient(to right, transparent 0%, black 35%, black 100%);
+}
+.chaap-orb { position:absolute; border-radius:999px; filter:blur(55px); opacity:.45; pointer-events:none; }
+.chaap-orb-blue { width:360px;height:360px;right:7%;top:18%;background:rgba(0,153,255,.16); }
+.chaap-orb-gold { width:260px;height:260px;right:23%;bottom:-5%;background:rgba(246,191,34,.12); }
+
+.chaap-gradient-blue { background:linear-gradient(180deg,#16b9ff 0%,#0066ff 75%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.chaap-gradient-gold { background:linear-gradient(180deg,#fff2a4 0%,#f6bf22 46%,#dd8f00 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.chaap-eyebrow { color:#12b8ff; font-size:10px; font-weight:800; letter-spacing:.3em; }
+
+.chaap-primary {
+  min-height:50px; padding-inline:24px; border:1px solid rgba(255,220,93,.7);
+  background:linear-gradient(135deg,#ffd740,#f0ad00); color:#111; box-shadow:0 10px 35px rgba(246,191,34,.22);
+}
+.chaap-primary:hover { background:linear-gradient(135deg,#ffe36c,#ffc21f); color:#111; transform:translateY(-1px); }
+.chaap-secondary { min-height:50px; padding-inline:24px; border-color:rgba(18,184,255,.75); background:rgba(0,22,38,.65); }
+.chaap-secondary:hover { background:rgba(18,184,255,.1); }
+
+.chaap-hero-ring {
+  position:absolute; width:min(82%,520px); aspect-ratio:1; border-radius:50%;
+  border:1px solid rgba(18,184,255,.24); box-shadow:0 0 80px rgba(18,184,255,.12);
+}
+.chaap-hero-ring::before,.chaap-hero-ring::after {
+  content:""; position:absolute; inset:12%; border-radius:50%; border:1px solid rgba(246,191,34,.25);
+}
+.chaap-hero-ring::after { inset:25%; border-color:rgba(18,184,255,.2); }
+.chaap-hero-ring-alt { width:min(62%,410px); border-color:rgba(246,191,34,.17); transform:rotate(18deg); }
+
+.chaap-hero-map {
+  position:absolute; width:72%; height:68%; right:3%;
+  clip-path:polygon(50% 0%,71% 8%,82% 21%,78% 37%,90% 53%,71% 62%,61% 78%,53% 100%,39% 83%,28% 75%,19% 57%,10% 49%,18% 35%,20% 18%,34% 8%);
+  background:radial-gradient(circle at 50% 35%, rgba(18,184,255,.12), rgba(246,191,34,.03) 55%, transparent 72%);
+  border:1px solid rgba(18,184,255,.25); filter:drop-shadow(0 0 30px rgba(18,184,255,.16));
+}
+.chaap-hero-art {
+  position:relative; width:250px; height:250px; border-radius:50%; padding:12px; display:grid; place-items:center;
+  background:radial-gradient(circle at 50% 38%,rgba(246,191,34,.13),rgba(0,0,0,0) 58%); box-shadow:0 0 120px rgba(0,149,255,.18);
+}
+.chaap-hero-art::before { content:""; position:absolute; inset:4px; border:1px solid rgba(255,255,255,.12); border-radius:50%; }
+.chaap-hero-art img { width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 0 22px rgba(18,184,255,.28)) drop-shadow(0 0 16px rgba(246,191,34,.18)); }
+.chaap-hero-copy { position:absolute; top:17%; right:1%; color:rgba(255,255,255,.44); font-size:10px; letter-spacing:.3em; writing-mode:vertical-rl; }
+.chaap-hero-caption { position:absolute; right:1%; bottom:8%; display:flex; flex-direction:column; align-items:flex-end; color:rgba(255,255,255,.5); font-size:12px; letter-spacing:.24em; }
+.chaap-hero-caption strong { font-size:28px; letter-spacing:.08em; color:#f6bf22; }
+
+.chaap-stat-band { padding:22px 18px; text-align:center; }
+.chaap-feature { min-height:170px; padding:22px 16px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.chaap-feature-icon { color:#12b8ff; margin-bottom:14px; filter:drop-shadow(0 0 9px rgba(18,184,255,.24)); }
+.chaap-feature:nth-child(2n) .chaap-feature-icon,.chaap-feature:nth-child(5) .chaap-feature-icon { color:#f6bf22; filter:drop-shadow(0 0 9px rgba(246,191,34,.22)); }
+.chaap-feature h3 { font-size:10px; font-weight:800; letter-spacing:.08em; color:#f7f8fb; }
+.chaap-feature p { margin-top:7px; font-size:11px; line-height:1.45; color:rgba(255,255,255,.45); }
+
+.chaap-process-card { display:grid; grid-template-columns:auto 1fr; gap:18px; padding:24px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.02); }
+.chaap-process-card > span { font-size:32px; line-height:1; font-weight:900; color:#16b9ff; }
+.chaap-process-card:nth-child(2) > span { color:#f6bf22; }
+.chaap-process-card h3 { font-size:15px; font-weight:900; letter-spacing:.12em; }
+.chaap-process-card p { margin-top:7px; font-size:12px; line-height:1.55; color:rgba(255,255,255,.48); }
+
+.chaap-event-card { overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:linear-gradient(180deg,#0c121a,#080c12); transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease; }
+.chaap-event-card:hover { border-color:rgba(18,184,255,.4); box-shadow:0 16px 45px rgba(0,0,0,.26); transform:translateY(-2px); }
+.chaap-event-date { position:absolute; top:12px; left:12px; min-width:52px; padding:7px 6px; text-align:center; border-radius:10px; background:rgba(3,7,11,.78); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(10px); color:#fff; }
+.chaap-event-date span { display:block; font-size:9px; letter-spacing:.12em; color:#16b9ff; }
+.chaap-event-date strong { display:block; margin-top:1px; font-size:22px; line-height:1; }
+
+.chaap-cta-section {
+  border-top:1px solid rgba(255,255,255,.1); border-bottom:1px solid rgba(255,255,255,.1);
+  background:radial-gradient(circle at 80% 50%, rgba(18,184,255,.1), transparent 32%),radial-gradient(circle at 20% 50%, rgba(246,191,34,.06), transparent 30%),#05090f;
+}
+
+@media (max-width:900px) { .chaap-hero-copy,.chaap-hero-caption { display:none; } .chaap-hero-art { width:220px; height:220px; } }
+@media (max-width:640px) { .chaap-hero-art { width:190px; height:190px; } .chaap-hero-ring { width:300px; } .chaap-feature { min-height:150px; } }
+
+
+/* CHAAP premium editorial hero */
+.chaap-hero {
+  min-height: 720px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background:
+    radial-gradient(ellipse at 78% 48%, rgba(0,139,255,.18), transparent 28%),
+    radial-gradient(ellipse at 68% 92%, rgba(246,191,34,.08), transparent 24%),
+    linear-gradient(108deg,#020407 0%,#050b12 48%,#02060b 100%);
+}
+.chaap-hero-grid {
+  opacity:.10;
+  background-size:96px 96px;
+  mask-image:linear-gradient(to right, transparent 0%, black 28%, black 100%);
+}
+.chaap-hero-africa-glow {
+  position:absolute; width:620px; height:620px; right:7%; top:5%;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(15,139,220,.16) 0%,rgba(15,139,220,.07) 35%,transparent 70%);
+  filter:blur(8px); pointer-events:none;
+}
+.chaap-hero-noise {
+  position:absolute; inset:0; pointer-events:none; opacity:.18;
+  background-image:radial-gradient(rgba(255,255,255,.13) .6px, transparent .6px);
+  background-size:5px 5px;
+  mask-image:linear-gradient(to right,transparent,black 45%,transparent 100%);
+}
+.chaap-kicker {
+  display:inline-flex; align-items:center; gap:12px;
+  padding:9px 0; color:rgba(255,255,255,.68);
+  font-size:11px; font-weight:800; letter-spacing:.34em;
+}
+.chaap-kicker span {
+  width:7px; height:7px; border-radius:50%; background:#16b9ff;
+  box-shadow:0 0 18px rgba(22,185,255,.9);
+}
+.chaap-display {
+  margin-top:22px;
+  display:flex; flex-direction:column;
+  font-size:clamp(4.2rem,7.2vw,7.8rem);
+  line-height:.83; letter-spacing:-.065em;
+  font-weight:950; text-transform:uppercase;
+  color:#e8eaed;
+}
+.chaap-display span:first-child { color:#e5e7ea; }
+.chaap-display-blue {
+  background:linear-gradient(180deg,#57d4ff 0%,#118bff 48%,#0060e9 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.chaap-display-gold {
+  background:linear-gradient(180deg,#fff0a0 0%,#ffc62c 48%,#d88c00 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.chaap-hero-lead {
+  max-width:590px; margin-top:28px;
+  color:rgba(255,255,255,.67);
+  font-size:clamp(1rem,1.35vw,1.25rem); line-height:1.65;
+}
+.chaap-hero-pills {
+  display:flex; align-items:center; gap:13px; margin-top:38px;
+  color:rgba(255,255,255,.42); font-size:9px; font-weight:800; letter-spacing:.22em;
+}
+.chaap-hero-pills i { width:3px; height:3px; border-radius:50%; background:#f6bf22; }
+.chaap-hero-visual {
+  position:relative; min-height:580px; display:flex; align-items:center; justify-content:center;
+  isolation:isolate; overflow:visible;
+}
+.chaap-visual-aura {
+  position:absolute; width:560px; height:560px; border-radius:50%;
+  background:radial-gradient(circle,rgba(18,184,255,.16),rgba(18,184,255,.045) 42%,transparent 70%);
+  filter:blur(12px); z-index:-2;
+}
+.chaap-africa-outline {
+  position:absolute; width:470px; height:560px; opacity:.42; z-index:-1;
+  clip-path:polygon(43% 0,58% 7%,64% 17%,73% 25%,69% 34%,78% 45%,68% 53%,62% 67%,55% 82%,48% 100%,37% 88%,29% 78%,21% 64%,17% 53%,9% 45%,18% 34%,20% 23%,29% 13%);
+  background:linear-gradient(145deg,rgba(18,184,255,.16),rgba(246,191,34,.06));
+  box-shadow:inset 0 0 80px rgba(18,184,255,.12);
+}
+.chaap-hero-art {
+  position:relative; z-index:5; width:min(620px,78vw); height:min(620px,78vw);
+  display:grid; place-items:center; padding:0; border-radius:0;
+  background:none; box-shadow:none;
+}
+.chaap-hero-art::before { display:none; }
+.chaap-hero-art img {
+  width:100%; height:100%; object-fit:contain;
+  filter:drop-shadow(0 20px 50px rgba(0,0,0,.62))
+          drop-shadow(0 0 35px rgba(18,184,255,.22))
+          drop-shadow(0 0 24px rgba(246,191,34,.12));
+}
+.chaap-dna-line {
+  position:absolute; width:2px; height:470px; opacity:.35;
+  background:linear-gradient(to bottom,transparent,#16b9ff 20%,#f6bf22 55%,transparent);
+  filter:blur(.2px); z-index:1;
+}
+.chaap-dna-one { right:18%; transform:rotate(23deg); }
+.chaap-dna-two { left:20%; transform:rotate(-23deg); opacity:.16; }
+.chaap-visual-label {
+  position:absolute; z-index:8; color:rgba(255,255,255,.38);
+  font-size:9px; font-weight:700; letter-spacing:.34em;
+}
+.chaap-visual-label-top { right:3%; top:13%; writing-mode:vertical-rl; }
+.chaap-visual-label-bottom { left:11%; bottom:9%; color:#f6bf22; }
+.chaap-hero-bottom {
+  position:relative; z-index:20; display:grid; grid-template-columns:repeat(4,1fr);
+  max-width:1380px; margin:0 auto; border-top:1px solid rgba(255,255,255,.09);
+}
+.chaap-hero-bottom > div { padding:18px 28px; border-left:1px solid rgba(255,255,255,.08); }
+.chaap-hero-bottom > div:first-child { border-left:0; }
+.chaap-hero-bottom strong { display:block; font-size:22px; font-weight:900; color:#f5f6f7; }
+.chaap-hero-bottom span { display:block; margin-top:3px; color:rgba(255,255,255,.35); font-size:9px; font-weight:800; letter-spacing:.2em; }
+
+@media (max-width: 900px) {
+  .chaap-hero { min-height:auto; }
+  .chaap-hero-visual { min-height:440px; margin-top:-10px; }
+  .chaap-hero-art { width:min(500px,88vw); height:min(500px,88vw); }
+  .chaap-display { font-size:clamp(4rem,12vw,6rem); }
+}
+@media (max-width: 640px) {
+  .chaap-hero-visual { min-height:350px; }
+  .chaap-hero-art { width:360px; height:360px; }
+  .chaap-hero-pills { flex-wrap:wrap; }
+  .chaap-hero-bottom { grid-template-columns:repeat(2,1fr); }
+  .chaap-hero-bottom > div { border-top:1px solid rgba(255,255,255,.08); }
+  .chaap-display { font-size:clamp(3.4rem,16vw,5rem); }
+}
+
+
+/* CHAAP reference homepage */
+.chaap-reference-hero {
+  position:relative; min-height:530px; overflow:hidden; isolation:isolate;
+  background:#02060b;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.chaap-reference-art {
+  position:absolute; inset:0; z-index:0;
+  background-image:url("https://upload.wikimedia.org/wikipedia/commons/b/b5/Mount_Kilimanjaro_at_Sunset_%28Explored%29.jpg");
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:cover;
+  background-color:#1a0d08;
+  opacity:1;
+}
+.chaap-reference-overlay {
+  position:absolute; inset:0; z-index:1;
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.82) 37%,rgba(2,6,11,.16) 61%,rgba(2,6,11,0) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.72),transparent 35%,rgba(2,6,11,.15));
+}
+.chaap-reference-copy { padding-top:65px; padding-bottom:24px; max-width:660px; }
+.chaap-reference-kicker {
+  margin:0; color:#f4f5f7; font-size:11px; font-weight:600; letter-spacing:.42em;
+}
+.chaap-reference-kicker::before { content:""; display:inline-block; width:5px; height:5px; margin:0 14px 2px 0; border-radius:50%; background:#16b9ff; box-shadow:0 0 14px #16b9ff; }
+.chaap-reference-title {
+  margin-top:16px; display:flex; flex-direction:column;
+  font-size:clamp(4rem,6.25vw,6.8rem); line-height:.88; letter-spacing:-.055em;
+  font-weight:900; text-transform:uppercase;
+}
+.chaap-reference-title .silver { color:#f1f2f3; text-shadow:0 3px 16px rgba(255,255,255,.12); }
+.chaap-reference-title .blue { color:#12b8ff; text-shadow:0 0 28px rgba(18,184,255,.25); }
+.chaap-reference-title .gold { color:#ffc51d; text-shadow:0 0 28px rgba(246,191,34,.22); }
+.chaap-reference-lead { margin-top:17px; color:#f0f2f4; font-size:18px; line-height:1.45; }
+.chaap-reference-primary {
+  min-width:260px; border-color:#ffe26a;
+  background:linear-gradient(180deg,#ffd84a,#e9a900); box-shadow:0 0 25px rgba(246,191,34,.3);
+}
+.chaap-reference-secondary {
+  min-width:235px; border-color:#16b9ff; background:rgba(2,10,18,.65);
+}
+.chaap-reference-sidecopy {
+  position:absolute; right:5.5%; top:52px; display:flex; flex-direction:column; gap:8px;
+  color:rgba(255,255,255,.8); font-size:10px; letter-spacing:.25em;
+}
+.chaap-reference-sidecopy strong { margin-top:2px; padding-bottom:10px; border-bottom:2px solid #f6bf22; color:#fff; font-weight:500; }
+.chaap-reference-stats {
+  position:absolute; left:0; right:0; bottom:0; display:grid; grid-template-columns:repeat(4,1fr);
+  border-top:1px solid rgba(255,255,255,.12); background:linear-gradient(90deg,rgba(2,6,11,.95),rgba(2,6,11,.72),rgba(2,6,11,.2));
+}
+.chaap-reference-stats > div { min-height:70px; padding:13px 28px; border-right:1px solid rgba(255,255,255,.12); }
+.chaap-reference-stats strong { display:block; color:#eef1f4; font-size:25px; line-height:1; font-weight:800; }
+.chaap-reference-stats span { display:block; margin-top:5px; color:#d7dbe0; font-size:9px; letter-spacing:.12em; }
+.chaap-reference-features { padding:0; background:#02070d; border-bottom:1px solid rgba(255,255,255,.1); }
+.chaap-reference-features > div {
+  border-radius:0 !important; border:0 !important; background:transparent !important;
+  max-width:none; width:100%; display:grid; grid-template-columns:repeat(7,1fr);
+}
+.chaap-reference-features .chaap-feature {
+  min-height:122px; padding:18px 12px 15px; border-right:1px solid rgba(255,255,255,.12) !important;
+}
+.chaap-reference-features .chaap-feature:last-child { border-right:0 !important; }
+.chaap-reference-features .chaap-feature-icon { margin-bottom:10px; color:#16b9ff; }
+.chaap-reference-features .chaap-feature:nth-child(2n) .chaap-feature-icon,
+.chaap-reference-features .chaap-feature:nth-child(5) .chaap-feature-icon { color:#f6bf22; }
+.chaap-reference-features .chaap-feature h3 { font-size:10px; }
+.chaap-reference-features .chaap-feature p { margin-top:5px; font-size:10px; color:rgba(255,255,255,.6); }
+.chaap-event-card { border-radius:8px; }
+@media (max-width: 1000px) {
+  .chaap-reference-art { background-position:70% center; background-size:auto 100%; }
+  .chaap-reference-sidecopy { display:none; }
+  .chaap-reference-features > div { grid-template-columns:repeat(4,1fr); }
+  .chaap-reference-features .chaap-feature { border-bottom:1px solid rgba(255,255,255,.1) !important; }
+}
+@media (max-width: 700px) {
+  .chaap-reference-hero { min-height:680px; }
+  .chaap-reference-art { opacity:.72; background-position:70% bottom; background-size:auto 68%; }
+  .chaap-reference-overlay { background:linear-gradient(180deg,#02060b 0%,rgba(2,6,11,.88) 45%,rgba(2,6,11,.18) 100%); }
+  .chaap-reference-copy { padding-top:48px; }
+  .chaap-reference-title { font-size:clamp(3.6rem,15vw,5rem); }
+  .chaap-reference-lead { font-size:15px; }
+  .chaap-reference-stats { grid-template-columns:repeat(2,1fr); }
+  .chaap-reference-stats > div { border-bottom:1px solid rgba(255,255,255,.1); }
+  .chaap-reference-features > div { grid-template-columns:repeat(2,1fr); }
+  .chaap-reference-features .chaap-feature:nth-child(2n) { border-right:0 !important; }
+}
+
+.chaap-brand { display:flex; align-items:center; width:330px; min-width:330px; }
+.chaap-brand img { display:block; width:320px; height:auto; object-fit:contain; }
+@media (max-width:1100px) { .chaap-brand { width:250px; min-width:250px; } .chaap-brand img { width:245px; } }
+
+
+/* CHAAP cinematic Kilimanjaro hero */
+.chaap-hero{position:relative;overflow:hidden;background:#02060a url("https://images.pexels.com/photos/19168338/pexels-photo-19168338.jpeg?cs=srgb&dl=pexels-wladimir-kuhne-670646709-19168338.jpg&fm=jpg") center/cover no-repeat!important;border-bottom:1px solid rgba(255,255,255,.12)}
+.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,rgba(2,6,10,.98) 0%,rgba(2,6,10,.88) 28%,rgba(2,6,10,.38) 55%,rgba(2,6,10,.08) 100%),linear-gradient(0deg,rgba(2,6,10,.78),transparent 48%,rgba(2,6,10,.14))}
+.chaap-hero>.mx-auto{position:relative;z-index:2}
+.chaap-hero-visual{min-height:500px!important}
+.chaap-display{font-size:clamp(4rem,6.1vw,6.8rem);line-height:.86;letter-spacing:-.06em;margin-top:20px}
+.chaap-display-blue{color:#129cff;background:linear-gradient(180deg,#4bd8ff 0%,#087cf2 80%);-webkit-background-clip:text;background-clip:text}
+.chaap-display-gold{background:linear-gradient(180deg,#fff2a1 0%,#ffc329 50%,#df9200 100%);-webkit-background-clip:text;background-clip:text}
+.chaap-hero-lead{margin-top:20px;color:#fff;max-width:570px;font-size:18px;line-height:1.4}
+.chaap-hero-bottom{position:relative;z-index:3;max-width:1500px!important;margin:0 auto;background:rgba(1,8,16,.91);border-top:1px solid rgba(255,255,255,.15);display:grid;grid-template-columns:repeat(4,1fr)}
+.chaap-hero-bottom>div{padding:14px 28px;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.12)}
+.chaap-hero-bottom>div:last-child{border-right:0}
+.chaap-hero-bottom strong{font-size:24px;color:#f5f5f5}.chaap-hero-bottom span{font-size:10px;letter-spacing:.16em;color:rgba(255,255,255,.65)}
+#solutions{padding-top:0!important;background:#02070d}
+#solutions>.mx-auto{max-width:none!important;padding:0!important}
+#solutions>.mx-auto>div:first-child{display:none}
+#solutions>.mx-auto>div:last-child{border-radius:0!important;border:0!important;background:rgba(2,7,13,.98)!important;display:grid;grid-template-columns:repeat(7,1fr)}
+#solutions .chaap-feature{min-height:125px;padding:16px 10px;border-right:1px solid rgba(255,255,255,.12)!important}
+#solutions .chaap-feature:last-child{border-right:0!important}
+@media(max-width:900px){
+ .chaap-hero{background-position:center top!important}
+ .chaap-hero:before{background:linear-gradient(180deg,rgba(2,6,10,.92),rgba(2,6,10,.58) 55%,rgba(2,6,10,.32))}
+ .chaap-hero>.mx-auto{grid-template-columns:1fr!important;min-height:580px!important}
+ .chaap-hero-visual{min-height:120px!important}
+ .chaap-hero-bottom{grid-template-columns:repeat(2,1fr)}
+ #solutions>.mx-auto>div:last-child{grid-template-columns:repeat(2,1fr)}
+}
+
+/* Final CHAAP Kilimanjaro hero */
+.chaap-hero{position:relative;overflow:hidden;background:#03070b!important}
+.chaap-hero:before{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,rgba(3,7,11,.98) 0%,rgba(3,7,11,.9) 30%,rgba(3,7,11,.35) 58%,rgba(3,7,11,.08) 100%),linear-gradient(0deg,rgba(3,7,11,.8),transparent 52%,rgba(3,7,11,.1));pointer-events:none}
+.chaap-hero>.mx-auto{position:relative;z-index:2}
+.chaap-kilimanjaro-photo{position:absolute;inset:0 0 0 34%;background-image:url("https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&w=2200&q=88");background-position:center 62%;background-size:cover;filter:saturate(.95) contrast(1.08);z-index:-1}
+.chaap-kilimanjaro-photo:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(3,7,11,.98),rgba(3,7,11,.35) 45%,rgba(3,7,11,.02)),linear-gradient(0deg,rgba(3,7,11,.72),transparent 48%,rgba(3,7,11,.12))}
+.chaap-display{font-size:clamp(4rem,6.2vw,6.7rem)!important;line-height:.86!important;letter-spacing:-.055em!important}
+.chaap-display-blue{background:linear-gradient(180deg,#55d8ff,#087df2)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+.chaap-display-gold{background:linear-gradient(180deg,#fff0a0,#ffc329 52%,#e09600)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+@media(max-width:900px){.chaap-kilimanjaro-photo{inset:35% 0 0 0}.chaap-hero:before{background:linear-gradient(180deg,rgba(3,7,11,.96),rgba(3,7,11,.62) 55%,rgba(3,7,11,.28))}}
+
+
+/* CHAAP final reference body treatment: deep-gold sunset */
+.chaap-reference-hero {
+  min-height: 700px;
+  background: #02060b;
+}
+.chaap-reference-art {
+  background-position: 64% center;
+  background-size: cover;
+  filter: saturate(1.42) contrast(1.12) brightness(.84) sepia(.12);
+}
+.chaap-reference-art::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 86% 42%, rgba(255,166,26,.52) 0%, rgba(244,126,0,.30) 22%, transparent 48%),
+    linear-gradient(180deg, rgba(255,135,0,.16) 0%, rgba(255,166,26,.08) 38%, rgba(8,5,3,.08) 68%, rgba(2,6,11,.32) 100%);
+  mix-blend-mode:screen;
+}
+.chaap-reference-overlay {
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.80) 38%,rgba(2,6,11,.18) 61%,rgba(2,6,11,.02) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.78),transparent 38%,rgba(2,6,11,.08));
+}
+.chaap-reference-copy {
+  padding-top: 92px;
+  padding-bottom: 32px;
+}
+.chaap-reference-title {
+  font-size: clamp(4.2rem, 6.45vw, 7rem);
+}
+.chaap-reference-lead {
+  margin-top: 22px;
+  font-size: 19px;
+}
+.chaap-reference-primary,
+.chaap-reference-secondary {
+  min-height: 60px;
+}
+.chaap-reference-sidecopy {
+  top: 78px;
+  right: 6%;
+}
+.chaap-reference-stats {
+  grid-template-columns: repeat(3,1fr);
+  background: linear-gradient(90deg,rgba(2,6,11,.97),rgba(2,6,11,.86),rgba(2,6,11,.72));
+}
+.chaap-reference-stats > div {
+  min-height: 104px;
+  padding: 20px 42px;
+}
+.chaap-reference-stats strong {
+  font-size: 31px;
+}
+.chaap-reference-stats span {
+  font-size: 10px;
+}
+@media (max-width: 1000px) {
+  .chaap-reference-hero { min-height: 680px; }
+  .chaap-reference-art { background-position: 68% center; }
+}
+@media (max-width: 700px) {
+  .chaap-reference-hero { min-height: 720px; }
+  .chaap-reference-art { background-position: 68% bottom; }
+  .chaap-reference-stats { grid-template-columns:repeat(2,1fr); }
+  .chaap-reference-stats > div { min-height:80px; padding:13px 20px; }
+}
+
+
+/* CHAAP final deep-gold cinematic sunset */
+.chaap-reference-art{
+  background-position:68% center;
+  background-size:cover;
+  filter:saturate(1.65) contrast(1.16) brightness(.72) sepia(.22);
+}
+.chaap-reference-art::before{
+  content:"";
+  position:absolute;
+  width:150px;
+  height:150px;
+  right:3.8%;
+  top:53%;
+  border-radius:50%;
+  background:radial-gradient(circle,#fff8cf 0%,#ffd34a 10%,#ff9d00 34%,rgba(255,132,0,.36) 62%,transparent 74%);
+  box-shadow:0 0 55px rgba(255,157,0,.72),0 0 140px rgba(255,126,0,.42);
+  opacity:.95;
+}
+.chaap-reference-art::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(ellipse at 91% 52%,rgba(255,154,0,.72) 0%,rgba(255,126,0,.48) 16%,rgba(224,82,0,.28) 34%,transparent 57%),
+    linear-gradient(180deg,rgba(102,31,0,.30) 0%,rgba(255,133,0,.28) 34%,rgba(255,170,22,.16) 57%,rgba(12,6,2,.18) 100%),
+    linear-gradient(90deg,rgba(2,6,11,.98) 0%,rgba(2,6,11,.88) 25%,rgba(40,12,0,.22) 58%,rgba(110,35,0,.08) 100%);
+}
+.chaap-reference-overlay{
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.98) 20%,rgba(2,6,11,.76) 38%,rgba(35,10,0,.22) 61%,rgba(255,120,0,.04) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.82),transparent 38%,rgba(70,20,0,.18));
+}
+
+
+/* CHAAP platform body: premium continuation below approved hero */
+.chaap-reference-features{background:#02060b;}
+.chaap-reference-features>div{
+  background:linear-gradient(180deg,#050b12 0%,#02060b 100%) !important;
+  border-top:1px solid rgba(255,255,255,.08) !important;
+}
+.chaap-reference-features .chaap-feature{
+  min-height:145px;
+  padding:24px 18px 20px;
+  transition:background .25s ease,transform .25s ease;
+}
+.chaap-reference-features .chaap-feature:hover{
+  background:rgba(255,255,255,.035) !important;
+  transform:translateY(-2px);
+}
+.chaap-reference-features .chaap-feature-icon{
+  filter:drop-shadow(0 0 10px rgba(22,185,255,.18));
+}
+.chaap-home #events{
+  background:
+    radial-gradient(circle at 78% 0%,rgba(246,191,34,.06),transparent 30%),
+    #03080e !important;
+}
+.chaap-event-card{
+  border:1px solid rgba(255,255,255,.08);
+  overflow:hidden;
+  background:#071019;
+  box-shadow:0 12px 35px rgba(0,0,0,.22);
+}
+.chaap-event-card .chaap-event-date{
+  background:rgba(2,6,11,.88);
+  border:1px solid rgba(246,191,34,.45);
+  backdrop-filter:blur(8px);
+}
+.chaap-home #about{
+  position:relative;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 80% 50%,rgba(246,191,34,.09),transparent 30%),
+    linear-gradient(135deg,#02060b,#06101a) !important;
+}
+.chaap-home #about:after{
+  content:"";
+  position:absolute;
+  width:320px;height:320px;
+  right:-110px;top:-120px;
+  border:1px solid rgba(246,191,34,.16);
+  border-radius:50%;
+  box-shadow:0 0 0 45px rgba(246,191,34,.025),0 0 0 90px rgba(246,191,34,.018);
+  pointer-events:none;
+}
+.chaap-home #contact{
+  padding-top:48px;
+}
+
+
+/* CHAAP reference v3: visible panther + Africa night map + deep-gold sunset */
+.chaap-reference-hero{
+  position:relative;
+  min-height:650px;
+  overflow:hidden;
+  background:#02060b;
+}
+.chaap-reference-art{
+  position:absolute!important;
+  inset:0!important;
+  z-index:0;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 88% 47%,rgba(255,235,105,1) 0 1.1%,rgba(255,190,35,.96) 2.2%,rgba(255,137,10,.66) 7%,rgba(186,70,0,.36) 18%,rgba(70,24,0,.14) 32%,transparent 48%),
+    radial-gradient(ellipse at 78% 42%,rgba(255,143,18,.24),transparent 38%),
+    linear-gradient(90deg,#01050a 0%,#05080d 30%,rgba(40,12,0,.66) 57%,rgba(84,29,0,.76) 100%);
+}
+.chaap-reference-art::before{
+  content:"";
+  position:absolute;
+  z-index:2;
+  inset:2% 7% -8% 38%;
+  background:url("https://upload.wikimedia.org/wikipedia/commons/f/f0/Black_Panther.JPG") 72% center/cover no-repeat;
+  filter:brightness(.62) contrast(1.45) saturate(.72);
+  opacity:.98;
+  mix-blend-mode:screen;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.5) 9%,#000 25%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.5) 9%,#000 25%,#000 88%,transparent 100%);
+}
+.chaap-reference-art::after{
+  content:"";
+  position:absolute;
+  z-index:1;
+  inset:4% 0 0 40%;
+  background:
+    url("https://upload.wikimedia.org/wikipedia/commons/c/c2/SOS_-_Change_in_Night_Lights_between_2012_and_2023_%28SVS5475_-_2012-2024_KSC_SOS_04_plus2_0900_2k%29.png") 71% 49%/88% auto no-repeat,
+    radial-gradient(circle at 80% 27%,rgba(255,218,83,.9) 0 1px,transparent 3px),
+    radial-gradient(circle at 67% 55%,rgba(18,185,255,.8) 0 1px,transparent 3px),
+    radial-gradient(circle at 75% 65%,rgba(255,191,34,.8) 0 1.2px,transparent 3px),
+    linear-gradient(90deg,transparent 0%,rgba(2,6,11,.06) 20%,rgba(2,6,11,.18) 100%);
+  opacity:.48;
+  mix-blend-mode:screen;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 15%,#000 92%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,#000 15%,#000 92%,transparent 100%);
+}
+.chaap-reference-art{
+  box-shadow:inset 0 -120px 120px rgba(0,0,0,.5);
+}
+.chaap-reference-art > *{position:relative;z-index:5}
+.chaap-reference-overlay{
+  position:absolute!important;
+  inset:0!important;
+  z-index:3;
+  background:
+    linear-gradient(90deg,#02060b 0%,rgba(2,6,11,.96) 22%,rgba(2,6,11,.72) 38%,rgba(2,6,11,.08) 63%,rgba(2,6,11,.02) 100%),
+    linear-gradient(0deg,rgba(2,6,11,.72) 0%,transparent 38%,rgba(3,6,10,.08) 100%);
+  pointer-events:none;
+}
+.chaap-reference-copy{position:relative;z-index:6;padding-top:108px;padding-bottom:40px;max-width:690px}
+.chaap-reference-title{font-size:clamp(4.2rem,6.45vw,7rem);line-height:.9;text-shadow:0 8px 35px rgba(0,0,0,.45)}
+.chaap-reference-lead{margin-top:25px;font-size:19px}
+.chaap-reference-sidecopy{z-index:7}
+.chaap-reference-stats{position:relative;z-index:8;grid-template-columns:repeat(4,1fr);background:linear-gradient(90deg,rgba(2,6,11,.98),rgba(2,6,11,.9),rgba(2,6,11,.72))}
+.chaap-reference-stats>div{min-height:104px;padding:20px 34px}
+.chaap-reference-stats strong{font-size:31px;color:#eef2f6}
+.chaap-reference-stats span{font-size:10px;color:rgba(255,255,255,.55)}
+/* subtle DNA energy ribbon */
+.chaap-reference-hero::after{
+  content:"";
+  position:absolute;
+  z-index:4;
+  right:31%;
+  top:10%;
+  width:180px;
+  height:540px;
+  opacity:.78;
+  transform:rotate(-22deg);
+  background:
+    repeating-linear-gradient(12deg,transparent 0 29px,rgba(25,186,255,.82) 30px 32px,transparent 33px 59px),
+    repeating-linear-gradient(168deg,transparent 0 29px,rgba(255,194,37,.8) 30px 32px,transparent 33px 59px);
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
+  pointer-events:none;
+}
+@media(max-width:1000px){
+ .chaap-reference-art::before{inset:18% -5% -4% 28%;background-position:72% center;background-size:cover;opacity:.84}
+ .chaap-reference-art::after{inset:6% -8% 0 35%;background-size:105% auto,auto,auto,auto,cover;opacity:.34}
+ .chaap-reference-hero::after{right:22%;width:130px}
+ .chaap-reference-sidecopy{display:none}
+ .chaap-reference-stats{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:700px){
+ .chaap-reference-hero{min-height:720px}
+ .chaap-reference-art::before{inset:34% -18% -2% 0;background-position:70% center;background-size:cover;opacity:.65}
+ .chaap-reference-art::after{inset:34% -25% 0 12%;background-size:125% auto,auto,auto,auto,cover;opacity:.28}
+ .chaap-reference-overlay{background:linear-gradient(180deg,#02060b 0%,rgba(2,6,11,.92) 48%,rgba(2,6,11,.16) 100%)}
+ .chaap-reference-copy{padding-top:56px}
+ .chaap-reference-title{font-size:clamp(3.55rem,15vw,5rem)}
+ .chaap-reference-lead{font-size:15px}
+ .chaap-reference-hero::after{right:7%;top:40%;height:320px;width:90px;opacity:.48}
+}
+
+
+/* CHAAP homepage: use the approved reference artwork exactly for the visual hero */
+.chaap-reference-hero{
+  min-height: 650px !important;
+  height: 650px;
+  background:#02060b !important;
+}
+.chaap-reference-art{
+  background-image:url("https://export-download.canva.com/4a434716-7106-4620-adf8-791681587d60/0/0001-2769104385047012978.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQYCGKMUH5AO7UJ26%2F20260919%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260919T215228Z&X-Amz-Expires=88265&X-Amz-Signature=e0cb0cedb65c980c41fb22e688112472f5a7d1d114b63478bc0020087f3d88ed&X-Amz-SignedHeaders=host%3Bx-amz-expected-bucket-owner") !important;
+  background-position:center top !important;
+  background-size:100% auto !important;
+  background-repeat:no-repeat !important;
+  filter:none !important;
+}
+.chaap-reference-art::before,
+.chaap-reference-art::after,
+.chaap-reference-overlay,
+.chaap-reference-hero::after{display:none !important}
+.chaap-reference-copy,
+.chaap-reference-sidecopy,
+.chaap-reference-stats{visibility:hidden !important;pointer-events:none !important}
+.chaap-reference-hero > .mx-auto{height:0;min-height:0 !important}
+@media(max-width:700px){
+  .chaap-reference-hero{height:680px;min-height:680px !important}
+  .chaap-reference-art{background-size:auto 680px !important;background-position:center top !important}
 }

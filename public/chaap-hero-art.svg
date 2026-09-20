@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title desc">
+  <title id="title">CHAAP Africa panther and DNA</title>
+  <desc id="desc">A dark metallic panther head integrated with a luminous DNA helix and connected Africa network.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="65%">
+      <stop offset="0" stop-color="#132236" stop-opacity=".92"/>
+      <stop offset=".55" stop-color="#07101b" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#02050a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="metal" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0" stop-color="#f2f5f7"/>
+      <stop offset=".22" stop-color="#7f8c98"/>
+      <stop offset=".48" stop-color="#dfe5e9"/>
+      <stop offset=".72" stop-color="#4d5964"/>
+      <stop offset="1" stop-color="#c9d1d7"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0" stop-color="#55d7ff"/>
+      <stop offset=".55" stop-color="#16b9ff"/>
+      <stop offset="1" stop-color="#0873d1"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0" stop-color="#ffe38a"/>
+      <stop offset=".5" stop-color="#f6bf22"/>
+      <stop offset="1" stop-color="#b97800"/>
+    </linearGradient>
+    <filter id="glowBlue"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="glowGold"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="shadow"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity=".65"/></filter>
+  </defs>
+
+  <circle cx="400" cy="400" r="340" fill="url(#bg)"/>
+
+  <!-- connected Africa -->
+  <g opacity=".38" fill="none" stroke="url(#blue)" stroke-width="2">
+    <path d="M437 207 L470 238 L455 280 L475 315 L455 352 L432 382 L439 425 L416 469 L390 510 L374 553 L348 521 L332 481 L315 452 L319 415 L298 383 L314 346 L304 311 L329 283 L346 246 L381 225 Z"/>
+    <path d="M346 246 L292 215 M329 283 L254 278 M304 311 L228 335 M319 415 L249 446 M374 553 L306 598 M416 469 L493 520 M455 352 L530 331 M470 238 L527 201"/>
+    <circle cx="292" cy="215" r="5" fill="#16b9ff"/><circle cx="254" cy="278" r="5" fill="#16b9ff"/>
+    <circle cx="228" cy="335" r="5" fill="#16b9ff"/><circle cx="249" cy="446" r="5" fill="#16b9ff"/>
+    <circle cx="306" cy="598" r="5" fill="#16b9ff"/><circle cx="493" cy="520" r="5" fill="#16b9ff"/>
+    <circle cx="530" cy="331" r="5" fill="#16b9ff"/><circle cx="527" cy="201" r="5" fill="#16b9ff"/>
+  </g>
+
+  <!-- DNA -->
+  <g fill="none" stroke-linecap="round" filter="url(#glowBlue)">
+    <path d="M548 128 C472 188 472 245 548 304 C624 363 624 420 548 479 C472 538 472 595 548 654" stroke="url(#blue)" stroke-width="8"/>
+    <path d="M630 128 C554 188 554 245 630 304 C706 363 706 420 630 479 C554 538 554 595 630 654" stroke="url(#gold)" stroke-width="5" opacity=".9"/>
+    <g stroke="#9eeaff" stroke-width="3" opacity=".85">
+      <path d="M520 153 L579 153"/><path d="M492 205 L609 205"/><path d="M492 257 L609 257"/>
+      <path d="M520 309 L579 309"/><path d="M548 361 L630 361"/><path d="M548 413 L630 413"/>
+      <path d="M520 465 L579 465"/><path d="M492 517 L609 517"/><path d="M492 569 L609 569"/>
+      <path d="M520 621 L579 621"/>
+    </g>
+  </g>
+
+  <!-- Panther silhouette -->
+  <g filter="url(#shadow)">
+    <path d="M191 495
+      C184 452 190 405 208 367
+      C217 348 229 331 245 316
+      L230 239 L286 274
+      C322 250 360 239 400 239
+      C440 239 478 250 514 274
+      L570 239 L555 316
+      C571 331 583 348 592 367
+      C610 405 616 452 609 495
+      C603 533 584 568 556 596
+      C523 629 478 650 431 658
+      L400 681 L369 658
+      C322 650 277 629 244 596
+      C216 568 197 533 191 495 Z"
+      fill="#080d13" stroke="url(#metal)" stroke-width="7"/>
+    <!-- ears -->
+    <path d="M244 316 L230 239 L286 274 Z" fill="#111923" stroke="#697783" stroke-width="4"/>
+    <path d="M514 274 L570 239 L555 316 Z" fill="#111923" stroke="#697783" stroke-width="4"/>
+    <!-- forehead planes -->
+    <path d="M319 274 L400 252 L481 274 L455 339 L400 365 L345 339 Z" fill="#1a242e" stroke="#5e6b75" stroke-width="3"/>
+    <path d="M274 340 L345 339 L400 365 L342 402 L279 385 Z" fill="#101820" stroke="#53616d" stroke-width="3"/>
+    <path d="M526 340 L455 339 L400 365 L458 402 L521 385 Z" fill="#101820" stroke="#53616d" stroke-width="3"/>
+    <!-- eyes -->
+    <path d="M278 389 Q319 360 362 389 Q322 414 281 403 Z" fill="#05090d" stroke="#758590" stroke-width="3"/>
+    <path d="M522 389 Q481 360 438 389 Q478 414 519 403 Z" fill="#05090d" stroke="#758590" stroke-width="3"/>
+    <path d="M296 391 Q321 380 346 391 Q322 401 298 397 Z" fill="#16b9ff" filter="url(#glowBlue)"/>
+    <path d="M504 391 Q479 380 454 391 Q478 401 502 397 Z" fill="#16b9ff" filter="url(#glowBlue)"/>
+    <!-- muzzle -->
+    <path d="M332 431 Q400 398 468 431 L486 493 Q452 548 400 563 Q348 548 314 493 Z" fill="#d0d6db" opacity=".9" stroke="#697783" stroke-width="4"/>
+    <path d="M366 446 Q400 427 434 446 L425 470 Q400 484 375 470 Z" fill="#151b21" stroke="#424f59" stroke-width="3"/>
+    <path d="M400 470 L400 499 M355 493 Q400 524 445 493" fill="none" stroke="#4d5964" stroke-width="4" stroke-linecap="round"/>
+    <!-- cheek cuts -->
+    <path d="M263 443 L326 455 M252 469 L318 478 M537 443 L474 455 M548 469 L482 478" stroke="#6f7d88" stroke-width="4" opacity=".65"/>
+  </g>
+
+  <!-- gold identity accents -->
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round" filter="url(#glowGold)">
+    <path d="M224 535 Q270 612 335 632" stroke-width="5"/>
+    <path d="M576 535 Q530 612 465 632" stroke-width="5"/>
+    <circle cx="400" cy="608" r="8" fill="#f6bf22" stroke="none"/>
+  </g>
+
+  <!-- floating signal nodes -->
+  <g fill="#f6bf22">
+    <circle cx="157" cy="347" r="4"/><circle cx="641" cy="347" r="4"/>
+    <circle cx="184" cy="617" r="3"/><circle cx="616" cy="617" r="3"/>
+  </g>
+  <g stroke="#16b9ff" stroke-width="2" opacity=".55">
+    <path d="M157 347 L228 316 M641 347 L570 316 M184 617 L244 596 M616 617 L556 596"/>
+  </g>
+</svg>
