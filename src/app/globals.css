@@ -263,11 +263,11 @@ body {
 }
 .chaap-reference-art {
   position:absolute; inset:0; z-index:-2;
-  background-image:url("/chaap-reference-hero.jpg");
+  background-image:url("https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&w=2400&q=90");
   background-repeat:no-repeat;
-  background-position:right center;
-  background-size:auto 100%;
-  opacity:.98;
+  background-position:center center;
+  background-size:cover;
+  opacity:1;
 }
 .chaap-reference-overlay {
   position:absolute; inset:0; z-index:-1;
