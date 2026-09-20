@@ -180,7 +180,7 @@ export default async function HomePage() {
             <div className="chaap-hero-ring chaap-hero-ring-alt" />
             <div className="chaap-hero-map" />
             <div className="chaap-hero-art">
-              <img src="/chaap-hero-art.webp" alt="CHAAP Africa panther, DNA and connected Africa hero artwork" />
+              <img src="/chaap-hero-art.svg" alt="CHAAP Africa panther, DNA and connected Africa hero artwork" />
             </div>
             <div className="chaap-hero-copy">PEOPLE · EVENTS · EXPERIENCES</div>
             <div className="chaap-hero-caption">
