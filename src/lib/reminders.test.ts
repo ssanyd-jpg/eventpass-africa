@@ -69,7 +69,7 @@ describe("sendEventReminders", () => {
     expect(logs[0].body).toContain("tomorrow");
   });
 
-  it("does not notify for an event more than 28 hours away", async () => {
+  it("does not notify for an event more than 44 hours away", async () => {
     const { organizationId } = await newOrganizer();
     const event = await eventStartingIn(organizationId, 72);
     const buyer = await buyerWithPhone("0712000102");
@@ -109,9 +109,10 @@ describe("sendEventReminders", () => {
   it.each([
     { hours: 20.5, reminded: true },
     { hours: 27.5, reminded: true },
+    { hours: 43.5, reminded: true },
     { hours: 19, reminded: false },
-    { hours: 29, reminded: false },
-  ])("reminds only inside the 20–28h window ($hours h away → reminded: $reminded)", async ({ hours, reminded }) => {
+    { hours: 45, reminded: false },
+  ])("reminds only inside the 20–44h window ($hours h away → reminded: $reminded)", async ({ hours, reminded }) => {
     const { organizationId } = await newOrganizer();
     const event = await eventStartingIn(organizationId, hours);
     const phone = `07120${Math.floor(hours * 10)}`;

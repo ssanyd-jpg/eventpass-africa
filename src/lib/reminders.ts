@@ -3,15 +3,17 @@ import { sendNotification } from "@/lib/notifications";
 import { formatCents } from "@/lib/format";
 
 // Vercel Cron (see vercel.json) calls sendEventReminders once a day
-// (Hobby plan), so an event is reminded if it starts 20h–28h after the run.
-// The window is only as wide as one run's reach: with runs 24h apart, a
-// window narrower than 24h leaves events starting at some times of day
-// never reminded at all. The once-per-attendee guarantee is not the window
-// but Ticket.reminderSentAt (stamped after a send, filtered on below) plus
-// the NotificationLog check keyed on (type, recipient, subject), which also
-// covers reminders sent before that column existed.
+// (Hobby plan), so an event is reminded if it starts 20h–44h after the run.
+// With runs 24h apart the window has to be at least 24h wide, or events
+// starting at some times of day are never reminded at all; 24h wide means
+// every event falls inside exactly one run's window (20h–44h before start),
+// so it gets its reminder roughly a day ahead whatever time it starts. The
+// once-per-attendee guarantee is not the window but Ticket.reminderSentAt
+// (stamped after a send, filtered on below) plus the NotificationLog check
+// keyed on (type, recipient, subject), which also covers reminders sent
+// before that column existed.
 const WINDOW_START_HOURS = 20;
-const WINDOW_END_HOURS = 28;
+const WINDOW_END_HOURS = 44;
 
 export interface SendEventRemindersResult {
   ok: true;
