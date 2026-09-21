@@ -55,6 +55,7 @@ npx prisma db seed         # optional — loads demo events/accounts
    | `CHAAP_FROM_EMAIL` | No | Sender address for real email (default: `noreply@chaap-africa.com`) — see §4 |
    | `AT_API_KEY` / `AT_USERNAME` | No | Enables real SMS delivery via Africa's Talking — both required together, see §4 |
    | `AT_WHATSAPP_USERNAME` / `AT_WHATSAPP_SHORTCODE` | No | Enables real WhatsApp delivery via Africa's Talking (with `AT_API_KEY`) — see §4 |
+   | `AT_USSD_SECRET` | No | Enables the USSD endpoint (`/api/ussd`) for feature-phone attendees — without it every request is rejected. See §8 |
    | `CRON_SECRET` | No | Required to enable the 24h event-reminder Vercel Cron job — see §6 |
    | `AIRPAY_MERCHANT_ID` / `AIRPAY_CLIENT_ID` / `AIRPAY_CLIENT_SECRET` / `AIRPAY_USERNAME` / `AIRPAY_PASSWORD` / `AIRPAY_SECRET` / `AIRPAY_MERCHANT_DOMAIN` | No | Enables real mobile money charging via Airpay Tanzania — see §5 |
 
@@ -182,6 +183,67 @@ sit unclaimed for up to a day before the next person on the list is
 notified; the immediate on-cancellation/on-capacity-increase notification
 above still fires right away regardless of plan, since that path doesn't go
 through this cron at all. Pro plan removes the once-daily limit.)
+
+## 8. USSD for feature phones (Africa's Talking)
+
+Session 31 — attendees on basic feature phones (no smartphone, no data) can
+dial a USSD shortcode to check their wallet balance, top up, and see their
+last transaction. `src/lib/ussd.ts` runs the menu; `src/app/api/ussd/route.ts`
+is the endpoint Africa's Talking calls on every keypress. It uses the same
+Africa's Talking account as SMS/WhatsApp (§4) but is inbound-only, so it
+needs no `AT_API_KEY` — just its own secret.
+
+**Before you go live**
+
+1. Generate a secret: `openssl rand -base64 32`.
+2. Set it as `AT_USSD_SECRET` in Vercel (Project Settings → Environment
+   Variables) and redeploy. With no secret set, `/api/ussd` answers `401` to
+   everything — that is the default, deliberately.
+3. **Configure real Airpay first (§5).** Until the `AIRPAY_*` variables are
+   all set, top-ups run on the simulator, which marks every charge paid
+   instantly — so anyone with a wallet could dial in and credit it for free.
+   Don't set `AT_USSD_SECRET` in production until Airpay is live.
+
+**Register the shortcode in the Africa's Talking dashboard**
+
+1. Sign in to the Africa's Talking dashboard and switch to the app whose
+   `AT_USERNAME` you use for SMS (use the **Sandbox** app to test first).
+2. Go to **USSD** → **Create channel**.
+3. Set the **callback URL** to `https://chaap.africa/api/ussd`.
+4. Configure the channel to send the header `X-AT-USSD-Secret` with the value
+   of `AT_USSD_SECRET`. The endpoint checks this header and nothing else —
+   see the note below if the dashboard has no field for it.
+5. Save the channel and **note the shortcode Africa's Talking assigns**
+   (e.g. `*384*xxx#`). That is the number attendees dial; put it on tickets,
+   wristband hand-outs, and event signage. In the sandbox, test it from the
+   dashboard's USSD simulator (or the simulator's phone number) before
+   applying for a production shortcode, which Africa's Talking provisions
+   per network.
+
+**Verify the header can actually be set.** The endpoint authenticates
+callers by the `X-AT-USSD-Secret` header, but this was built without access
+to a live Africa's Talking account — confirm in the channel form that a
+custom header is possible. If it only accepts a callback URL, the secret
+can't reach us and every real request will be rejected; in that case either
+front the route with a proxy that adds the header, or change
+`verifyUssdSecret()` (`src/lib/ussd.ts`) to read the secret from the URL
+instead — don't leave the endpoint open.
+
+**What the menu does**
+
+- Callers are identified by the phone number Africa's Talking reports,
+  matched against `User.phone` — so only an attendee who typed their number
+  at online checkout (§4) has a wallet USSD can find. Anyone else hears
+  "No Chaap wallet found for this number".
+- **Top up** starts an Airpay charge via the same handler as the in-app
+  top-up. Airpay answers `PENDING` (the M-Pesa prompt goes to the caller's
+  phone), and the wallet is only credited once that charge is confirmed —
+  today that happens when the attendee next opens the app (the wallet page
+  polls it), **not** automatically. Until a background job polls pending
+  top-ups, a feature-phone user who never opens the app will see the money
+  leave their phone without the balance changing.
+- Limits: TZS 2,000 minimum, TZS 500,000 maximum per top-up; TZS wallets
+  only.
 
 ## Post-deploy checklist
 

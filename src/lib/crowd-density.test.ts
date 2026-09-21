@@ -128,7 +128,8 @@ describe("calculateZoneDensity", () => {
 });
 
 describe("checkDensityThresholds", () => {
-  it("fires APPROACHING, AT_CAPACITY, and OVERCROWDED at the correct occupancy levels", async () => {
+  // Neon latency under load — five sequential DB-heavy threshold checks, same pattern as Session 7
+  it("fires APPROACHING, AT_CAPACITY, and OVERCROWDED at the correct occupancy levels", { timeout: 120000 }, async () => {
     const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const event = await createTestEvent(organizationId, [
