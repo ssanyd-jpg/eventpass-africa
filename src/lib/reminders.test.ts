@@ -69,7 +69,7 @@ describe("sendEventReminders", () => {
     expect(logs[0].body).toContain("tomorrow");
   });
 
-  it("does not notify for an event more than 25 hours away", async () => {
+  it("does not notify for an event more than 28 hours away", async () => {
     const { organizationId } = await newOrganizer();
     const event = await eventStartingIn(organizationId, 72);
     const buyer = await buyerWithPhone("0712000102");
@@ -104,6 +104,83 @@ describe("sendEventReminders", () => {
 
     const logs = await prisma.notificationLog.findMany({ where: { type: "EVENT_REMINDER", recipient: "0712000104" } });
     expect(logs).toHaveLength(1);
+  });
+
+  it.each([
+    { hours: 20.5, reminded: true },
+    { hours: 27.5, reminded: true },
+    { hours: 19, reminded: false },
+    { hours: 29, reminded: false },
+  ])("reminds only inside the 20–28h window ($hours h away → reminded: $reminded)", async ({ hours, reminded }) => {
+    const { organizationId } = await newOrganizer();
+    const event = await eventStartingIn(organizationId, hours);
+    const phone = `07120${Math.floor(hours * 10)}`;
+    const buyer = await buyerWithPhone(phone);
+    await buyTicket(event.id, event.ticketTypes[0].id, buyer.id);
+
+    await sendEventReminders(FAR_FUTURE_NOW);
+
+    const logs = await prisma.notificationLog.findMany({ where: { type: "EVENT_REMINDER", recipient: phone } });
+    expect(logs).toHaveLength(reminded ? 1 : 0);
+  });
+
+  it("stamps reminderSentAt on the buyer's tickets once the reminder is sent", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await eventStartingIn(organizationId, 24);
+    const buyer = await buyerWithPhone("0712000110");
+    await buyTicket(event.id, event.ticketTypes[0].id, buyer.id);
+    await buyTicket(event.id, event.ticketTypes[0].id, buyer.id); // a second order, same buyer
+
+    const before = await prisma.ticket.findMany({ where: { eventId: event.id } });
+    expect(before).toHaveLength(2);
+    expect(before.every((t) => t.reminderSentAt === null)).toBe(true);
+
+    await sendEventReminders(FAR_FUTURE_NOW);
+
+    const after = await prisma.ticket.findMany({ where: { eventId: event.id } });
+    expect(after.every((t) => t.reminderSentAt !== null)).toBe(true);
+    // One buyer → one reminder, not one per ticket or order.
+    const logs = await prisma.notificationLog.findMany({ where: { type: "EVENT_REMINDER", recipient: "0712000110" } });
+    expect(logs).toHaveLength(1);
+  });
+
+  it("skips tickets whose reminderSentAt is already set, even with no NotificationLog row", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await eventStartingIn(organizationId, 24);
+    const buyer = await buyerWithPhone("0712000111");
+    await buyTicket(event.id, event.ticketTypes[0].id, buyer.id);
+    await prisma.ticket.updateMany({ where: { eventId: event.id }, data: { reminderSentAt: new Date() } });
+
+    await sendEventReminders(FAR_FUTURE_NOW);
+
+    const logs = await prisma.notificationLog.findMany({ where: { type: "EVENT_REMINDER", recipient: "0712000111" } });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("backfills reminderSentAt for a buyer reminded before the column existed", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await eventStartingIn(organizationId, 24);
+    const buyer = await buyerWithPhone("0712000112");
+    await buyTicket(event.id, event.ticketTypes[0].id, buyer.id);
+    const loggedAt = new Date(Date.now() - 60 * 60 * 1000);
+    await prisma.notificationLog.create({
+      data: {
+        type: "EVENT_REMINDER",
+        channel: "WHATSAPP",
+        recipient: "0712000112",
+        subject: `Event reminder — ${event.id}`,
+        body: "legacy reminder",
+        status: "SENT",
+        createdAt: loggedAt,
+      },
+    });
+
+    await sendEventReminders(FAR_FUTURE_NOW);
+
+    const logs = await prisma.notificationLog.findMany({ where: { type: "EVENT_REMINDER", recipient: "0712000112" } });
+    expect(logs).toHaveLength(1); // no second reminder
+    const tickets = await prisma.ticket.findMany({ where: { eventId: event.id } });
+    expect(tickets[0].reminderSentAt?.getTime()).toBe(loggedAt.getTime());
   });
 
   it("skips a ticket holder with no phone on file", async () => {

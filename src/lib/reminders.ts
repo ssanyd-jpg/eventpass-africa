@@ -2,15 +2,16 @@ import { prisma } from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { formatCents } from "@/lib/format";
 
-// Vercel Cron (see vercel.json) calls sendEventReminders roughly hourly —
-// a 2-hour lookahead window (23h–25h) rather than an exact 24h point means
-// an event still gets caught even if a run is a little late or one run is
-// missed. That makes the window itself an approximation; the real
-// once-per-attendee guarantee is the NotificationLog check below, keyed on
-// (type, recipient, subject), which is what actually prevents a duplicate
-// reminder if the same event falls inside two consecutive runs' windows.
-const WINDOW_START_HOURS = 23;
-const WINDOW_END_HOURS = 25;
+// Vercel Cron (see vercel.json) calls sendEventReminders once a day
+// (Hobby plan), so an event is reminded if it starts 20h–28h after the run.
+// The window is only as wide as one run's reach: with runs 24h apart, a
+// window narrower than 24h leaves events starting at some times of day
+// never reminded at all. The once-per-attendee guarantee is not the window
+// but Ticket.reminderSentAt (stamped after a send, filtered on below) plus
+// the NotificationLog check keyed on (type, recipient, subject), which also
+// covers reminders sent before that column existed.
+const WINDOW_START_HOURS = 20;
+const WINDOW_END_HOURS = 28;
 
 export interface SendEventRemindersResult {
   ok: true;
@@ -24,6 +25,16 @@ export interface SendEventRemindersResult {
 // WhatsApp/SMS text is `body` alone — so it's free to be an internal id.
 function reminderLogSubject(eventId: string): string {
   return `Event reminder — ${eventId}`;
+}
+
+// A reminder goes to the order's buyer (the distinct-by-userId query below),
+// so it stamps every still-unstamped ticket in that buyer's PAID orders for
+// the event — not just the first order's.
+async function markTicketsReminded(eventId: string, userId: string, at: Date) {
+  await prisma.ticket.updateMany({
+    where: { eventId, reminderSentAt: null, order: { userId, status: "PAID" } },
+    data: { reminderSentAt: at },
+  });
 }
 
 export async function sendEventReminders(now: Date = new Date()): Promise<SendEventRemindersResult> {
@@ -44,7 +55,7 @@ export async function sendEventReminders(now: Date = new Date()): Promise<SendEv
     // One row per buyer, same "unique ticket holder" dedup as the
     // EVENT_CANCELLED broadcast above (handleCancelEvent).
     const orders = await prisma.order.findMany({
-      where: { eventId: event.id, status: "PAID" },
+      where: { eventId: event.id, status: "PAID", tickets: { some: { reminderSentAt: null } } },
       include: { user: { select: { id: true, phone: true } } },
       distinct: ["userId"],
     });
@@ -56,7 +67,13 @@ export async function sendEventReminders(now: Date = new Date()): Promise<SendEv
       const alreadySent = await prisma.notificationLog.findFirst({
         where: { type: "EVENT_REMINDER", recipient: user.phone, subject },
       });
-      if (alreadySent) continue;
+      if (alreadySent) {
+        // Reminded before Ticket.reminderSentAt existed — backfill it (from
+        // when the log row was written) so later runs skip this buyer at the
+        // query instead of re-checking the log.
+        await markTicketsReminded(event.id, user.id, alreadySent.createdAt);
+        continue;
+      }
 
       const wallet = await prisma.wallet.findUnique({
         where: { eventId_ownerUserId: { eventId: event.id, ownerUserId: user.id } },
@@ -64,13 +81,18 @@ export async function sendEventReminders(now: Date = new Date()): Promise<SendEv
       });
       const balanceLine = wallet ? formatCents(wallet.balanceCents, wallet.currency) : formatCents(0);
 
-      await sendNotification({
+      const log = await sendNotification({
         type: "EVENT_REMINDER",
         channel: "WHATSAPP",
         recipient: user.phone,
         subject,
         body: `📅 Reminder: ${event.title} is tomorrow! Your balance: ${balanceLine}. Gates open at ${gatesOpenAt}.`,
       });
+      // A FAILED send is not a sent reminder, so it leaves the tickets
+      // unstamped. (A FAILED NotificationLog row still blocks a retry via the
+      // check above — unchanged behaviour.) LOGGED means no provider is
+      // configured, which the rest of the codebase treats as sent.
+      if (log.status !== "FAILED") await markTicketsReminded(event.id, user.id, new Date());
       remindersSent++;
     }
   }
