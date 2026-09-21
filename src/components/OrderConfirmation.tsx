@@ -347,6 +347,11 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
                   <p className="font-mono text-2xl font-bold tracking-widest text-accent-hover">{t.code}</p>
                   <p className="mt-1 text-xs text-muted">Show this QR code or code at the gate for entry.</p>
                   {canTransfer && (
+                    <Link href={`/account/tickets/${t.id}`} className="mt-1 inline-block text-xs font-medium text-accent-hover">
+                      Resell this ticket →
+                    </Link>
+                  )}
+                  {canTransfer && (
                     <TransferControl
                       ticketId={t.id}
                       pending={pendingByTicket[t.id]}

@@ -28,7 +28,9 @@ export type NotificationType =
   // Session 29
   | "DENSITY_ALERT"
   // Session 30
-  | "VOLUNTEER_INVITED";
+  | "VOLUNTEER_INVITED"
+  // Session 32
+  | "TICKET_RESALE";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

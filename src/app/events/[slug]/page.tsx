@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { getPublicEventSeo, computeEventPricing } from "@/lib/marketplace";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { countActiveListings } from "@/lib/resale";
 import EventDetailClient from "./EventDetailClient";
 
 // EventDetailClient (the actual buyer-facing page — ticket selection,
@@ -47,6 +50,14 @@ export async function generateMetadata({ params }: EventDetailPageProps): Promis
 export default async function EventDetailPage({ params }: EventDetailPageProps) {
   const event = await getPublicEventSeo(params.slug);
 
+  // Session 32 — "Resale tickets available" link, only when this event has
+  // resale switched on AND at least one live listing. Server-side here, since
+  // EventDetailClient reads from Dexie and knows nothing about listings.
+  const resaleEvent = event
+    ? await prisma.event.findUnique({ where: { slug: params.slug }, select: { id: true, resaleEnabled: true } })
+    : null;
+  const resaleListingCount = resaleEvent?.resaleEnabled ? await countActiveListings(resaleEvent.id) : 0;
+
   const jsonLd = event
     ? {
         "@context": "https://schema.org",
@@ -86,6 +97,14 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
       {jsonLd && (
         // eslint-disable-next-line react/no-danger
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      )}
+      {resaleListingCount > 0 && (
+        <div className="mx-auto max-w-5xl px-4 pt-4 sm:px-6">
+          <Link href={`/events/${params.slug}/resale`} className="card flex items-center justify-between p-3 text-sm font-medium text-accent-hover transition hover:border-accent">
+            <span>Resale tickets available ({resaleListingCount})</span>
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       )}
       <EventDetailClient />
     </>

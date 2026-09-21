@@ -24,7 +24,11 @@ function currentHolder(ticket: { currentHolderUserId: string | null; order: { us
 export async function createTransfer(fromUserId: string, ticketId: string, toEmail: string) {
   const ticket = await prisma.ticket.findUnique({
     where: { id: ticketId },
-    include: { order: { select: { userId: true } }, event: { select: { title: true } } },
+    include: {
+      order: { select: { userId: true } },
+      event: { select: { title: true } },
+      listing: { select: { status: true } },
+    },
   });
   if (!ticket) {
     return { ok: false as const, error: "Ticket not found." };
@@ -34,6 +38,12 @@ export async function createTransfer(fromUserId: string, ticketId: string, toEma
   }
   if (ticket.checkedIn) {
     return { ok: false as const, error: "This ticket has already been checked in and can't be transferred." };
+  }
+  // Session 32 — a ticket listed for resale can't also be given away; the
+  // listing has to be cancelled first, or a buyer could pay for a ticket the
+  // seller no longer holds.
+  if (ticket.listing?.status === "ACTIVE") {
+    return { ok: false as const, error: "This ticket is listed for resale. Cancel the listing before transferring it." };
   }
 
   const normalizedEmail = toEmail.trim().toLowerCase();

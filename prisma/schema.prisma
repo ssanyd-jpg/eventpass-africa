@@ -41,6 +41,8 @@ model User {
   eventForecastsSaved         EventForecast[]     @relation("EventForecastSavedBy")
   ticketGroupsLed             TicketGroup[]       @relation("TicketGroupLead")
   waitlistEntries             WaitlistEntry[]
+  ticketListingsSold          TicketListing[]     @relation("TicketListingSeller")
+  ticketListingsBought        TicketListing[]     @relation("TicketListingBuyer")
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -506,6 +508,57 @@ model TicketTransfer {
   fromUser   User   @relation("TicketTransfersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
 }
 
+// Session 32 — peer-to-peer ticket resale. status is ACTIVE | SOLD | CANCELLED
+// | EXPIRED (plain-string convention). ticketId is unique: a ticket has at
+// most ONE listing row for its whole life, and once that row is SOLD the
+// ticket can't be listed again (the row is the permanent record of that sale
+// and its commission). A CANCELLED/EXPIRED row is reused when the holder
+// lists the ticket again.
+//
+// Prices are minor units of `currency` (a snapshot of Event.currency).
+// originalPrice is the face value the ticket was bought at; askingPrice is
+// never above it (nor above Event.maxResalePrice) — see src/lib/resale.ts.
+//
+// Money: the buyer pays askingPrice through the payment provider to Chaap.
+// commissionAmount (5% of askingPrice, rounded) is Chaap's; sellerPayoutAmount
+// is what is owed to the seller. payoutStatus tracks that owed amount:
+// NONE (not sold) | PENDING (owed) | PAID_OUT.
+//
+// reservedByUserId/reservedUntil/paymentReference hold a listing for one buyer
+// while their mobile-money charge is awaiting confirmation, so two people
+// can't both pay for the same ticket. status stays ACTIVE during a reservation.
+model TicketListing {
+  id                 String    @id @default(cuid())
+  askingPrice        Int
+  originalPrice      Int
+  currency           String    @default("TZS")
+  status             String    @default("ACTIVE")
+  listedAt           DateTime  @default(now())
+  expiresAt          DateTime?
+  soldAt             DateTime?
+  commissionAmount   Int       @default(0)
+  sellerPayoutAmount Int       @default(0)
+  payoutStatus       String    @default("NONE")
+  reservedByUserId   String?
+  reservedUntil      DateTime?
+  paymentReference   String?
+
+  ticketId String @unique
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  sellerId String
+  seller   User   @relation("TicketListingSeller", fields: [sellerId], references: [id])
+
+  buyerId String?
+  buyer   User?   @relation("TicketListingBuyer", fields: [buyerId], references: [id])
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, status])
+  @@index([sellerId])
+}
+
 // provider is one of: MPESA_TZ | TIGO_PESA | AIRTEL_MONEY | HALOPESA
 // (plain string rather than a Postgres enum, to keep adding a new provider
 // a data change instead of a migration)
@@ -613,12 +666,20 @@ model Event {
   // WaitlistEntry in queue (see releaseWaitlistCapacity in
   // src/lib/waitlist.ts).
   waitlistEnabled Boolean @default(false)
+  // Session 32 — organiser opt-in for peer-to-peer ticket resale (see
+  // TicketListing). Off by default. Resale is never above face value; when
+  // maxResalePrice is set it lowers that ceiling further (a cap on the
+  // asking price of any one ticket, in this event's currency's minor units).
+  // null = the face value of the ticket is the only cap.
+  resaleEnabled   Boolean @default(false)
+  maxResalePrice  Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 
+  ticketListings        TicketListing[]
   ticketTypes           TicketType[]
   orders                Order[]
   tickets               Ticket[]
@@ -1117,6 +1178,7 @@ model Ticket {
 
   credentials Credential[]
   transfers   TicketTransfer[]
+  listing     TicketListing?
 
   // Session 22 — every analytics/live-monitoring fetcher (getLiveEventData,
   // getOrganizerAnalyticsData, getPlatformAnalyticsData) filters tickets by

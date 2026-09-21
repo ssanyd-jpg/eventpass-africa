@@ -18,6 +18,8 @@ import {
 import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
 import { summarizeCarryOverVolume } from "@/lib/carry-over";
 import { summarizeGroupSales } from "@/lib/ticket-groups";
+import { getOrganizerResaleListings } from "@/lib/resale";
+import { summarizeResaleRevenue } from "@/lib/resale-pricing";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -34,6 +36,7 @@ export default async function OrganizerAnalyticsPage() {
 
   const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups } =
     await getOrganizerAnalyticsData(session.user.organizationId);
+  const resaleStats = summarizeResaleRevenue(await getOrganizerResaleListings(session.user.organizationId));
 
   if (myEvents.length === 0) {
     return (
@@ -217,6 +220,37 @@ export default async function OrganizerAnalyticsPage() {
         <div className="card p-5">
           <p className="text-xs uppercase tracking-wide text-muted">Average group size</p>
           <p className="mt-1 text-2xl font-bold">{groupSales.averageGroupSize ?? "—"}</p>
+        </div>
+      </div>
+
+      <h2 className="mb-3 mt-8 font-semibold">Ticket resale</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Resales completed</p>
+          <p className="mt-1 text-2xl font-bold">{resaleStats.salesCount}</p>
+          <p className="mt-1 text-xs text-muted">Tickets resold between attendees, all time</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Resale volume</p>
+          {Object.keys(resaleStats.volumeByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(resaleStats.volumeByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">Not part of your ticket revenue above</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Resale commission revenue</p>
+          {Object.keys(resaleStats.commissionByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(resaleStats.commissionByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">Chaap&apos;s 5% commission on your events&apos; resales</p>
         </div>
       </div>
 

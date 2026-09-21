@@ -275,6 +275,9 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/waitlist`} className="btn-secondary">
             Waitlist ↗
           </Link>
+          <Link href={`/dashboard/events/${event.id}/resale`} className="btn-secondary">
+            Ticket resale ↗
+          </Link>
           <Link href={`/dashboard/events/${event.id}/volunteers`} className="btn-secondary">
             Volunteers ↗
           </Link>
