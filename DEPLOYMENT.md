@@ -258,4 +258,4 @@ instead — don't leave the endpoint open.
       work (this is the entire point of the architecture — worth
       confirming on the actual deployed build, not just locally).
 
-<!-- trigger -->
+<!-- trigger --> 
