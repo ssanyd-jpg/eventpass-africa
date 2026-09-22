@@ -39,6 +39,44 @@ npx prisma migrate dev --name init
 npx prisma db seed         # optional — loads demo events/accounts
 ```
 
+## Database Safety
+
+**Never pass the live `DATABASE_URL` (or `DIRECT_URL`) as a
+`--shadow-database-url`** to any Prisma command. Prisma's shadow-database
+workflow drops and recreates whatever database it's pointed at from scratch
+to compute a schema diff — aimed at a real database instead of a scratch
+one, this silently wipes every row and table in it, with no confirmation
+prompt. This happened for real once already: `prisma migrate diff
+--shadow-database-url $DATABASE_URL` (meant to preview a pending migration)
+was run against the live `neondb` database, resetting it to empty.
+
+1. **Never pass `DATABASE_URL`/`DIRECT_URL` to `--shadow-database-url`**, or
+   to any other flag documented as a scratch/shadow target, on any Prisma
+   command (`migrate diff`, `migrate dev`, `db push`, etc.).
+2. **Always use a separate, disposable database for shadow operations** —
+   `TEST_DATABASE_URL` (see §1 above) or a throwaway Neon branch created
+   just for the diff, never the dev or production database.
+3. **If data loss happens anyway**, the recovery procedure is:
+
+   ```bash
+   # 1. Baseline every migration that already matches the live schema —
+   #    this only records history in _prisma_migrations, it never re-runs
+   #    any SQL, so it's safe exactly when the schema already matches.
+   for m in $(ls prisma/migrations | grep -v migration_lock.toml); do
+     npx prisma migrate resolve --applied "$m"
+   done
+   # 2. Apply anything genuinely new (a migration written but not yet run).
+   npx prisma migrate deploy
+   # 3. Restore demo/seed data — real user data beyond the seed is only
+   #    recoverable via Neon's point-in-time restore/branch history, if any.
+   npx prisma db seed
+   ```
+
+   Run `npx prisma migrate status` first to confirm which migrations the
+   live schema actually matches before baselining — resolving a migration
+   as "applied" when its SQL never really ran leaves the schema silently
+   out of sync with no error.
+
 ## 2. Deploy to Vercel
 
 1. Push this repo to GitHub and import it in Vercel.
