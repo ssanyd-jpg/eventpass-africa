@@ -12,9 +12,18 @@ import { formatCents } from "@/lib/format";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import Spinner from "@/components/Spinner";
+import HighContrastToggle from "@/components/HighContrastToggle";
+import { useHighContrast } from "@/lib/use-high-contrast";
+import { HIGH_CONTRAST_VARS } from "@/lib/scan-high-contrast";
 import { resolveCodeFromUid, isUidSuperseded, resolveTicketIdFromUid } from "@/lib/credentials";
 import { resolveOfflineChargeMessage } from "@/lib/wallet-charge";
 import { hasFeature } from "@/lib/event-modes";
+
+// Session D — one-tap common amounts, sale mode only. Generalized to the
+// event's own currency rather than hard-coding TZS, same "no currency
+// assumption baked in" discipline CURRENCIES/formatCents already follow
+// everywhere else in this app.
+const QUICK_CHARGE_AMOUNTS_MAJOR = [5000, 10000, 20000];
 
 // Same network list as the buyer's own top-up form (account/wallet/[walletId]/page.tsx) —
 // Session 15's split payment needs the same phone+network pair to STK-push
@@ -50,6 +59,13 @@ type TerminalResult = {
   // THIS tap before overwriting it (staff may have already moved on to a
   // different attendee by the time the sync result arrives).
   tapClientId?: string;
+  // Session D — a completed sale-mode charge's balance before/after, for
+  // the "clearer balance before/after" spec item. Derived, not stored:
+  // balanceAfterCents is the wallet's real post-sync balance, and before
+  // is just that plus what was just charged.
+  balanceBeforeCents?: number;
+  balanceAfterCents?: number;
+  currency?: string;
 };
 
 export default function WalletChargeTerminalPage() {
@@ -95,6 +111,7 @@ export default function WalletChargeTerminalPage() {
   // syncs back — never blocks entering the next attendee in the meantime.
   const [pendingTapClientId, setPendingTapClientId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { highContrast, toggle: toggleHighContrast } = useHighContrast();
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(eventId);
@@ -283,7 +300,14 @@ export default function WalletChargeTerminalPage() {
       return;
     }
     if (tx.status === "COMPLETED") {
-      setResult({ kind: "valid", message: t("wallet.chargedMessage", { amount: formatCents(amountCents, tx.currency), groupSuffix }), code: normalized });
+      setResult({
+        kind: "valid",
+        message: t("wallet.chargedMessage", { amount: formatCents(amountCents, tx.currency), groupSuffix }),
+        code: normalized,
+        balanceAfterCents: wallet?.balanceCents,
+        balanceBeforeCents: wallet ? wallet.balanceCents + amountCents : undefined,
+        currency: tx.currency,
+      });
       return;
     }
     setResult({ kind: "invalid", message: t("wallet.couldntConfirmCharge"), code: normalized });
@@ -495,21 +519,25 @@ export default function WalletChargeTerminalPage() {
   }
 
   return (
+    <div className="min-h-screen bg-background" style={highContrast ? HIGH_CONTRAST_VARS : undefined}>
     <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
       <Link href={`/scan/${event.id}`} className="text-sm text-muted hover:text-foreground">
         ← {event.title} {t("wallet.backToGateScannerSuffix")}
       </Link>
-      <h1 className="mt-3 text-2xl font-bold">{t("wallet.title")}</h1>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">{t("wallet.title")}</h1>
+        <HighContrastToggle highContrast={highContrast} onToggle={toggleHighContrast} />
+      </div>
 
       <div className="mt-4 flex gap-2">
         <button
-          className={mode === "sale" ? "btn-primary" : "btn-secondary"}
+          className={`min-h-12 flex-1 text-base ${mode === "sale" ? "btn-primary" : "btn-secondary"}`}
           onClick={() => { setMode("sale"); setResult(null); setSplitPrompt(null); }}
         >
           {t("wallet.modeSale")}
         </button>
         <button
-          className={mode === "tap" ? "btn-primary" : "btn-secondary"}
+          className={`min-h-12 flex-1 text-base ${mode === "tap" ? "btn-primary" : "btn-secondary"}`}
           onClick={() => { setMode("tap"); setResult(null); setSplitPrompt(null); }}
         >
           {t("wallet.modeTap")}
@@ -519,7 +547,7 @@ export default function WalletChargeTerminalPage() {
             than food/merch stalls. */}
         {hasFeature(event.eventType, "exhibitorLeads") && (
           <button
-            className={mode === "lead" ? "btn-primary" : "btn-secondary"}
+            className={`min-h-12 flex-1 text-base ${mode === "lead" ? "btn-primary" : "btn-secondary"}`}
             onClick={() => { setMode("lead"); setResult(null); setSplitPrompt(null); }}
           >
             {t("wallet.modeLead")}
@@ -535,7 +563,7 @@ export default function WalletChargeTerminalPage() {
         <div className="card mt-5 space-y-4 p-5">
           <div>
             <label className="label" htmlFor="vendor">{t("wallet.chargingAsLabel")}</label>
-            <select id="vendor" className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+            <select id="vendor" className="input min-h-12 text-base" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">{t("wallet.selectVendor")}</option>
               {approvedVendors.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}{v.boothNumber ? ` (${t("common.boothNumber", { number: v.boothNumber })})` : ""}</option>
@@ -549,10 +577,22 @@ export default function WalletChargeTerminalPage() {
               type="number"
               min="1"
               step="500"
-              className="input"
+              className="input min-h-16 text-center text-4xl font-extrabold tabular-nums"
               value={amountMajor}
               onChange={(e) => setAmountMajor(e.target.value)}
             />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {QUICK_CHARGE_AMOUNTS_MAJOR.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  className="btn-secondary min-h-12 text-sm font-bold"
+                  onClick={() => setAmountMajor(String(amount))}
+                >
+                  {formatCents(amount * 100, event.currency)}
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label className="label" htmlFor="item">{t("wallet.itemLabel")}</label>
@@ -650,16 +690,16 @@ export default function WalletChargeTerminalPage() {
         <NFCScanner onDetect={handleNfcDetect} />
       </div>
 
-      <form onSubmit={onSubmit} className="flex gap-2">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
         <input
           ref={inputRef}
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder={mode === "lead" ? t("wallet.enterOrScanTicket") : t("wallet.enterOrScanWallet")}
-          className="input font-mono uppercase tracking-widest"
+          className="input min-h-12 font-mono text-base uppercase tracking-widest"
         />
-        <button type="submit" disabled={busy} className="btn-primary shrink-0">
+        <button type="submit" disabled={busy} className="btn-primary min-h-14 shrink-0 text-lg font-bold sm:min-h-12">
           {busy ? "…" : mode === "sale" ? t("wallet.charge") : mode === "tap" ? t("wallet.recordTapButton") : t("wallet.captureLeadButton")}
         </button>
       </form>
@@ -717,7 +757,7 @@ export default function WalletChargeTerminalPage() {
         >
           <p className="font-mono text-lg font-bold tracking-widest">{result.code}</p>
           <p
-            className={`mt-1 text-lg font-bold ${
+            className={`mt-1 text-2xl font-extrabold ${
               result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured"
                 ? "text-ok"
                 : result.kind === "declined" || result.kind === "offline" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
@@ -728,8 +768,16 @@ export default function WalletChargeTerminalPage() {
             {result.kind === "valid" || result.kind === "recorded" || result.kind === "leadCaptured" ? "✓ " : "✕ "}
             {result.message}
           </p>
+          {result.balanceBeforeCents != null && result.balanceAfterCents != null && result.currency && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-lg font-bold">
+              <span className="text-muted line-through">{formatCents(result.balanceBeforeCents, result.currency)}</span>
+              <span aria-hidden="true">→</span>
+              <span>{formatCents(result.balanceAfterCents, result.currency)}</span>
+            </div>
+          )}
         </div>
       )}
+    </div>
     </div>
   );
 }

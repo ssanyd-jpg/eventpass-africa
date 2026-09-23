@@ -157,4 +157,18 @@ body {
     background: var(--accent);
     transition: width 0.3s ease;
   }
+  /* Polish Session D — full-screen scan result countdown ring
+     (src/components/ScanResultOverlay.tsx). Duration is set per-instance
+     via inline style (transition-duration), everything else lives here so
+     prefers-reduced-motion can kill just the animation, not the ring
+     itself — it still renders full, just without the depleting sweep. */
+  .scan-countdown-ring {
+    transition-property: stroke-dashoffset;
+    transition-timing-function: linear;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .scan-countdown-ring {
+      transition: none;
+    }
+  }
 }

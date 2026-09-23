@@ -12,6 +12,12 @@ import { formatElapsed, computeGunTimeOffsetSeconds } from "@/lib/timing";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import Spinner from "@/components/Spinner";
+import HighContrastToggle from "@/components/HighContrastToggle";
+import { useHighContrast } from "@/lib/use-high-contrast";
+import { HIGH_CONTRAST_VARS } from "@/lib/scan-high-contrast";
+
+// Spec item 3 — "last 5 recorded times in a clean feed".
+const RECENT_FEED_LIMIT = 5;
 
 // Session 12's timing scanner — one device per timing point on the course.
 // Deliberately always-optimistic (unlike the wallet charge terminal, which
@@ -45,6 +51,7 @@ export default function TimingScannerPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { highContrast, toggle: toggleHighContrast } = useHighContrast();
 
   useEffect(() => {
     if (!timingPointId && timingPoints && timingPoints.length > 0) {
@@ -55,8 +62,9 @@ export default function TimingScannerPage() {
   const recent = useLiveQuery(async () => {
     if (!timingPointId) return [];
     const all = await db.chipTimes.where("timingPointId").equals(timingPointId).toArray();
-    return all.sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1)).slice(0, 10);
+    return all.sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1)).slice(0, RECENT_FEED_LIMIT);
   }, [timingPointId]);
+  const lastRecorded = recent?.[0] ?? null;
 
   // Refs so the scan handlers' identity stays stable — CameraScanner
   // restarts its stream whenever onDetect changes, same reasoning the gate
@@ -150,11 +158,15 @@ export default function TimingScannerPage() {
   }
 
   return (
+    <div className="min-h-screen bg-background" style={highContrast ? HIGH_CONTRAST_VARS : undefined}>
     <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
       <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
         ← {event.title}
       </Link>
-      <h1 className="mt-3 text-2xl font-bold">{t("timing.title")}</h1>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">{t("timing.title")}</h1>
+        <HighContrastToggle highContrast={highContrast} onToggle={toggleHighContrast} />
+      </div>
       {event.gunStartAt && (
         <p className="mt-1 text-sm text-muted">
           {t("timing.gunTimeLabel")} <span className="font-mono">{formatElapsed((Date.now() - new Date(event.gunStartAt).getTime()) / 1000)}</span>
@@ -163,7 +175,7 @@ export default function TimingScannerPage() {
 
       <div className="card mt-4 p-5">
         <label className="label" htmlFor="timingPoint">{t("timing.selectPointLabel")}</label>
-        <select id="timingPoint" className="input" value={timingPointId} onChange={(e) => setTimingPointId(e.target.value)}>
+        <select id="timingPoint" className="input min-h-12 text-base" value={timingPointId} onChange={(e) => setTimingPointId(e.target.value)}>
           {(timingPoints ?? []).length === 0 && <option value="">{t("timing.noPointsSetUp")}</option>}
           {(timingPoints ?? []).map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
@@ -185,30 +197,51 @@ export default function TimingScannerPage() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder={t("timing.enterCodeManually")}
-          className="input font-mono uppercase tracking-widest"
+          className="input min-h-12 font-mono text-base uppercase tracking-widest"
         />
-        <button type="submit" className="btn-primary shrink-0">{t("timing.record")}</button>
+        <button type="submit" className="btn-primary min-h-12 shrink-0 text-base">{t("timing.record")}</button>
       </form>
 
-      <h2 className="mb-3 mt-8 font-semibold">{t("timing.lastRecorded")}</h2>
+      {/* Spec item 3 — the just-recorded time in large, instantly-readable
+          type, athlete/bib prominent above it. Separate from the feed
+          below (which still lists it as its top row) so there's always one
+          unmissable answer to "did that just work". */}
+      {lastRecorded && (
+        <div className="card mt-6 p-6 text-center">
+          <p className="text-lg font-bold">{lastRecorded.athleteName}</p>
+          <p className="mt-0.5 text-base text-muted">
+            {t("timing.bibLabel", { bib: lastRecorded.bib })}
+            {lastRecorded.ticketTypeName ? ` · ${lastRecorded.ticketTypeName}` : ""}
+          </p>
+          <p className="mt-2 font-mono text-[clamp(2.5rem,14vw,4.5rem)] font-extrabold leading-none tabular-nums">
+            {lastRecorded.gunTimeOffsetSeconds != null ? formatElapsed(lastRecorded.gunTimeOffsetSeconds) : "—"}
+          </p>
+          {lastRecorded.syncStatus === "pending" && (
+            <span className="pill mt-2 border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>
+          )}
+        </div>
+      )}
+
+      <h2 className="mb-3 mt-8 text-lg font-semibold">{t("timing.lastRecorded")}</h2>
       {(recent ?? []).length === 0 ? (
         <div className="card p-6 text-center text-muted">{t("timing.nothingRecorded")}</div>
       ) : (
         <div className="card divide-y divide-border">
           {(recent ?? []).map((c) => (
-            <div key={c.id} className="flex items-center justify-between p-3 text-sm">
+            <div key={c.id} className="flex items-center justify-between p-4">
               <div>
-                <p className="font-medium">{c.athleteName}</p>
+                <p className="text-base font-semibold">{c.athleteName}</p>
                 <p className="text-sm text-muted">{t("timing.bibLabel", { bib: c.bib })}{c.ticketTypeName ? ` · ${c.ticketTypeName}` : ""}</p>
               </div>
               <div className="text-right">
-                <p className="font-mono">{c.gunTimeOffsetSeconds != null ? formatElapsed(c.gunTimeOffsetSeconds) : "—"}</p>
+                <p className="font-mono text-xl font-bold tabular-nums">{c.gunTimeOffsetSeconds != null ? formatElapsed(c.gunTimeOffsetSeconds) : "—"}</p>
                 {c.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>}
               </div>
             </div>
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }

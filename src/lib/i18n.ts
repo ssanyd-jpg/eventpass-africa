@@ -243,7 +243,7 @@ export const dictionaries = {
     "timing.selectPointFirst": "Select a timing point first.",
     "timing.enterCodeManually": "Enter ticket code manually",
     "timing.record": "Record",
-    "timing.lastRecorded": "Last 10 recorded here",
+    "timing.lastRecorded": "Last 5 recorded here",
     "timing.nothingRecorded": "Nothing recorded yet at this point.",
     "timing.bibLabel": "Bib {bib}",
 
@@ -628,7 +628,7 @@ export const dictionaries = {
     "timing.selectPointFirst": "Chagua kituo cha muda kwanza.",
     "timing.enterCodeManually": "Weka msimbo wa tiketi mwenyewe",
     "timing.record": "Rekodi",
-    "timing.lastRecorded": "Zilizorekodiwa hapa mara 10 za mwisho",
+    "timing.lastRecorded": "Zilizorekodiwa hapa mara 5 za mwisho",
     "timing.nothingRecorded": "Hakuna kilichorekodiwa bado kwenye kituo hiki.",
     // TODO: native speaker review — "bib" (a runner's race number, worn on
     // the chest) doesn't have a fixed Swahili loanword in this codebase yet;

@@ -12,8 +12,26 @@ import { useTranslation } from "@/lib/use-translation";
 import CameraScanner from "@/components/CameraScanner";
 import NFCScanner, { type NFCReading } from "@/components/NFCScanner";
 import Spinner from "@/components/Spinner";
+import ScanResultOverlay, { type ScanResultTone } from "@/components/ScanResultOverlay";
+import HighContrastToggle from "@/components/HighContrastToggle";
+import { useHighContrast } from "@/lib/use-high-contrast";
+import { HIGH_CONTRAST_VARS } from "@/lib/scan-high-contrast";
 import { resolveCodeFromUid, isUidSuperseded } from "@/lib/credentials";
 import { resolveGateSignal } from "@/lib/ticket-types";
+
+// Full-screen takeover for every result except "vip" (which keeps its own
+// established gold screen) — maps this page's many result kinds down to
+// the 3 visual tones the spec calls out (success/amber/red), auto-resets
+// after 3s per spec item 1.
+const RESULT_AUTO_RESET_MS = 3000;
+function resultTone(kind: ScanResult["kind"]): ScanResultTone {
+  if (kind === "valid") return "success";
+  if (kind === "already" || kind === "paymentPending" || kind === "notProvisioned" || kind === "wristbandReplaced") return "warn";
+  return "danger";
+}
+function resultIcon(tone: ScanResultTone): string {
+  return tone === "success" ? "✓" : tone === "warn" ? "↻" : "✕";
+}
 
 type ScanResult = {
   kind:
@@ -64,6 +82,7 @@ export default function GateScannerPage() {
   const [code, setCode] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { highContrast, toggle: toggleHighContrast } = useHighContrast();
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(eventId);
@@ -151,7 +170,13 @@ export default function GateScannerPage() {
     });
 
     if (signal === "already") {
-      setResult({ kind: "already", message: t("scan.alreadyCheckedIn"), ticketTypeName: match.ticketTypeName, code: normalized });
+      setResult({
+        kind: "already",
+        message: t("scan.alreadyCheckedIn"),
+        ticketTypeName: match.ticketTypeName,
+        attendeeLabel: match.groupMemberName ?? null,
+        code: normalized,
+      });
       return;
     }
 
@@ -179,7 +204,13 @@ export default function GateScannerPage() {
             attendeeLabel: match.groupMemberName ?? null,
             code: normalized,
           }
-        : { kind: "valid", message: t("scan.entryGranted"), ticketTypeName: match.ticketTypeName, code: normalized }
+        : {
+            kind: "valid",
+            message: t("scan.entryGranted"),
+            ticketTypeName: match.ticketTypeName,
+            attendeeLabel: match.groupMemberName ?? null,
+            code: normalized,
+          }
     );
   }, [t]);
 
@@ -317,123 +348,122 @@ export default function GateScannerPage() {
     );
   }
 
+  // Session D — every other result kind takes over the full screen too,
+  // for the same "read it from across the gate" reason the VIP screen
+  // above already does. attendeeLabel is the closest thing to an attendee
+  // name this device ever has offline (a group-purchase member's own
+  // chosen label — see ScanResult's own comment); falls back to the
+  // ticket/vendor name, then the plain status message.
+  if (result) {
+    const tone = resultTone(result.kind);
+    const title = result.attendeeLabel || result.ticketTypeName || result.message;
+    const subtitle = result.attendeeLabel
+      ? [result.ticketTypeName, result.boothNumber ? t("common.boothNumber", { number: result.boothNumber }) : null]
+          .filter(Boolean)
+          .join(" · ") || result.message
+      : result.ticketTypeName
+      ? result.message
+      : null;
+    const hint =
+      result.kind === "refunded" || result.kind === "paymentFailed"
+        ? t("scan.refundedHint")
+        : result.kind === "paymentPending"
+        ? t("scan.paymentPendingHint")
+        : null;
+    return (
+      <ScanResultOverlay
+        tone={tone}
+        icon={resultIcon(tone)}
+        title={title}
+        subtitle={subtitle}
+        hint={hint}
+        code={result.code}
+        durationMs={RESULT_AUTO_RESET_MS}
+        onDone={() => setResult(null)}
+      />
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
-      <div className="flex items-center justify-between">
-        <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
-          ← {event.title}
-        </Link>
-        <Link href={`/scan/${event.id}/wallet`} className="text-sm font-medium text-accent-hover">
-          {t("scan.chargeWalletsLink")}
-        </Link>
-      </div>
-
-      <h1 className="mt-3 text-2xl font-bold">{t("scan.title")}</h1>
-
-      <div className="mt-4 flex gap-2">
-        <button
-          className={mode === "attendee" ? "btn-primary" : "btn-secondary"}
-          onClick={() => { setMode("attendee"); setResult(null); }}
-        >
-          {t("scan.modeAttendees")}
-        </button>
-        <button
-          className={mode === "vendor" ? "btn-primary" : "btn-secondary"}
-          onClick={() => { setMode("vendor"); setResult(null); }}
-        >
-          {t("scan.modeVendors")}
-        </button>
-      </div>
-
-      <p className="mt-3 text-sm text-muted">
-        {!online && t("scan.offlinePrefix")}
-        {mode === "attendee" ? (
-          <>{t("scan.validatingAgainst")} {tickets.length} {tickets.length === 1 ? t("scan.ticket") : t("scan.tickets")}</>
-        ) : (
-          <>{t("scan.validatingAgainst")} {approvedVendors.length} {approvedVendors.length === 1 ? t("scan.vendor") : t("scan.vendors")}</>
-        )}
-      </p>
-
-      <div className="card mt-5 flex items-center justify-between p-5">
-        <div>
-          <p className="text-sm uppercase tracking-wide text-muted">{t("scan.checkedIn")}</p>
-          <p className="text-2xl font-bold">
-            {mode === "attendee" ? `${checkedInCount} / ${tickets.length}` : `${vendorCheckedInCount} / ${approvedVendors.length}`}
-          </p>
+    <div className="min-h-screen bg-background" style={highContrast ? HIGH_CONTRAST_VARS : undefined}>
+      <div className="mx-auto max-w-lg px-4 pb-20 pt-8 sm:px-6">
+        <div className="flex items-center justify-between gap-2">
+          <Link href={`/dashboard/events/${event.id}`} className="text-sm text-muted hover:text-foreground">
+            ← {event.title}
+          </Link>
+          <Link href={`/scan/${event.id}/wallet`} className="text-sm font-medium text-accent-hover">
+            {t("scan.chargeWalletsLink")}
+          </Link>
         </div>
-        <div className="h-2 w-32 overflow-hidden rounded-full bg-surface2">
-          <div
-            className="h-full bg-ok transition-all"
-            style={{
-              width:
-                mode === "attendee"
-                  ? `${tickets.length ? (checkedInCount / tickets.length) * 100 : 0}%`
-                  : `${approvedVendors.length ? (vendorCheckedInCount / approvedVendors.length) * 100 : 0}%`,
-            }}
-          />
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold">{t("scan.title")}</h1>
+          <HighContrastToggle highContrast={highContrast} onToggle={toggleHighContrast} />
         </div>
-      </div>
 
-      <div className="mt-5">
-        <CameraScanner onDetect={activeCheckIn} />
-        {mode === "attendee" && <NFCScanner onDetect={handleNfcDetect} />}
-      </div>
-
-      <form onSubmit={onSubmit} className="flex gap-2">
-        <input
-          ref={inputRef}
-          autoFocus
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder={mode === "attendee" ? t("scan.enterOrScan") : t("scan.enterOrScanVendor")}
-          className="input font-mono uppercase tracking-widest"
-        />
-        <button type="submit" className="btn-primary shrink-0">
-          {mode === "attendee" ? t("scan.checkIn") : t("scan.checkInVendor")}
-        </button>
-      </form>
-
-      {result && (
-        <div
-          className={`mt-5 rounded-xl border p-5 text-center ${
-            result.kind === "valid"
-              ? "border-ok/40 bg-ok/10"
-              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
-              ? "border-warn/40 bg-warn/10"
-              : "border-danger/40 bg-danger/10"
-          }`}
-        >
-          <p className="font-mono text-lg font-bold tracking-widest">{result.code}</p>
-          {result.ticketTypeName && (
-            <p className="text-sm text-muted">
-              {result.ticketTypeName}
-              {result.boothNumber ? ` · ${t("common.boothNumber", { number: result.boothNumber })}` : ""}
-            </p>
-          )}
-          <p
-            className={`mt-1 text-lg font-bold ${
-              result.kind === "valid"
-                ? "text-ok"
-                : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
-                ? "text-warn"
-                : "text-danger"
-            }`}
+        <div className="mt-4 flex gap-2">
+          <button
+            className={`min-h-12 flex-1 text-base ${mode === "attendee" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => { setMode("attendee"); setResult(null); }}
           >
-            {result.kind === "valid"
-              ? "✓ "
-              : result.kind === "already" || result.kind === "paymentPending" || result.kind === "notProvisioned" || result.kind === "wristbandReplaced"
-              ? "↻ "
-              : "✕ "}
-            {result.message}
-          </p>
-          {(result.kind === "refunded" || result.kind === "paymentFailed") && (
-            <p className="mt-1 text-sm text-muted">{t("scan.refundedHint")}</p>
-          )}
-          {result.kind === "paymentPending" && (
-            <p className="mt-1 text-sm text-muted">{t("scan.paymentPendingHint")}</p>
-          )}
+            {t("scan.modeAttendees")}
+          </button>
+          <button
+            className={`min-h-12 flex-1 text-base ${mode === "vendor" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => { setMode("vendor"); setResult(null); }}
+          >
+            {t("scan.modeVendors")}
+          </button>
         </div>
-      )}
+
+        <p className="mt-3 text-sm text-muted">
+          {!online && t("scan.offlinePrefix")}
+          {mode === "attendee" ? (
+            <>{t("scan.validatingAgainst")} {tickets.length} {tickets.length === 1 ? t("scan.ticket") : t("scan.tickets")}</>
+          ) : (
+            <>{t("scan.validatingAgainst")} {approvedVendors.length} {approvedVendors.length === 1 ? t("scan.vendor") : t("scan.vendors")}</>
+          )}
+        </p>
+
+        <div className="card mt-5 flex items-center justify-between p-5">
+          <div>
+            <p className="text-sm uppercase tracking-wide text-muted">{t("scan.checkedIn")}</p>
+            <p className="text-3xl font-extrabold">
+              {mode === "attendee" ? `${checkedInCount} / ${tickets.length}` : `${vendorCheckedInCount} / ${approvedVendors.length}`}
+            </p>
+          </div>
+          <div className="h-2 w-32 overflow-hidden rounded-full bg-surface2">
+            <div
+              className="h-full bg-ok transition-all"
+              style={{
+                width:
+                  mode === "attendee"
+                    ? `${tickets.length ? (checkedInCount / tickets.length) * 100 : 0}%`
+                    : `${approvedVendors.length ? (vendorCheckedInCount / approvedVendors.length) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <CameraScanner onDetect={activeCheckIn} />
+          {mode === "attendee" && <NFCScanner onDetect={handleNfcDetect} />}
+        </div>
+
+        <form onSubmit={onSubmit} className="flex gap-2">
+          <input
+            ref={inputRef}
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder={mode === "attendee" ? t("scan.enterOrScan") : t("scan.enterOrScanVendor")}
+            className="input min-h-12 font-mono text-base uppercase tracking-widest"
+          />
+          <button type="submit" className="btn-primary min-h-12 shrink-0 text-base">
+            {mode === "attendee" ? t("scan.checkIn") : t("scan.checkInVendor")}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
