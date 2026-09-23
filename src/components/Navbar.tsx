@@ -7,7 +7,15 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import SyncStatusBadge from "@/components/SyncStatusBadge";
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   const pathname = usePathname();
   const active = pathname === href || (href !== "/" && pathname.startsWith(href));
   return (
@@ -15,7 +23,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       href={href}
       className={`text-sm font-medium transition ${
         active ? "text-foreground" : "text-muted hover:text-foreground"
-      }`}
+      } ${className}`}
     >
       {children}
     </Link>
@@ -117,18 +125,25 @@ export default function Navbar() {
           )}
         </div>
       </div>
-      <div className="flex gap-5 border-t border-border px-4 py-2 md:hidden">
-        <NavLink href="/events">{t("nav.browse")}</NavLink>
-        {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
-        {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
-        {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments">{t("nav.payments")}</NavLink>}
-        {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
+      {/* A logged-in OWNER can rack up ten of these (every seeded demo
+          account included, via seed.ts's auto-created personal org) — wide
+          enough to overflow any phone width. no-scrollbar + overflow-x-auto
+          turns that into a horizontally-scrollable tab strip instead of
+          blowing out the whole page's width; shrink-0 on every link stops
+          flex from silently squeezing them down to fit before the browser
+          ever considers there's something to scroll. */}
+      <div className="no-scrollbar flex gap-5 overflow-x-auto border-t border-border px-4 py-2 md:hidden">
+        <NavLink href="/events" className="shrink-0 whitespace-nowrap">{t("nav.browse")}</NavLink>
+        {user && <NavLink href="/account/tickets" className="shrink-0 whitespace-nowrap">{t("nav.myTickets")}</NavLink>}
+        {user && <NavLink href="/account/sessions" className="shrink-0 whitespace-nowrap">{t("nav.sessions")}</NavLink>}
+        {user && <NavLink href="/dashboard" className="shrink-0 whitespace-nowrap">{t("nav.dashboard")}</NavLink>}
+        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team" className="shrink-0 whitespace-nowrap">{t("nav.team")}</NavLink>}
+        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit" className="shrink-0 whitespace-nowrap">{t("nav.auditLog")}</NavLink>}
+        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices" className="shrink-0 whitespace-nowrap">{t("nav.devices")}</NavLink>}
+        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers" className="shrink-0 whitespace-nowrap">{t("nav.customers")}</NavLink>}
+        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals" className="shrink-0 whitespace-nowrap">{t("nav.withdrawals")}</NavLink>}
+        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments" className="shrink-0 whitespace-nowrap">{t("nav.payments")}</NavLink>}
+        {user?.role === "ADMIN" && <NavLink href="/admin" className="shrink-0 whitespace-nowrap">{t("nav.admin")}</NavLink>}
       </div>
     </header>
   );
