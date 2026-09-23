@@ -20,6 +20,7 @@ import { summarizeCarryOverVolume } from "@/lib/carry-over";
 import { summarizeGroupSales } from "@/lib/ticket-groups";
 import { getOrganizerResaleListings } from "@/lib/resale";
 import { summarizeResaleRevenue } from "@/lib/resale-pricing";
+import { getOrganizerRedemptions, getLoyaltyDrivenRevenue, summarizeRedemptionsByTier, mostPopularRewards } from "@/lib/loyalty-rewards";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -37,6 +38,10 @@ export default async function OrganizerAnalyticsPage() {
   const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups } =
     await getOrganizerAnalyticsData(session.user.organizationId);
   const resaleStats = summarizeResaleRevenue(await getOrganizerResaleListings(session.user.organizationId));
+  const loyaltyRedemptions = await getOrganizerRedemptions(session.user.organizationId);
+  const redemptionsByTier = summarizeRedemptionsByTier(loyaltyRedemptions);
+  const popularRewards = mostPopularRewards(loyaltyRedemptions);
+  const loyaltyRevenueByCurrency = await getLoyaltyDrivenRevenue(session.user.organizationId);
 
   if (myEvents.length === 0) {
     return (
@@ -253,6 +258,49 @@ export default async function OrganizerAnalyticsPage() {
           <p className="mt-1 text-xs text-muted">Chaap&apos;s 5% commission on your events&apos; resales</p>
         </div>
       </div>
+
+      <h2 className="mb-3 mt-8 font-semibold">Loyalty rewards</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Redemptions</p>
+          <p className="mt-1 text-2xl font-bold">{loyaltyRedemptions.length}</p>
+          <p className="mt-1 text-xs text-muted">
+            NEW {redemptionsByTier.NEW} · REPEAT {redemptionsByTier.REPEAT} · VIP {redemptionsByTier.VIP}
+          </p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Loyalty-driven revenue</p>
+          {Object.keys(loyaltyRevenueByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(loyaltyRevenueByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">Orders paid for with a loyalty discount code</p>
+        </div>
+        <div className="card p-5">
+          <p className="mb-2 text-xs uppercase tracking-wide text-muted">Most popular reward</p>
+          {popularRewards.length === 0 ? (
+            <p className="text-sm text-muted">No redemptions yet.</p>
+          ) : (
+            <div>
+              <p className="text-lg font-semibold">{popularRewards[0].label}</p>
+              <p className="text-xs text-muted">{popularRewards[0].value} redemption{popularRewards[0].value === 1 ? "" : "s"}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {popularRewards.length > 1 && (
+        <div className="mb-8 card p-5">
+          <p className="mb-3 text-xs uppercase tracking-wide text-muted">Redemptions by reward</p>
+          <BarSeries
+            data={popularRewards.map((r) => ({ label: r.label, value: r.value, displayValue: String(r.value) }))}
+            emptyLabel="No redemptions yet."
+          />
+        </div>
+      )}
 
       {Object.keys(vendorSpend).length > 0 && (
         <>

@@ -30,7 +30,9 @@ export type NotificationType =
   // Session 30
   | "VOLUNTEER_INVITED"
   // Session 32
-  | "TICKET_RESALE";
+  | "TICKET_RESALE"
+  // Session 33
+  | "LOYALTY_REWARD";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

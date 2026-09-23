@@ -464,7 +464,7 @@ export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
   walletId: string;
-  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL" | "CARRY_OVER";
+  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL" | "CARRY_OVER" | "LOYALTY_CREDIT";
   status: "PENDING" | "COMPLETED" | "FAILED";
   amountCents: number | null;
   currency: string;

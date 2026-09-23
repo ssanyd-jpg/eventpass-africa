@@ -30,6 +30,7 @@ const TYPE_LABEL: Record<string, string> = {
   SPONSOR_TAP: "Sponsor tap",
   WITHDRAWAL: "Withdrawal",
   CARRY_OVER: "Carry-over",
+  LOYALTY_CREDIT: "Loyalty reward",
 };
 
 interface NDEFWriterLike {
@@ -415,7 +416,7 @@ export default function WalletDetailPage() {
                     {/* CARRY_OVER is the one signed type — a credit on the
                         new wallet, a debit on the old one (see the
                         WalletTransaction note in prisma/schema.prisma). */}
-                    {t.type === "TOPUP" || (t.type === "CARRY_OVER" && t.amountCents > 0) ? "+" : "-"}
+                    {t.type === "TOPUP" || t.type === "LOYALTY_CREDIT" || (t.type === "CARRY_OVER" && t.amountCents > 0) ? "+" : "-"}
                     {formatCents(Math.abs(t.amountCents), t.currency)}
                   </p>
                 )}

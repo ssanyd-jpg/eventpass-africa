@@ -74,6 +74,7 @@ export default function Navbar() {
           {user && <NavLink href="/account/groups">{t("nav.myGroups")}</NavLink>}
           {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
           {user && <NavLink href="/account/loyalty">{t("nav.myStatus")}</NavLink>}
+          {user && <NavLink href="/account/rewards">{t("nav.myRewards")}</NavLink>}
           {user && <NavLink href="/account/support">{t("nav.support")}</NavLink>}
           {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
