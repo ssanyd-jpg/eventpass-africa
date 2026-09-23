@@ -7,6 +7,7 @@ import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { slugify } from "@/lib/format";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
+import { FormSection } from "@/components/FormSection";
 
 interface DraftTicketType {
   key: string;
@@ -35,10 +36,16 @@ export default function NewEventPage() {
   const [imageSeed, setImageSeed] = useState(() => crypto.randomUUID().slice(0, 8));
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([newDraftTicketType()]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const isOnline = useOnlineStatus();
+
+  // Inline validation — a red ring on the specific empty field, not just a
+  // banner at the bottom, once the organiser has tried to submit once.
+  const invalidClass = (isValid: boolean) =>
+    submitAttempted && !isValid ? "!border-danger focus:!ring-danger" : "";
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push("/login?callbackUrl=/dashboard/events/new");
@@ -94,6 +101,7 @@ export default function NewEventPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitAttempted(true);
     if (!user) return;
 
     const validTypes = ticketTypes.filter((t) => t.name.trim() && t.priceMajor && t.quantity);
@@ -199,35 +207,41 @@ export default function NewEventPage() {
         when you&apos;re back online.
       </p>
 
-      <form onSubmit={onSubmit} className="card space-y-5 p-6">
-        <div>
-          <label className="label" htmlFor="title">Event title</label>
-          <input id="title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </div>
-
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="label !mb-0" htmlFor="description">Description</label>
-            <button
-              type="button"
-              className="text-xs font-medium text-accent-hover disabled:opacity-50"
-              onClick={draftDescription}
-              disabled={drafting || !isOnline}
-              title={!isOnline ? "Needs a connection" : undefined}
-            >
-              {drafting ? "Drafting…" : "Draft with AI"}
-            </button>
+      <form onSubmit={onSubmit} className="card space-y-6 p-5 sm:p-6">
+        <FormSection title="Basic details">
+          <div>
+            <label className="label" htmlFor="title">Event title <span className="text-danger">*</span></label>
+            <input
+              id="title"
+              className={`input ${invalidClass(!!title.trim())}`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
           </div>
-          <textarea
-            id="description"
-            className="input min-h-24"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
-        </div>
 
-        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="label !mb-0" htmlFor="description">Description</label>
+              <button
+                type="button"
+                className="text-xs font-medium text-accent-hover disabled:opacity-50"
+                onClick={draftDescription}
+                disabled={drafting || !isOnline}
+                title={!isOnline ? "Needs a connection" : undefined}
+              >
+                {drafting ? "Drafting…" : "Draft with AI"}
+              </button>
+            </div>
+            <textarea
+              id="description"
+              className="input min-h-24"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
+          </div>
+
           <div>
             <label className="label" htmlFor="category">Category</label>
             <select id="category" className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -236,99 +250,120 @@ export default function NewEventPage() {
               ))}
             </select>
           </div>
+        </FormSection>
+
+        <FormSection title="Schedule & location">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="startsAt">Date & time <span className="text-danger">*</span></label>
+              <input
+                id="startsAt"
+                type="datetime-local"
+                className={`input ${invalidClass(!!startsAt)}`}
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="venue">Venue <span className="text-danger">*</span></label>
+              <input
+                id="venue"
+                className={`input ${invalidClass(!!venue.trim())}`}
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                required
+              />
+            </div>
+          </div>
           <div>
-            <label className="label" htmlFor="startsAt">Date & time</label>
+            <label className="label" htmlFor="city">City <span className="text-danger">*</span></label>
             <input
-              id="startsAt"
-              type="datetime-local"
-              className="input"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
+              id="city"
+              className={`input ${invalidClass(!!city.trim())}`}
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
               required
             />
           </div>
-        </div>
+        </FormSection>
 
-        <div className="grid grid-cols-2 gap-4">
+        <FormSection title="Pricing">
           <div>
-            <label className="label" htmlFor="venue">Venue</label>
-            <input id="venue" className="input" value={venue} onChange={(e) => setVenue(e.target.value)} required />
+            <label className="label" htmlFor="currency">Currency</label>
+            <select id="currency" className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted">All ticket types share this currency. Can&apos;t be changed once tickets sell.</p>
           </div>
+
           <div>
-            <label className="label" htmlFor="city">City</label>
-            <input id="city" className="input" value={city} onChange={(e) => setCity(e.target.value)} required />
+            <div className="mb-2 flex items-center justify-between">
+              <label className="label !mb-0">
+                Ticket types <span className="text-danger">*</span>
+              </label>
+              <button
+                type="button"
+                className="text-xs font-medium text-accent-hover"
+                onClick={() => setTicketTypes((rows) => [...rows, newDraftTicketType()])}
+              >
+                + Add ticket type
+              </button>
+            </div>
+            {submitAttempted && ticketTypes.every((t) => !(t.name.trim() && t.priceMajor && t.quantity)) && (
+              <p className="mb-2 text-xs text-danger">Add at least one complete ticket type.</p>
+            )}
+            <div className="space-y-3">
+              {ticketTypes.map((t) => (
+                <div key={t.key} className="grid grid-cols-2 gap-2 rounded-lg border border-border p-3 sm:grid-cols-[1fr_110px_80px_auto] sm:border-0 sm:p-0">
+                  <input
+                    placeholder="Name (e.g. General Admission)"
+                    className="input col-span-2 sm:col-span-1"
+                    value={t.name}
+                    onChange={(e) => updateTicketType(t.key, { name: e.target.value })}
+                  />
+                  <input
+                    placeholder={`Price (${currency})`}
+                    type="number"
+                    min="0"
+                    step="500"
+                    className="input"
+                    value={t.priceMajor}
+                    onChange={(e) => updateTicketType(t.key, { priceMajor: e.target.value })}
+                  />
+                  <input
+                    placeholder="Qty"
+                    type="number"
+                    min="1"
+                    className="input"
+                    value={t.quantity}
+                    onChange={(e) => updateTicketType(t.key, { quantity: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-danger disabled:opacity-30"
+                    onClick={() => setTicketTypes((rows) => rows.filter((r) => r.key !== t.key))}
+                    disabled={ticketTypes.length === 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="label" htmlFor="currency">Currency</label>
-          <select id="currency" className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.label}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-muted">All ticket types share this currency. Can&apos;t be changed once tickets sell.</p>
-        </div>
-
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <label className="label !mb-0">Ticket types</label>
+          <div>
             <button
               type="button"
               className="text-xs font-medium text-accent-hover"
-              onClick={() => setTicketTypes((rows) => [...rows, newDraftTicketType()])}
+              onClick={() => setImageSeed(crypto.randomUUID().slice(0, 8))}
             >
-              + Add ticket type
+              Shuffle cover image
             </button>
           </div>
-          <div className="space-y-3">
-            {ticketTypes.map((t) => (
-              <div key={t.key} className="grid grid-cols-[1fr_120px_80px_auto] items-center gap-2">
-                <input
-                  placeholder="Name (e.g. General Admission)"
-                  className="input"
-                  value={t.name}
-                  onChange={(e) => updateTicketType(t.key, { name: e.target.value })}
-                />
-                <input
-                  placeholder={`Price (${currency})`}
-                  type="number"
-                  min="0"
-                  step="500"
-                  className="input"
-                  value={t.priceMajor}
-                  onChange={(e) => updateTicketType(t.key, { priceMajor: e.target.value })}
-                />
-                <input
-                  placeholder="Qty"
-                  type="number"
-                  min="1"
-                  className="input"
-                  value={t.quantity}
-                  onChange={(e) => updateTicketType(t.key, { quantity: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="text-xs text-muted hover:text-danger"
-                  onClick={() => setTicketTypes((rows) => rows.filter((r) => r.key !== t.key))}
-                  disabled={ticketTypes.length === 1}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <button
-            type="button"
-            className="text-xs font-medium text-accent-hover"
-            onClick={() => setImageSeed(crypto.randomUUID().slice(0, 8))}
-          >
-            Shuffle cover image
-          </button>
-        </div>
+        </FormSection>
 
         {error && <p className="text-sm text-danger">{error}</p>}
 

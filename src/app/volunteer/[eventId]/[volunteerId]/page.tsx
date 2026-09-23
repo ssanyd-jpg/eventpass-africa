@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { formatDateTime } from "@/lib/format";
 import TicketQr from "@/components/TicketQr";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface VolunteerPortalData {
   eventTitle: string;
@@ -81,7 +82,7 @@ export default function VolunteerPortalPage() {
   }
 
   if (!data) {
-    return <div className="mx-auto max-w-sm px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-sm" />;
   }
 
   return (

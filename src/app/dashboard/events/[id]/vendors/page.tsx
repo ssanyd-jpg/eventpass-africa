@@ -11,6 +11,7 @@ import { generateTicketCode, formatCents } from "@/lib/format";
 import { replaceVendorBadgeCode, sendVendorPortalLink, markVendorSettlementProcessing, markVendorSettlementProcessed } from "./actions";
 import { detectVendorAnomalies } from "@/lib/anomaly";
 import { scoreVendorRisk, type RiskBand } from "@/lib/risk";
+import { SkeletonPage } from "@/components/Skeleton";
 
 // Deterministic, not Claude-backed — see anomaly.ts/risk.ts. Same
 // LOW-renders-nothing convention as the order risk badge.
@@ -74,7 +75,7 @@ export default function ManageVendorsPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   if (!event) {

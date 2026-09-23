@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatElapsed } from "@/lib/timing";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface LeaderRow {
   rank: number;
@@ -76,7 +77,7 @@ export default function TimingDashboardPage() {
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-4xl" />;
   }
 
   return (
@@ -140,7 +141,7 @@ function Stat({ label, value, flag }: { label: string; value: string | number; f
 
 function LeaderTable({ rows }: { rows: LeaderRow[] }) {
   return (
-    <div className="card overflow-x-auto p-0">
+    <div className="card table-wrap overflow-x-auto p-0">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">

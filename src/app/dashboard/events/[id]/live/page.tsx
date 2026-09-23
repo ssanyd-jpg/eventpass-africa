@@ -383,7 +383,7 @@ export default function LiveEventPage() {
       {vendorHourly.length === 0 ? (
         <div className="card p-8 text-center text-muted">No vendor sales yet.</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="card table-wrap overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">

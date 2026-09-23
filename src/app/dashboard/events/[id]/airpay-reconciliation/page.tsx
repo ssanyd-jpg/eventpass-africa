@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime } from "@/lib/format";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface MethodRow {
   method: string;
@@ -94,7 +95,7 @@ export default function AirpayReconciliationPage() {
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   const { summary } = data;
@@ -136,7 +137,7 @@ export default function AirpayReconciliationPage() {
       {summary.methodBreakdown.length === 0 ? (
         <div className="card p-8 text-center text-muted">No confirmed top-ups recorded for this event.</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="card table-wrap overflow-x-auto p-0">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
@@ -165,7 +166,7 @@ export default function AirpayReconciliationPage() {
         <div className="card p-8 text-center text-muted">Every confirmed top-up has a matching AirPay reference.</div>
       ) : (
         <>
-          <div className="card overflow-x-auto p-0">
+          <div className="card table-wrap overflow-x-auto p-0">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">

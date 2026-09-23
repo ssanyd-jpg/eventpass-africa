@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -11,16 +12,19 @@ function NavLink({
   href,
   children,
   className = "",
+  onClick,
 }: {
   href: string;
   children: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }) {
   const pathname = usePathname();
   const active = pathname === href || (href !== "/" && pathname.startsWith(href));
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={`text-sm font-medium transition ${
         active ? "text-foreground" : "text-muted hover:text-foreground"
       } ${className}`}
@@ -54,12 +58,34 @@ export default function Navbar() {
   const router = useRouter();
   const { t } = useTranslation();
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // The vendor portal (Session 8) is a separate, mobile-first, minimal-
   // chrome surface built for a phone in bright outdoor light — it has its
   // own sign-out control and no use for this organiser/buyer nav (whose own
   // useAppSession() cache doesn't even model a VENDOR session's fields).
-  if (pathname?.startsWith("/vendor")) return null;
+  const isVendorPortal = pathname?.startsWith("/vendor");
+
+  // Close the mobile "Account" menu whenever the route changes (a NavLink
+  // click inside it navigates before this effect runs, so this is the
+  // catch-all for browser back/forward too) and on outside click.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [menuOpen]);
+
+  if (isVendorPortal) return null;
+
+  const closeMenu = () => setMenuOpen(false);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
@@ -88,10 +114,12 @@ export default function Navbar() {
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
           {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
+          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/analytics">{t("nav.analytics")}</NavLink>}
           {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
           {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/support">{t("nav.supportInbox")}</NavLink>}
           {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</NavLink>}
           {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments">{t("nav.payments")}</NavLink>}
+          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/settlements">{t("nav.settlements")}</NavLink>}
           {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
         </nav>
 
@@ -125,26 +153,92 @@ export default function Navbar() {
           )}
         </div>
       </div>
-      {/* A logged-in OWNER can rack up ten of these (every seeded demo
-          account included, via seed.ts's auto-created personal org) — wide
-          enough to overflow any phone width. no-scrollbar + overflow-x-auto
-          turns that into a horizontally-scrollable tab strip instead of
-          blowing out the whole page's width; shrink-0 on every link stops
-          flex from silently squeezing them down to fit before the browser
-          ever considers there's something to scroll. */}
-      <div className="no-scrollbar flex gap-5 overflow-x-auto border-t border-border px-4 py-2 md:hidden">
-        <NavLink href="/events" className="shrink-0 whitespace-nowrap">{t("nav.browse")}</NavLink>
-        {user && <NavLink href="/account/tickets" className="shrink-0 whitespace-nowrap">{t("nav.myTickets")}</NavLink>}
-        {user && <NavLink href="/account/sessions" className="shrink-0 whitespace-nowrap">{t("nav.sessions")}</NavLink>}
-        {user && <NavLink href="/dashboard" className="shrink-0 whitespace-nowrap">{t("nav.dashboard")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team" className="shrink-0 whitespace-nowrap">{t("nav.team")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit" className="shrink-0 whitespace-nowrap">{t("nav.auditLog")}</NavLink>}
-        {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices" className="shrink-0 whitespace-nowrap">{t("nav.devices")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers" className="shrink-0 whitespace-nowrap">{t("nav.customers")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals" className="shrink-0 whitespace-nowrap">{t("nav.withdrawals")}</NavLink>}
-        {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments" className="shrink-0 whitespace-nowrap">{t("nav.payments")}</NavLink>}
-        {user?.role === "ADMIN" && <NavLink href="/admin" className="shrink-0 whitespace-nowrap">{t("nav.admin")}</NavLink>}
+
+      {/* Mobile top-level row — only Browse / Dashboard / Account stay
+          visible here; everything else (My Tickets, My Wallets, Team,
+          Withdrawals, ...) moves into the "Account" dropdown below so a
+          logged-in OWNER (every seeded demo account included, via
+          seed.ts's auto-created personal org) doesn't get a dozen links
+          crammed into one row on a phone screen. */}
+      <div className="flex items-center gap-5 border-t border-border px-4 py-2 md:hidden">
+        <NavLink href="/events">{t("nav.browse")}</NavLink>
+        {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
+        {user && (
+          <div ref={menuRef} className="relative ml-auto">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-expanded={menuOpen}
+              aria-haspopup="true"
+              className="flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-foreground"
+            >
+              <span aria-hidden className="flex flex-col gap-[3px]">
+                <span className="block h-0.5 w-4 rounded-full bg-current" />
+                <span className="block h-0.5 w-4 rounded-full bg-current" />
+                <span className="block h-0.5 w-4 rounded-full bg-current" />
+              </span>
+              Account
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-2 shadow-lg shadow-black/30">
+                <MobileMenuLink href="/account/tickets" onClick={closeMenu}>{t("nav.myTickets")}</MobileMenuLink>
+                <MobileMenuLink href="/account/vendor-applications" onClick={closeMenu}>{t("nav.myVendorApps")}</MobileMenuLink>
+                <MobileMenuLink href="/account/wallet" onClick={closeMenu}>{t("nav.myWallets")}</MobileMenuLink>
+                <MobileMenuLink href="/account/groups" onClick={closeMenu}>{t("nav.myGroups")}</MobileMenuLink>
+                <MobileMenuLink href="/account/sessions" onClick={closeMenu}>{t("nav.sessions")}</MobileMenuLink>
+                <MobileMenuLink href="/account/loyalty" onClick={closeMenu}>{t("nav.myStatus")}</MobileMenuLink>
+                <MobileMenuLink href="/account/rewards" onClick={closeMenu}>{t("nav.myRewards")}</MobileMenuLink>
+                <MobileMenuLink href="/account/support" onClick={closeMenu}>{t("nav.support")}</MobileMenuLink>
+
+                {user.organizationRole !== "GATE_CREW" && (
+                  <>
+                    <MobileMenuDivider />
+                    <MobileMenuLink href="/dashboard/analytics" onClick={closeMenu}>{t("nav.analytics")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/customers" onClick={closeMenu}>{t("nav.customers")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/support" onClick={closeMenu}>{t("nav.supportInbox")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/withdrawals" onClick={closeMenu}>{t("nav.withdrawals")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/payments" onClick={closeMenu}>{t("nav.payments")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/settlements" onClick={closeMenu}>{t("nav.settlements")}</MobileMenuLink>
+                  </>
+                )}
+                {user.organizationRole === "OWNER" && (
+                  <>
+                    <MobileMenuDivider />
+                    <MobileMenuLink href="/dashboard/team" onClick={closeMenu}>{t("nav.team")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/audit" onClick={closeMenu}>{t("nav.auditLog")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/devices" onClick={closeMenu}>{t("nav.devices")}</MobileMenuLink>
+                  </>
+                )}
+                {user.role === "ADMIN" && (
+                  <>
+                    <MobileMenuDivider />
+                    <MobileMenuLink href="/admin" onClick={closeMenu}>{t("nav.admin")}</MobileMenuLink>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );
+}
+
+function MobileMenuLink({
+  href,
+  onClick,
+  children,
+}: {
+  href: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <NavLink href={href} onClick={onClick} className="block rounded-lg px-3 py-2 hover:bg-surface2">
+      {children}
+    </NavLink>
+  );
+}
+
+function MobileMenuDivider() {
+  return <div className="my-1.5 border-t border-border" />;
 }

@@ -10,6 +10,8 @@ import { useAppSession } from "@/lib/use-app-session";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { eventHasEnded } from "@/lib/carry-over";
 import { EVENT_MODE_CONFIG, EVENT_TYPES, type EventType } from "@/lib/event-modes";
+import { FormSection } from "@/components/FormSection";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface DraftPricingTier {
   key: string;
@@ -130,6 +132,7 @@ export default function EditEventPage() {
   const [waiverText, setWaiverText] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -286,7 +289,7 @@ export default function EditEventPage() {
   if (!user) return null;
 
   if (event === undefined || !loaded) {
-    return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-2xl" />;
   }
 
   if (!event) {
@@ -308,6 +311,11 @@ export default function EditEventPage() {
   }
 
   const currencyLocked = event.ticketTypes.some((tt) => tt.quantitySold > 0);
+
+  // Inline validation — a red ring on the specific empty field, not just a
+  // banner at the bottom, once the organiser has tried to save once.
+  const invalidClass = (isValid: boolean) =>
+    submitAttempted && !isValid ? "!border-danger focus:!ring-danger" : "";
 
   function updateTicketType(key: string, patch: Partial<DraftTicketType>) {
     setTicketTypes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -354,6 +362,7 @@ export default function EditEventPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitAttempted(true);
     if (!event) return;
 
     const validTypes = ticketTypes.filter((t) => t.name.trim() && t.priceMajor && t.quantity);
@@ -662,259 +671,284 @@ export default function EditEventPage() {
         <p className="mt-2 text-xs text-muted">Requires a connection — the placeholder stays until you upload one.</p>
       </div>
 
-      <form onSubmit={onSubmit} className="card space-y-5 p-6">
-        <div>
-          <label className="label" htmlFor="title">Event title</label>
-          <input id="title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </div>
-
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="label !mb-0" htmlFor="description">Description</label>
-            <button
-              type="button"
-              className="text-xs font-medium text-accent-hover disabled:opacity-50"
-              onClick={draftDescription}
-              disabled={drafting || !isOnline}
-              title={!isOnline ? "Needs a connection" : undefined}
-            >
-              {drafting ? "Drafting…" : "Draft with AI"}
-            </button>
-          </div>
-          <textarea
-            id="description"
-            className="input min-h-24"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
+      <form onSubmit={onSubmit} className="card space-y-6 p-5 sm:p-6">
+        <FormSection title="Basic details">
           <div>
-            <label className="label" htmlFor="category">Category</label>
-            <select id="category" className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label" htmlFor="startsAt">Date & time</label>
+            <label className="label" htmlFor="title">Event title <span className="text-danger">*</span></label>
             <input
-              id="startsAt"
-              type="datetime-local"
-              className="input"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
+              id="title"
+              className={`input ${invalidClass(!!title.trim())}`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               required
             />
           </div>
-        </div>
 
-        <div>
-          <label className="label" htmlFor="endsAt">Ends at (optional)</label>
-          <input
-            id="endsAt"
-            type="datetime-local"
-            className="input"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-          />
-          <p className="mt-1 text-xs text-muted">
-            When the event is over. Used to decide when a wristband balance can carry over to a later event.
-          </p>
-        </div>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="label !mb-0" htmlFor="description">Description</label>
+              <button
+                type="button"
+                className="text-xs font-medium text-accent-hover disabled:opacity-50"
+                onClick={draftDescription}
+                disabled={drafting || !isOnline}
+                title={!isOnline ? "Needs a connection" : undefined}
+              >
+                {drafting ? "Drafting…" : "Draft with AI"}
+              </button>
+            </div>
+            <textarea
+              id="description"
+              className="input min-h-24"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
+          </div>
 
-        <div>
-          <label className="label" htmlFor="eventType">Event type</label>
-          <select
-            id="eventType"
-            className="input"
-            value={eventType}
-            onChange={(e) => setEventType(e.target.value as EventType)}
-          >
-            {EVENT_TYPES.map((type) => (
-              <option key={type} value={type}>{EVENT_MODE_CONFIG[type].label}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-muted">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="category">Category</label>
+              <select id="category" className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="eventType">Event type</label>
+              <select
+                id="eventType"
+                className="input"
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value as EventType)}
+              >
+                {EVENT_TYPES.map((type) => (
+                  <option key={type} value={type}>{EVENT_MODE_CONFIG[type].label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-muted">
             Marathon unlocks timing setup, a timing scanner, and a public live leaderboard.
             Conference unlocks session setup, a session scanner, and exhibitor lead capture.
           </p>
-        </div>
+        </FormSection>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label" htmlFor="venue">Venue</label>
-            <input id="venue" className="input" value={venue} onChange={(e) => setVenue(e.target.value)} required />
+        <FormSection title="Schedule & location">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="startsAt">Date & time <span className="text-danger">*</span></label>
+              <input
+                id="startsAt"
+                type="datetime-local"
+                className={`input ${invalidClass(!!startsAt)}`}
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="endsAt">Ends at (optional)</label>
+              <input
+                id="endsAt"
+                type="datetime-local"
+                className="input"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+              />
+            </div>
           </div>
-          <div>
-            <label className="label" htmlFor="city">City</label>
-            <input id="city" className="input" value={city} onChange={(e) => setCity(e.target.value)} required />
-          </div>
-        </div>
-
-        <div>
-          <label className="label" htmlFor="currency">Currency</label>
-          <select
-            id="currency"
-            className="input disabled:cursor-not-allowed disabled:opacity-50"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            disabled={currencyLocked}
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.label}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-muted">
-            {currencyLocked
-              ? "Locked — this event already has ticket sales, so changing currency would make past totals wrong."
-              : "All ticket types share this currency."}
+          <p className="-mt-2 text-xs text-muted">
+            End date is used to decide when a wristband balance can carry over to a later event.
           </p>
-        </div>
 
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <label className="label !mb-0">Ticket types</label>
-            <button
-              type="button"
-              className="text-xs font-medium text-accent-hover"
-              onClick={() =>
-                setTicketTypes((rows) => [
-                  ...rows,
-                  { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false, pricingStrategy: "FIXED", pricingTiers: [], physicalCapacity: "" },
-                ])
-              }
-            >
-              + Add ticket type
-            </button>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="venue">Venue <span className="text-danger">*</span></label>
+              <input
+                id="venue"
+                className={`input ${invalidClass(!!venue.trim())}`}
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="city">City <span className="text-danger">*</span></label>
+              <input
+                id="city"
+                className={`input ${invalidClass(!!city.trim())}`}
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                required
+              />
+            </div>
           </div>
-          <div className="space-y-3">
-            {ticketTypes.map((t) => (
-              <div key={t.key} className="grid grid-cols-[1fr_120px_80px_auto] items-center gap-2">
-                <input
-                  placeholder="Name"
-                  className="input"
-                  value={t.name}
-                  onChange={(e) => updateTicketType(t.key, { name: e.target.value })}
-                />
-                <input
-                  placeholder={`Price (${currency})`}
-                  type="number"
-                  min="0"
-                  step="500"
-                  className="input"
-                  value={t.priceMajor}
-                  onChange={(e) => updateTicketType(t.key, { priceMajor: e.target.value })}
-                />
-                <input
-                  placeholder="Qty"
-                  type="number"
-                  min={t.quantitySold || 1}
-                  className="input"
-                  value={t.quantity}
-                  onChange={(e) => updateTicketType(t.key, { quantity: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="text-xs text-muted hover:text-danger disabled:opacity-30"
-                  onClick={() => setTicketTypes((rows) => rows.filter((r) => r.key !== t.key))}
-                  disabled={ticketTypes.length === 1 || t.quantitySold > 0}
-                  title={t.quantitySold > 0 ? "Can't remove a ticket type that's already sold" : undefined}
-                >
-                  Remove
-                </button>
-                <label className="col-span-4 -mt-1 flex items-center gap-2 text-xs text-muted">
+        </FormSection>
+
+        <FormSection title="Pricing & ticket types">
+          <div>
+            <label className="label" htmlFor="currency">Currency</label>
+            <select
+              id="currency"
+              className="input disabled:cursor-not-allowed disabled:opacity-50"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              disabled={currencyLocked}
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted">
+              {currencyLocked
+                ? "Locked — this event already has ticket sales, so changing currency would make past totals wrong."
+                : "All ticket types share this currency."}
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="label !mb-0">Ticket types</label>
+              <button
+                type="button"
+                className="text-xs font-medium text-accent-hover"
+                onClick={() =>
+                  setTicketTypes((rows) => [
+                    ...rows,
+                    { key: crypto.randomUUID(), clientId: newLocalId(), name: "", priceMajor: "", quantity: "", quantitySold: 0, isFastTrack: false, pricingStrategy: "FIXED", pricingTiers: [], physicalCapacity: "" },
+                  ])
+                }
+              >
+                + Add ticket type
+              </button>
+            </div>
+            <div className="space-y-3">
+              {ticketTypes.map((t) => (
+                <div key={t.key} className="grid grid-cols-2 items-center gap-2 rounded-lg border border-border p-3 sm:grid-cols-[1fr_110px_80px_auto] sm:border-0 sm:p-0">
                   <input
-                    type="checkbox"
-                    checked={t.isFastTrack}
-                    onChange={(e) => updateTicketType(t.key, { isFastTrack: e.target.checked })}
+                    placeholder="Name"
+                    className="input col-span-2 sm:col-span-1"
+                    value={t.name}
+                    onChange={(e) => updateTicketType(t.key, { name: e.target.value })}
                   />
-                  VIP / fast-track lane at the gate
-                </label>
-                {t.quantitySold > 0 && (
-                  <p className="col-span-4 -mt-1 text-xs text-muted">{t.quantitySold} already sold</p>
-                )}
-                <div className="col-span-4 flex items-center gap-2">
                   <input
-                    placeholder="Physical capacity (safety)"
+                    placeholder={`Price (${currency})`}
                     type="number"
                     min="0"
-                    className="input max-w-[220px]"
-                    value={t.physicalCapacity}
-                    onChange={(e) => updateTicketType(t.key, { physicalCapacity: e.target.value })}
+                    step="500"
+                    className="input"
+                    value={t.priceMajor}
+                    onChange={(e) => updateTicketType(t.key, { priceMajor: e.target.value })}
                   />
-                  <p className="text-xs text-muted">
-                    Safe headcount for this zone — leave blank to disable crowd-density alerts.
-                  </p>
-                </div>
-                <div className="col-span-4 rounded-lg border border-border p-3">
-                  <label className="flex items-center gap-2 text-xs text-muted">
+                  <input
+                    placeholder="Qty"
+                    type="number"
+                    min={t.quantitySold || 1}
+                    className="input"
+                    value={t.quantity}
+                    onChange={(e) => updateTicketType(t.key, { quantity: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-danger disabled:opacity-30"
+                    onClick={() => setTicketTypes((rows) => rows.filter((r) => r.key !== t.key))}
+                    disabled={ticketTypes.length === 1 || t.quantitySold > 0}
+                    title={t.quantitySold > 0 ? "Can't remove a ticket type that's already sold" : undefined}
+                  >
+                    Remove
+                  </button>
+                  <label className="col-span-2 -mt-1 flex items-center gap-2 text-xs text-muted sm:col-span-4">
                     <input
                       type="checkbox"
-                      checked={t.pricingStrategy === "TIERED"}
-                      onChange={(e) =>
-                        updateTicketType(t.key, { pricingStrategy: e.target.checked ? "TIERED" : "FIXED" })
-                      }
+                      checked={t.isFastTrack}
+                      onChange={(e) => updateTicketType(t.key, { isFastTrack: e.target.checked })}
                     />
-                    Price increases automatically as this tier sells out (dynamic pricing)
+                    VIP / fast-track lane at the gate
                   </label>
-                  {t.pricingStrategy === "TIERED" && (
-                    <div className="mt-3 space-y-2">
-                      {t.pricingTiers.map((tier) => (
-                        <div key={tier.key} className="grid grid-cols-[1fr_110px_110px_auto] items-center gap-2">
-                          <input
-                            placeholder="Label (e.g. Early bird)"
-                            className="input"
-                            value={tier.label}
-                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { label: e.target.value })}
-                          />
-                          <input
-                            placeholder="From qty sold"
-                            type="number"
-                            min="0"
-                            className="input"
-                            value={tier.fromQuantity}
-                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { fromQuantity: e.target.value })}
-                          />
-                          <input
-                            placeholder={`Price (${currency})`}
-                            type="number"
-                            min="0"
-                            step="500"
-                            className="input"
-                            value={tier.priceMajor}
-                            onChange={(e) => updateTicketTypeTier(t.key, tier.key, { priceMajor: e.target.value })}
-                          />
-                          <button
-                            type="button"
-                            className="text-xs text-muted hover:text-danger"
-                            onClick={() => removeTicketTypeTier(t.key, tier.key)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-accent-hover"
-                        onClick={() => addTicketTypeTier(t.key)}
-                      >
-                        + Add tier
-                      </button>
-                      <p className="text-xs text-muted">
-                        Tiers must be in ascending quantity-sold and price order, e.g. Early bird (0) → Standard
-                        (100) → Late (300). The price never drops back once a threshold is reached.
-                      </p>
-                    </div>
+                  {t.quantitySold > 0 && (
+                    <p className="col-span-2 -mt-1 text-xs text-muted sm:col-span-4">{t.quantitySold} already sold</p>
                   )}
+                  <div className="col-span-2 flex flex-col gap-2 sm:col-span-4 sm:flex-row sm:items-center">
+                    <input
+                      placeholder="Physical capacity (safety)"
+                      type="number"
+                      min="0"
+                      className="input sm:max-w-[220px]"
+                      value={t.physicalCapacity}
+                      onChange={(e) => updateTicketType(t.key, { physicalCapacity: e.target.value })}
+                    />
+                    <p className="text-xs text-muted">
+                      Safe headcount for this zone — leave blank to disable crowd-density alerts.
+                    </p>
+                  </div>
+                  <div className="col-span-2 rounded-lg border border-border p-3 sm:col-span-4">
+                    <label className="flex items-center gap-2 text-xs text-muted">
+                      <input
+                        type="checkbox"
+                        checked={t.pricingStrategy === "TIERED"}
+                        onChange={(e) =>
+                          updateTicketType(t.key, { pricingStrategy: e.target.checked ? "TIERED" : "FIXED" })
+                        }
+                      />
+                      Price increases automatically as this tier sells out (dynamic pricing)
+                    </label>
+                    {t.pricingStrategy === "TIERED" && (
+                      <div className="mt-3 space-y-2">
+                        {t.pricingTiers.map((tier) => (
+                          <div key={tier.key} className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_110px_110px_auto] sm:items-center">
+                            <input
+                              placeholder="Label (e.g. Early bird)"
+                              className="input col-span-2 sm:col-span-1"
+                              value={tier.label}
+                              onChange={(e) => updateTicketTypeTier(t.key, tier.key, { label: e.target.value })}
+                            />
+                            <input
+                              placeholder="From qty sold"
+                              type="number"
+                              min="0"
+                              className="input"
+                              value={tier.fromQuantity}
+                              onChange={(e) => updateTicketTypeTier(t.key, tier.key, { fromQuantity: e.target.value })}
+                            />
+                            <input
+                              placeholder={`Price (${currency})`}
+                              type="number"
+                              min="0"
+                              step="500"
+                              className="input"
+                              value={tier.priceMajor}
+                              onChange={(e) => updateTicketTypeTier(t.key, tier.key, { priceMajor: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              className="text-xs text-muted hover:text-danger"
+                              onClick={() => removeTicketTypeTier(t.key, tier.key)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-accent-hover"
+                          onClick={() => addTicketTypeTier(t.key)}
+                        >
+                          + Add tier
+                        </button>
+                        <p className="text-xs text-muted">
+                          Tiers must be in ascending quantity-sold and price order, e.g. Early bird (0) → Standard
+                          (100) → Late (300). The price never drops back once a threshold is reached.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        </FormSection>
 
         {hasPastCompletedEvent && (
           <div className="border-t border-border pt-5">
@@ -982,7 +1016,7 @@ export default function EditEventPage() {
           <div className="space-y-3">
             {questions.map((q) => (
               <div key={q.key} className="space-y-2 rounded-lg border border-border p-3">
-                <div className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_auto] sm:items-center">
                   <input
                     placeholder="Question (e.g. Dietary requirements?)"
                     className="input"
@@ -1050,7 +1084,7 @@ export default function EditEventPage() {
           <div className="space-y-3">
             {surveyQuestions.map((q) => (
               <div key={q.key} className="space-y-2 rounded-lg border border-border p-3">
-                <div className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_auto] sm:items-center">
                   <input
                     placeholder="Question (e.g. How was the event?)"
                     className="input"
@@ -1129,7 +1163,7 @@ export default function EditEventPage() {
           <div className="space-y-3">
             {discountCodes.map((d) => (
               <div key={d.key} className="space-y-2 rounded-lg border border-border p-3">
-                <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <input
                     placeholder="Code (e.g. EARLYBIRD)"
                     className="input uppercase"
@@ -1146,7 +1180,7 @@ export default function EditEventPage() {
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-[140px_1fr_1fr] gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_1fr_1fr]">
                   <select
                     className="input"
                     value={d.type}

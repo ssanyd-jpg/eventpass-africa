@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import { setResaleSettings } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface ResalePageData {
   eventTitle: string;
@@ -94,7 +95,7 @@ export default function EventResalePage() {
   }
 
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   const counts = data.listingCounts;

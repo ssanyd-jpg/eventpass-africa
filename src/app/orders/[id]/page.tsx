@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import OrderConfirmation from "@/components/OrderConfirmation";
+import { SkeletonPage } from "@/components/Skeleton";
 
 export default function OrderConfirmationPage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -15,7 +16,7 @@ export default function OrderConfirmationPage() {
   }, [id]);
 
   if (order === undefined) {
-    return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-2xl" />;
   }
 
   if (!order) {

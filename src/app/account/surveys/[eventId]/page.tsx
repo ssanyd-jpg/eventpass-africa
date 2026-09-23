@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { useAppSession } from "@/lib/use-app-session";
 import QuestionFields from "@/components/QuestionFields";
+import { SkeletonPage } from "@/components/Skeleton";
 
 // Reads its questions straight from the cached pendingSurveys entry — no
 // extra fetch needed, this page only ever exists because pullFromServer
@@ -28,7 +29,7 @@ export default function SurveyResponsePage() {
   }
 
   if (pending === undefined) {
-    return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-2xl" />;
   }
 
   if (!pending) {

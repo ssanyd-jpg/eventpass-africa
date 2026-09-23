@@ -8,6 +8,7 @@ import { db, newLocalId, type LocalVendor } from "@/lib/db";
 import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
+import { SkeletonPage } from "@/components/Skeleton";
 
 const VENDOR_CATEGORIES = ["Food", "Merchandise", "Services", "Other"];
 
@@ -28,7 +29,7 @@ export default function ApplyVendorPage() {
   const [submitted, setSubmitted] = useState(false);
 
   if (events === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-lg" />;
   }
 
   if (!event) {

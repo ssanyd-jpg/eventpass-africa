@@ -10,6 +10,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime } from "@/lib/format";
 import TicketQr from "@/components/TicketQr";
+import { SkeletonPage } from "@/components/Skeleton";
 
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
@@ -97,7 +98,7 @@ export default function WalletDetailPage() {
   if (!user) return null;
 
   if (wallet === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-lg" />;
   }
   if (!wallet) {
     return (

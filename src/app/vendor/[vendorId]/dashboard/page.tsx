@@ -161,7 +161,7 @@ export default function VendorDashboardPage() {
       {data.transactions.length === 0 ? (
         <div className="card p-6 text-center text-base text-muted">Nothing recorded yet today.</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="card table-wrap overflow-x-auto p-0">
           <table className="w-full text-left text-base">
             <thead>
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">

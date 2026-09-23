@@ -10,6 +10,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import { compareCampaigns } from "@/lib/sponsor-campaign-analytics";
 import { sendSponsorPortalLink } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 const SPONSOR_TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Other"];
 
@@ -100,7 +101,7 @@ export default function ManageSponsorsPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   if (!event) {

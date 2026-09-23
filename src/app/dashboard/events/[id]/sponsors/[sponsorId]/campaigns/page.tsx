@@ -9,6 +9,7 @@ import { queueOp } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatDate } from "@/lib/format";
 import { detectCampaignRedemptionAnomalies } from "@/lib/anomaly";
+import { SkeletonPage } from "@/components/Skeleton";
 
 // A client component, unlike the read-only leads page — campaign creation
 // is a queueOp mutation exactly like ADD_SPONSOR, so this mirrors
@@ -75,7 +76,7 @@ export default function SponsorCampaignsPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (event === undefined || sponsor === undefined) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   if (!event || !sponsor) {

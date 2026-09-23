@@ -12,6 +12,7 @@ import {
   type FloatStatus,
 } from "@/lib/reconciliation";
 import { saveFloatDeclaration } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface OperatorRow {
   operatorId: string;
@@ -138,7 +139,7 @@ export default function ReconciliationPage() {
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   const { summary } = data;
@@ -184,7 +185,7 @@ export default function ReconciliationPage() {
       {data.operators.length === 0 ? (
         <div className="card p-8 text-center text-muted">No cash (in-person) ticket sales recorded for this event.</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="card table-wrap overflow-x-auto p-0">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
@@ -222,7 +223,7 @@ export default function ReconciliationPage() {
       {data.digitalTopups.length === 0 ? (
         <div className="card p-8 text-center text-muted">No confirmed wallet top-ups recorded for this event.</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="card table-wrap overflow-x-auto p-0">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">

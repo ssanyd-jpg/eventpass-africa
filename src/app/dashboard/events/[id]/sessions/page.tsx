@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatDateTime } from "@/lib/format";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface SessionRow {
   id: string;
@@ -105,7 +106,7 @@ export default function ConferenceSessionsDashboardPage() {
     );
   }
   if (!data) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-4xl" />;
   }
 
   const max = maxCount(data.heatmap);
@@ -149,7 +150,7 @@ export default function ConferenceSessionsDashboardPage() {
       {data.heatmap.length === 0 || max === 0 ? (
         <div className="card p-6 text-center text-muted">No attendance recorded yet.</div>
       ) : (
-        <div className="card overflow-x-auto p-4">
+        <div className="card table-wrap overflow-x-auto p-4">
           <table className="w-full border-separate text-left text-xs" style={{ borderSpacing: 2 }}>
             <thead>
               <tr>

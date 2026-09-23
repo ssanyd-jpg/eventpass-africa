@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime } from "@/lib/format";
+import { SkeletonList } from "@/components/Skeleton";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "pill border-warn/40 bg-warn/10 text-warn",
@@ -66,7 +67,7 @@ export default function PaymentsPage() {
       </p>
 
       {orders === undefined ? (
-        <div className="card p-8 text-center text-muted">Loading…</div>
+        <SkeletonList rows={3} />
       ) : orders.length === 0 ? (
         <div className="card p-8 text-center text-muted">Nothing needs attention right now.</div>
       ) : (

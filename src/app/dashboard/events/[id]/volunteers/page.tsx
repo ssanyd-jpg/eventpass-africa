@@ -12,6 +12,7 @@ import {
   setVolunteerStatusAction,
   type AddVolunteerInput,
 } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface VolunteerRow {
   id: string;
@@ -157,7 +158,7 @@ export default function VolunteersPage() {
   }
 
   if (!volunteers) {
-    return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-4xl" />;
   }
 
   return (

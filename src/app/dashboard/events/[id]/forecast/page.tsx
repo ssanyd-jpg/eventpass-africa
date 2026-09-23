@@ -13,6 +13,7 @@ import {
   type TicketTier,
 } from "@/lib/revenue-forecast";
 import { saveEventForecast } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 const DEFAULT_ADOPTION = 0.6;
 const DEFAULT_AVG_SPEND_CENTS = 1_500_000; // TZS 15,000
@@ -148,7 +149,7 @@ export default function ForecastPage() {
     );
   }
   if (!data || !forecast) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   const c = data.currency;

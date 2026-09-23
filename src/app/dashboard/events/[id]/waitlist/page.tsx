@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { setWaitlistEnabled, notifyNextInWaitlistAction } from "./actions";
+import { SkeletonPage } from "@/components/Skeleton";
 
 interface WaitlistCount {
   ticketTypeId: string;
@@ -86,7 +87,7 @@ export default function EventWaitlistPage() {
   }
 
   if (!data) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted">Loading…</div>;
+    return <SkeletonPage maxWidth="max-w-3xl" />;
   }
 
   return (

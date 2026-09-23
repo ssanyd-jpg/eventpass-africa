@@ -135,7 +135,7 @@ export default function PublicLeaderboardPage() {
 
 function LeaderTable({ rows, t }: { rows: LeaderRow[]; t: ReturnType<typeof useTranslation>["t"] }) {
   return (
-    <div className="card overflow-x-auto p-0">
+    <div className="card table-wrap overflow-x-auto p-0">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
