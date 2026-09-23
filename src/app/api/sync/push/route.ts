@@ -27,6 +27,9 @@ import {
   handleMarkOrderPaid,
   handleChargeWallet,
   handleSplitPayment,
+  handleChargeDirectSale,
+  handleCheckDirectSaleStatus,
+  handleCancelDirectSale,
   handleWithdrawWallet,
   handleApproveWithdrawal,
   handleRejectWithdrawal,
@@ -167,6 +170,15 @@ export async function POST(request: Request) {
         break;
       case "SPLIT_PAYMENT":
         result = await handleSplitPayment(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "CHARGE_DIRECT_SALE":
+        result = await handleChargeDirectSale(session.user.id, session.user.organizationId, body.payload);
+        break;
+      case "CHECK_DIRECT_SALE_STATUS":
+        result = await handleCheckDirectSaleStatus(body.payload);
+        break;
+      case "CANCEL_DIRECT_SALE":
+        result = await handleCancelDirectSale(session.user.id, body.payload);
         break;
       case "WITHDRAW_WALLET":
         result = await handleWithdrawWallet(session.user.id, body.payload);

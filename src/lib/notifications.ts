@@ -32,7 +32,9 @@ export type NotificationType =
   // Session 32
   | "TICKET_RESALE"
   // Session 33
-  | "LOYALTY_REWARD";
+  | "LOYALTY_REWARD"
+  // Session 28
+  | "DIRECT_SALE_RECEIPT";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

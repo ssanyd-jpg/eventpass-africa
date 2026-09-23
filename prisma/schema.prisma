@@ -44,6 +44,7 @@ model User {
   ticketListingsSold          TicketListing[]     @relation("TicketListingSeller")
   ticketListingsBought        TicketListing[]     @relation("TicketListingBuyer")
   loyaltyRedemptions          LoyaltyRedemption[]
+  directSaleTransactions      DirectSaleTransaction[]
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -813,6 +814,9 @@ model Event {
   volunteers            Volunteer[]
   loyaltyRewards        LoyaltyReward[]
   loyaltyRedemptions    LoyaltyRedemption[]
+  // Session 28 — vendor terminal direct mobile money sales to a walk-up
+  // customer with no wristband (see DirectSaleTransaction below).
+  directSaleTransactions DirectSaleTransaction[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -1606,6 +1610,52 @@ model WalletTransaction {
   // to Wallet through this column with no index to use — this was the
   // single least-indexed hot column in the schema.
   @@index([walletId, createdAt])
+}
+
+// Session 28 — vendor terminal "Direct Sale": a mobile money charge to a
+// walk-up customer with no Chaap wristband at all, via an AirPay STK push.
+// Deliberately a standalone model, not a WalletTransaction — it never
+// touches Credential, Wallet, or WalletTransaction (there is no wallet to
+// credit/debit; the money goes straight from the customer's mobile money
+// account to the organiser via AirPay, same as an AIRPAY_ONLINE checkout).
+// status is PENDING | CONFIRMED | FAILED | CANCELLED (plain-string
+// convention — see MobileMoneyAccount.provider). There is no persisted
+// EXPIRED status: a poll timeout is a client-side display state only (the
+// terminal's own local "taking too long, retry?" banner), never written
+// back here — the AirPay charge may still resolve after the terminal gives
+// up waiting, same discipline OrderConfirmation.tsx's pollTimedOut already
+// uses for checkout orders (see its own header comment).
+// mobileNetwork is also a
+// plain string (MPESA | TIGO | AIRTEL | HALOTEL), same as
+// WalletTransaction.mobileNetwork — this codebase has no Prisma enum
+// anywhere in this schema (see that field's own comment), so this
+// deliberately doesn't introduce the first one.
+model DirectSaleTransaction {
+  id            String    @id @default(cuid())
+  clientId      String?   @unique
+  amountCents   Int
+  currency      String    @default("TZS")
+  customerPhone String
+  mobileNetwork String
+  // Set only once CONFIRMED (poll-resolved or instant), never at
+  // initiation — same discipline as WalletTransaction.airpayRef.
+  airpayRef     String?
+  providerReference String? // Chaap's own merchant order id, set at initiation
+  providerMessage   String?
+  status        String    @default("PENDING")
+  item          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resolvedAt    DateTime?
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  vendorUserId String
+  vendorUser   User   @relation(fields: [vendorUserId], references: [id])
+
+  @@index([eventId, createdAt])
+  @@index([vendorUserId, createdAt])
 }
 
 // End-of-event cash float reconciliation (Session 9). One row per staff

@@ -27,12 +27,21 @@ export function labelForMethod(mobileNetwork: string | null): string {
 export interface TopupRecord {
   // Already masked/unmasked as the caller wants it displayed — this
   // function only ever passes it through, matching the masking-at-the-
-  // data-layer convention of sponsor-dashboard-data.ts's maskedCode.
+  // data-layer convention of sponsor-dashboard-data.ts's maskedCode. For a
+  // DIRECT_SALE row (see `source` below) this holds the masked customer
+  // phone number instead of a wallet code — there is no wallet.
   walletCode: string;
   amountCents: number;
   mobileNetwork: string | null;
   airpayRef: string | null;
   createdAt: Date;
+  // Session 28 — which AirPay-confirmed money flow this row came from.
+  // Optional and defaults to "TOPUP" when absent so every pre-existing
+  // caller (and every existing test's TopupRecord literal) keeps working
+  // unchanged — Direct Sale is unioned into the SAME report, not a
+  // parallel one, since both are AirPay-confirmed revenue reconciled the
+  // same way (matched-by-airpayRef vs. exception).
+  source?: "TOPUP" | "DIRECT_SALE";
 }
 
 export interface PaymentMethodBreakdownRow {
@@ -49,6 +58,7 @@ export interface ExceptionRow {
   method: string;
   label: string;
   createdAt: string;
+  source: "TOPUP" | "DIRECT_SALE";
 }
 
 export interface AirpayReconciliationSummary {
@@ -128,6 +138,7 @@ export function summarizeAirpayReconciliation(currency: string, topups: TopupRec
         method: t.mobileNetwork ?? "UNKNOWN",
         label: labelForMethod(t.mobileNetwork),
         createdAt: t.createdAt.toISOString(),
+        source: t.source ?? "TOPUP",
       }))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
   };

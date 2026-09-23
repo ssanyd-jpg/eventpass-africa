@@ -21,6 +21,7 @@ interface ExceptionRow {
   method: string;
   label: string;
   createdAt: string;
+  source: "TOPUP" | "DIRECT_SALE";
 }
 
 interface AirpayReconciliationPayload {
@@ -171,9 +172,10 @@ export default function AirpayReconciliationPage() {
               <thead>
                 <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
                   <th className="p-3">Time</th>
-                  <th className="p-3">Wallet</th>
+                  <th className="p-3">Wallet / Phone</th>
                   <th className="p-3 text-right">Amount</th>
                   <th className="p-3">Method</th>
+                  <th className="p-3">Type</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -183,6 +185,13 @@ export default function AirpayReconciliationPage() {
                     <td className="p-3 font-mono">{ex.walletCode}</td>
                     <td className="p-3 text-right tabular-nums">{formatCents(ex.amountCents, c)}</td>
                     <td className="p-3">{ex.label}</td>
+                    <td className="p-3">
+                      {ex.source === "DIRECT_SALE" ? (
+                        <span className="pill">Direct Sale</span>
+                      ) : (
+                        <span className="text-muted">Top-up</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -446,6 +446,35 @@ export async function GET(request: Request) {
       updatedAt: t.updatedAt.toISOString(),
     }));
 
+    // Session 28 — vendor terminal Direct Sale. Scoped the same way
+    // myWalletTransactions is (either the acting staff member's own rows, or
+    // any row on an event this caller's org owns), so every terminal at the
+    // event sees every direct sale, not just the ones this device rang up.
+    const myDirectSaleTransactions = await prisma.directSaleTransaction.findMany({
+      where: {
+        OR: [{ vendorUserId: userId }, { event: { organizationId } }],
+        ...(sinceAuth ? { updatedAt: { gt: sinceAuth } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    payload.myDirectSaleTransactions = myDirectSaleTransactions.map((t) => ({
+      id: t.id,
+      clientId: t.clientId,
+      eventId: t.eventId,
+      vendorUserId: t.vendorUserId,
+      amountCents: t.amountCents,
+      currency: t.currency,
+      customerPhone: t.customerPhone,
+      mobileNetwork: t.mobileNetwork,
+      airpayRef: t.airpayRef,
+      providerReference: t.providerReference,
+      providerMessage: t.providerMessage,
+      status: t.status,
+      item: t.item,
+      createdAt: t.createdAt.toISOString(),
+      resolvedAt: t.resolvedAt ? t.resolvedAt.toISOString() : null,
+    }));
+
     // Session 12 — a marathon's course layout. Organiser/scanning-staff
     // scoped, same reasoning as myVendors/myWallets above: the timing
     // scanner and dashboard both need it, but it never rides in the public

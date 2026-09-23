@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { db, newLocalId } from "@/lib/db";
+import { db, newLocalId, type LocalDirectSaleTransaction } from "@/lib/db";
 import { queueOp, flushOutbox, useOnlineStatus } from "@/lib/sync-engine";
 import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
@@ -24,6 +24,15 @@ import { hasFeature } from "@/lib/event-modes";
 // assumption baked in" discipline CURRENCIES/formatCents already follow
 // everywhere else in this app.
 const QUICK_CHARGE_AMOUNTS_MAJOR = [5000, 10000, 20000];
+
+// Session 28 — Direct Sale polls for STK-push confirmation every 5s, capped
+// at 90s of waiting (shorter than OrderConfirmation's 3-minute checkout
+// cap — a staff terminal has a queue of customers behind this one, a lone
+// buyer on the checkout page doesn't). Same "cosmetic countdown, separate
+// from the real timeout" split as PENDING_COUNTDOWN_SECONDS there.
+const DIRECT_SALE_POLL_INTERVAL_MS = 5000;
+const DIRECT_SALE_POLL_TIMEOUT_MS = 90 * 1000;
+const DIRECT_SALE_COUNTDOWN_SECONDS = 30;
 
 // Same network list as the buyer's own top-up form (account/wallet/[walletId]/page.tsx) —
 // Session 15's split payment needs the same phone+network pair to STK-push
@@ -84,7 +93,7 @@ export default function WalletChargeTerminalPage() {
     if (status !== "loading" && !user) router.push(`/login?callbackUrl=/scan/${eventId}/wallet`);
     if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
   }, [status, user, router, eventId]);
-  const [mode, setMode] = useState<"sale" | "tap" | "lead">("sale");
+  const [mode, setMode] = useState<"sale" | "tap" | "lead" | "directSale">("sale");
   const [code, setCode] = useState("");
   const [amountMajor, setAmountMajor] = useState("");
   const [item, setItem] = useState("");
@@ -112,6 +121,22 @@ export default function WalletChargeTerminalPage() {
   const [pendingTapClientId, setPendingTapClientId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { highContrast, toggle: toggleHighContrast } = useHighContrast();
+
+  // Session 28 — Direct Sale form + the currently-polled transaction (by
+  // clientId, same reason pendingTapClientId above uses the clientId INDEX
+  // rather than .get() by primary key: applyChargeDirectSaleResult remaps
+  // the local temp id to the server's real id, so a primary-key lookup
+  // would go stale the instant the outbox flushes).
+  const [dsAmountMajor, setDsAmountMajor] = useState("");
+  const [dsItem, setDsItem] = useState("");
+  const [dsPhone, setDsPhone] = useState("");
+  const [dsNetwork, setDsNetwork] = useState(NETWORKS[0].value);
+  const [dsBusy, setDsBusy] = useState(false);
+  const [dsError, setDsError] = useState<string | null>(null);
+  const [dsActiveClientId, setDsActiveClientId] = useState<string | null>(null);
+  const [dsPollTimedOut, setDsPollTimedOut] = useState(false);
+  const [dsCancelling, setDsCancelling] = useState(false);
+  const [dsCountdown, setDsCountdown] = useState(DIRECT_SALE_COUNTDOWN_SECONDS);
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(eventId);
@@ -180,6 +205,65 @@ export default function WalletChargeTerminalPage() {
     }
     setPendingTapClientId(null);
   }, [pendingTapTx, t]);
+
+  // Session 28 — the Direct Sale currently being confirmed (if any).
+  const dsTx = useLiveQuery(async () => {
+    if (!dsActiveClientId) return undefined;
+    return db.directSaleTransactions.where("clientId").equals(dsActiveClientId).first();
+  }, [dsActiveClientId]);
+
+  function checkDirectSaleStatus(tx: LocalDirectSaleTransaction) {
+    queueOp("CHECK_DIRECT_SALE_STATUS", {
+      clientId: newLocalId(),
+      directSaleId: tx.id,
+      directSaleClientId: tx.clientId,
+    });
+  }
+
+  // Purely cosmetic countdown alongside the spinner — same split from the
+  // real timeout (DIRECT_SALE_POLL_TIMEOUT_MS, tracked via dsPollTimedOut
+  // below) as OrderConfirmation.tsx's own PENDING_COUNTDOWN_SECONDS.
+  useEffect(() => {
+    if (dsTx?.status !== "PENDING") return;
+    setDsCountdown(DIRECT_SALE_COUNTDOWN_SECONDS);
+    const interval = setInterval(() => setDsCountdown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(interval);
+  }, [dsTx?.id, dsTx?.status]);
+
+  // Automatic polling while PENDING — every 5s, capped at 90s. Same
+  // client-side-loop-hitting-the-outbox shape as OrderConfirmation.tsx's own
+  // polling effect (see its header comment for why this can't be a
+  // server-side wait), including the sticky stoppedRef guard against a
+  // straggler CHECK_DIRECT_SALE_STATUS reply bouncing status back to
+  // PENDING right after Cancel is tapped.
+  const dsTxRef = useRef(dsTx);
+  dsTxRef.current = dsTx;
+  const dsStoppedRef = useRef(false);
+  useEffect(() => {
+    dsStoppedRef.current = false;
+  }, [dsTx?.id]);
+  useEffect(() => {
+    if (dsStoppedRef.current || !dsTx || dsTx.status !== "PENDING") {
+      setDsPollTimedOut(false);
+      return;
+    }
+    checkDirectSaleStatus(dsTx);
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      if (dsStoppedRef.current) {
+        clearInterval(interval);
+        return;
+      }
+      if (Date.now() - startedAt >= DIRECT_SALE_POLL_TIMEOUT_MS) {
+        setDsPollTimedOut(true);
+        clearInterval(interval);
+        return;
+      }
+      checkDirectSaleStatus(dsTxRef.current!);
+    }, DIRECT_SALE_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dsTx?.id, dsTx?.status]);
 
   // Refs so the scan handlers' identity stays stable across renders —
   // CameraScanner restarts its stream whenever onDetect changes, same
@@ -375,6 +459,79 @@ export default function WalletChargeTerminalPage() {
     setSplitPhone("");
   }, []);
 
+  // Session 28 — Direct Sale: no walletCode/vendor to resolve at all, just
+  // the event and whichever staff account is running this terminal (the
+  // server derives that from the session, not from anything in this
+  // payload). Never optimistic, same reasoning as chargeWallet — this waits
+  // for the real CHARGE_DIRECT_SALE result before switching into polling
+  // mode, so a hard decline (e.g. an invalid number) surfaces immediately
+  // rather than showing a fake "sent" state.
+  const chargeDirectSale = useCallback(async () => {
+    setDsError(null);
+    const event = eventRef.current;
+    if (!event) return;
+    const amountCents = Math.round(parseFloat(dsAmountMajor || "0") * 100);
+    if (!amountCents || amountCents < 1) {
+      setDsError(t("wallet.enterAmountFirst"));
+      return;
+    }
+    if (!dsPhone.trim()) {
+      setDsError(t("wallet.enterCustomerPhoneFirst"));
+      return;
+    }
+
+    setDsBusy(true);
+    const clientId = newLocalId();
+    await queueOp("CHARGE_DIRECT_SALE", {
+      clientId,
+      eventId: event.id,
+      eventClientId: event.clientId,
+      amountCents,
+      customerPhone: dsPhone.trim(),
+      mobileNetwork: dsNetwork,
+      item: dsItem.trim() || undefined,
+    });
+    await flushOutbox();
+    setDsBusy(false);
+
+    const tx = await db.directSaleTransactions.where("clientId").equals(clientId).first();
+    if (!tx) {
+      setDsError(t("wallet.couldntReachServer"));
+      return;
+    }
+    setDsActiveClientId(clientId);
+  }, [dsAmountMajor, dsPhone, dsNetwork, dsItem, t]);
+
+  const cancelDirectSale = useCallback(async () => {
+    if (!dsTx) return;
+    dsStoppedRef.current = true;
+    setDsCancelling(true);
+    await queueOp("CANCEL_DIRECT_SALE", {
+      clientId: newLocalId(),
+      directSaleId: dsTx.id,
+      directSaleClientId: dsTx.clientId,
+    });
+    await flushOutbox();
+    setDsCancelling(false);
+  }, [dsTx]);
+
+  // "Try again" for a FAILED/CANCELLED/timed-out sale, and the "charge
+  // another customer" reset after a CONFIRMED one — both just drop back to
+  // the entry form. Amount/item/phone/network are left as they were (a
+  // declined number is usually a typo staff wants to fix, not retype from
+  // scratch), except after a genuine CONFIRMED sale, where starting the next
+  // customer from a blank amount is the safer default.
+  const resetDirectSale = useCallback((clearForm: boolean) => {
+    setDsActiveClientId(null);
+    setDsPollTimedOut(false);
+    setDsError(null);
+    if (clearForm) {
+      setDsAmountMajor("");
+      setDsItem("");
+      setDsPhone("");
+    }
+  }, []);
+
   // Second parameter unused here — recordTap has no member-attribution
   // concept — but kept so activeHandler's two branches share one call
   // signature (see chargeWallet's own attendeeTicketId).
@@ -452,6 +609,13 @@ export default function WalletChargeTerminalPage() {
         ? chargeWallet
         : mode === "tap"
         ? recordTap
+        : mode === "directSale"
+        ? // Direct Sale has no wallet/ticket code to scan at all — the
+          // CameraScanner/NFCScanner/code-entry form below are hidden
+          // entirely for this mode, so this branch is never actually
+          // invoked, but activeHandler still needs a same-shaped no-op
+          // rather than a hole in the ternary.
+          async () => {}
         : (rawCode: string) => captureLead({ ticketCode: rawCode.trim().toUpperCase() }),
     [mode, chargeWallet, recordTap, captureLead]
   );
@@ -553,6 +717,12 @@ export default function WalletChargeTerminalPage() {
             {t("wallet.modeLead")}
           </button>
         )}
+        <button
+          className={`min-h-12 flex-1 text-base ${mode === "directSale" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => { setMode("directSale"); setResult(null); setSplitPrompt(null); }}
+        >
+          {t("wallet.modeDirectSale")}
+        </button>
       </div>
 
       {!online && mode === "sale" && (
@@ -650,7 +820,7 @@ export default function WalletChargeTerminalPage() {
             </button>
           )}
         </div>
-      ) : (
+      ) : mode === "lead" ? (
         <div className="card mt-5 space-y-3 p-5">
           <div>
             <label className="label" htmlFor="exhibitor">{t("wallet.exhibitorLabel")}</label>
@@ -683,26 +853,168 @@ export default function WalletChargeTerminalPage() {
             </button>
           )}
         </div>
+      ) : !online ? (
+        // Session 28 — Direct Sale needs a live STK push and can never work
+        // offline (there's no local cache to fall back to, unlike sale
+        // mode's wallet balance) — blocked outright, same "say specifically
+        // why, don't just look broken" discipline as chargeWallet's own
+        // offline branch.
+        <div className="card mt-5 space-y-2 p-5 text-center">
+          <p className="font-semibold text-warn">{t("wallet.directSaleOfflineTitle")}</p>
+          <p className="text-sm text-muted">{t("wallet.directSaleOfflineMessage")}</p>
+        </div>
+      ) : dsTx ? (
+        <div className="card mt-5 space-y-4 p-5 text-center">
+          <p className="text-2xl font-extrabold tabular-nums">{formatCents(dsTx.amountCents, dsTx.currency)}</p>
+          <p className="text-sm text-muted">
+            {dsTx.customerPhone} · {NETWORKS.find((n) => n.value === dsTx.mobileNetwork)?.label ?? dsTx.mobileNetwork}
+          </p>
+
+          {dsTx.status === "PENDING" && !dsPollTimedOut && (
+            <div className="inline-flex flex-col items-center gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+              <span className="flex items-center gap-2">
+                <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-warn border-t-transparent" />
+                {dsCountdown > 0
+                  ? t("wallet.directSalePendingHint", {
+                      network: NETWORKS.find((n) => n.value === dsTx.mobileNetwork)?.label ?? dsTx.mobileNetwork,
+                      countdown: String(dsCountdown),
+                    })
+                  : t("wallet.directSaleStillConfirming")}
+              </span>
+              <div className="flex gap-3">
+                <button type="button" className="font-medium text-accent-hover underline" onClick={() => checkDirectSaleStatus(dsTx)}>
+                  {t("wallet.directSaleCheckStatus")}
+                </button>
+                <button type="button" className="font-medium text-danger underline disabled:opacity-50" disabled={dsCancelling} onClick={cancelDirectSale}>
+                  {dsCancelling ? t("wallet.directSaleCancelling") : t("wallet.directSaleCancelPayment")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(dsTx.status === "FAILED" || dsTx.status === "CANCELLED" || (dsTx.status === "PENDING" && dsPollTimedOut)) && (
+            <div className="inline-flex flex-col items-center gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+              <span>
+                {dsTx.status === "CANCELLED"
+                  ? t("wallet.directSaleCancelledMessage")
+                  : dsTx.status === "PENDING"
+                  ? t("wallet.directSaleTimedOutMessage")
+                  : t("wallet.directSaleFailedMessage")}
+              </span>
+              <div className="flex items-center gap-3">
+                <button type="button" className="font-medium text-accent-hover underline" onClick={() => resetDirectSale(false)}>
+                  {t("wallet.directSaleTryAgain")}
+                </button>
+                {dsTx.status === "PENDING" && (
+                  <button type="button" className="font-medium underline disabled:opacity-50" disabled={dsCancelling} onClick={cancelDirectSale}>
+                    {dsCancelling ? t("wallet.directSaleCancelling") : t("wallet.directSaleCancelPayment")}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {dsTx.status === "CONFIRMED" && (
+            <div className="rounded-xl border border-ok/40 bg-ok/10 p-4">
+              <p className="text-lg font-extrabold text-ok">
+                ✓{" "}
+                {t("wallet.directSaleConfirmedMessage", {
+                  amount: formatCents(dsTx.amountCents, dsTx.currency),
+                  network: NETWORKS.find((n) => n.value === dsTx.mobileNetwork)?.label ?? dsTx.mobileNetwork,
+                })}
+              </p>
+              <button type="button" className="btn-secondary mt-3" onClick={() => resetDirectSale(true)}>
+                {t("wallet.directSaleCharge")}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card mt-5 space-y-4 p-5">
+          <div>
+            <label className="label" htmlFor="dsAmount">{t("wallet.amountLabel", { currency: event.currency })}</label>
+            <input
+              id="dsAmount"
+              type="number"
+              min="1"
+              step="500"
+              className="input min-h-16 text-center text-4xl font-extrabold tabular-nums"
+              value={dsAmountMajor}
+              onChange={(e) => setDsAmountMajor(e.target.value)}
+            />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {QUICK_CHARGE_AMOUNTS_MAJOR.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  className="btn-secondary min-h-12 text-sm font-bold"
+                  onClick={() => setDsAmountMajor(String(amount))}
+                >
+                  {formatCents(amount * 100, event.currency)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="dsItem">{t("wallet.itemLabel")}</label>
+            <input
+              id="dsItem"
+              className="input"
+              placeholder={t("wallet.itemPlaceholder")}
+              maxLength={120}
+              value={dsItem}
+              onChange={(e) => setDsItem(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="dsNetwork">{t("wallet.networkLabel")}</label>
+              <select id="dsNetwork" className="input" value={dsNetwork} onChange={(e) => setDsNetwork(e.target.value)}>
+                {NETWORKS.map((n) => (
+                  <option key={n.value} value={n.value}>{n.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="dsPhone">{t("wallet.customerPhoneLabel")}</label>
+              <input
+                id="dsPhone"
+                className="input"
+                placeholder="+255 7XX XXX XXX"
+                value={dsPhone}
+                onChange={(e) => setDsPhone(e.target.value)}
+              />
+            </div>
+          </div>
+          {dsError && <p className="text-sm text-danger">{dsError}</p>}
+          <button type="button" disabled={dsBusy} className="btn-primary min-h-14 w-full text-lg font-bold" onClick={chargeDirectSale}>
+            {dsBusy ? t("wallet.directSaleSending") : t("wallet.directSaleCharge")}
+          </button>
+        </div>
       )}
 
-      <div className="mt-5">
-        <CameraScanner onDetect={activeHandler} />
-        <NFCScanner onDetect={handleNfcDetect} />
-      </div>
+      {mode !== "directSale" && (
+        <div className="mt-5">
+          <CameraScanner onDetect={activeHandler} />
+          <NFCScanner onDetect={handleNfcDetect} />
+        </div>
+      )}
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
-        <input
-          ref={inputRef}
-          autoFocus
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder={mode === "lead" ? t("wallet.enterOrScanTicket") : t("wallet.enterOrScanWallet")}
-          className="input min-h-12 font-mono text-base uppercase tracking-widest"
-        />
-        <button type="submit" disabled={busy} className="btn-primary min-h-14 shrink-0 text-lg font-bold sm:min-h-12">
-          {busy ? "…" : mode === "sale" ? t("wallet.charge") : mode === "tap" ? t("wallet.recordTapButton") : t("wallet.captureLeadButton")}
-        </button>
-      </form>
+      {mode !== "directSale" && (
+        <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
+          <input
+            ref={inputRef}
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder={mode === "lead" ? t("wallet.enterOrScanTicket") : t("wallet.enterOrScanWallet")}
+            className="input min-h-12 font-mono text-base uppercase tracking-widest"
+          />
+          <button type="submit" disabled={busy} className="btn-primary min-h-14 shrink-0 text-lg font-bold sm:min-h-12">
+            {busy ? "…" : mode === "sale" ? t("wallet.charge") : mode === "tap" ? t("wallet.recordTapButton") : t("wallet.captureLeadButton")}
+          </button>
+        </form>
+      )}
 
       {splitPrompt && (
         <div className="mt-5 rounded-xl border border-warn/40 bg-warn/10 p-5">

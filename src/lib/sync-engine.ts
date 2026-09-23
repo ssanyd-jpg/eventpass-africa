@@ -18,6 +18,7 @@ import {
   type LocalCredential,
   type LocalTimingPoint,
   type LocalConferenceSession,
+  type LocalDirectSaleTransaction,
   type OutboxOpType,
 } from "@/lib/db";
 
@@ -242,6 +243,21 @@ export async function pullFromServer(): Promise<{ ok: boolean }> {
           await db.walletTransactions.delete(existing.id);
         }
         await db.walletTransactions.put({ ...t, syncStatus: "synced" });
+      }
+    }
+
+    // Session 28 — same delete-if-remapped-then-put-by-clientId merge as
+    // myWalletTransactions above, for the standalone Direct Sale table.
+    if (Array.isArray(data.myDirectSaleTransactions)) {
+      for (const t of data.myDirectSaleTransactions as LocalDirectSaleTransaction[]) {
+        const existing = await db.directSaleTransactions
+          .where("clientId")
+          .equals(t.clientId ?? "")
+          .first();
+        if (existing && existing.id !== t.id) {
+          await db.directSaleTransactions.delete(existing.id);
+        }
+        await db.directSaleTransactions.put({ ...t, syncStatus: "synced" });
       }
     }
 
@@ -573,6 +589,24 @@ async function applySplitPaymentResult(payload: any, result: any) {
   }
 }
 
+// CHARGE_DIRECT_SALE creates a genuine new local-id transaction row that
+// needs remapping to its server id, same shape as applyTopupWalletResult —
+// no wallet to patch, since Direct Sale never touches one.
+async function applyChargeDirectSaleResult(payload: any, result: any) {
+  if (!result?.ok || !result.transaction) return;
+  const localId = payload.clientId as string;
+  await db.directSaleTransactions.delete(localId);
+  await db.directSaleTransactions.put({ ...result.transaction, syncStatus: "synced" });
+}
+
+// CHECK_DIRECT_SALE_STATUS/CANCEL_DIRECT_SALE act on an already-synced
+// transaction id — no local-temp-id to remap, just an upsert-by-real-id,
+// same shape as applyCheckTopupStatusResult.
+async function applyCheckDirectSaleStatusResult(_payload: any, result: any) {
+  if (!result?.ok || !result.transaction) return;
+  await db.directSaleTransactions.put({ ...result.transaction, syncStatus: "synced" });
+}
+
 // WITHDRAW_WALLET creates a genuine new local-id transaction row, same
 // remap shape as applyTopupWalletResult. "declined" here means the balance
 // was insufficient (soft-decline, mirrors applyChargeWalletResult) — never
@@ -656,6 +690,15 @@ function outboxResourceKey(entry: { type: OutboxOpType; payload: Record<string, 
     case "SPLIT_PAYMENT":
     case "SPONSOR_TAP":
       return `wallet:${p.walletCode}`;
+    // Session 28 — CHECK/CANCEL reference the CHARGE's own clientId (the
+    // transaction's id, not the check/cancel op's own), so all three stay
+    // bucketed together against the SAME direct sale — a different walk-up
+    // customer's direct sale gets its own bucket and can flush concurrently.
+    case "CHARGE_DIRECT_SALE":
+      return `directsale:${p.clientId}`;
+    case "CHECK_DIRECT_SALE_STATUS":
+    case "CANCEL_DIRECT_SALE":
+      return `directsale:${p.directSaleClientId ?? p.directSaleId}`;
     case "CHECK_IN":
       return `ticket:${p.ticketCode}`;
     case "CHECK_IN_VENDOR":
@@ -793,6 +836,13 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "SPLIT_PAYMENT":
           await applySplitPaymentResult(entry.payload, result);
+          break;
+        case "CHARGE_DIRECT_SALE":
+          await applyChargeDirectSaleResult(entry.payload, result);
+          break;
+        case "CHECK_DIRECT_SALE_STATUS":
+        case "CANCEL_DIRECT_SALE":
+          await applyCheckDirectSaleStatusResult(entry.payload, result);
           break;
         case "WITHDRAW_WALLET":
           await applyWithdrawWalletResult(entry.payload, result);

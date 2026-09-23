@@ -506,6 +506,31 @@ export interface LocalWalletTransaction {
   syncError?: string | null;
 }
 
+// Session 28 — vendor terminal Direct Sale: a mobile money charge to a
+// walk-up customer with no wristband. Standalone from LocalWalletTransaction
+// — there's no wallet involved at all. status is "PENDING" | "CONFIRMED" |
+// "FAILED" | "CANCELLED", same plain-string convention as everything else
+// here (see LocalWalletTransaction.status above).
+export interface LocalDirectSaleTransaction {
+  id: string;
+  clientId?: string | null;
+  eventId: string;
+  vendorUserId: string;
+  amountCents: number;
+  currency: string;
+  customerPhone: string;
+  mobileNetwork: string;
+  airpayRef: string | null;
+  providerReference: string | null;
+  providerMessage: string | null;
+  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED";
+  item: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  syncStatus: "synced" | "pending" | "conflict";
+  syncError?: string | null;
+}
+
 // Organizer-only, same reasoning as LocalDiscountCode — a sponsor's
 // coupon/campaign codes never ride in the public `events` field, so an
 // anonymous browser can't enumerate them. Populated from
@@ -557,7 +582,10 @@ export type OutboxOpType =
   | "CARRY_OVER_WALLET"
   | "RECORD_CHIP_TIME"
   | "RECORD_SESSION_ATTENDANCE"
-  | "CAPTURE_EXHIBITOR_LEAD";
+  | "CAPTURE_EXHIBITOR_LEAD"
+  | "CHARGE_DIRECT_SALE"
+  | "CHECK_DIRECT_SALE_STATUS"
+  | "CANCEL_DIRECT_SALE";
 
 export interface OutboxEntry {
   id?: number;
@@ -595,6 +623,7 @@ class EventPassAfricaDB extends Dexie {
   chipTimes!: Table<LocalChipTime, string>;
   conferenceSessions!: Table<LocalConferenceSession, string>;
   sessionAttendances!: Table<LocalSessionAttendance, string>;
+  directSaleTransactions!: Table<LocalDirectSaleTransaction, string>;
 
   constructor() {
     super("eventpass-africa");
@@ -985,6 +1014,33 @@ class EventPassAfricaDB extends Dexie {
       chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
       conferenceSessions: "id, clientId, eventId, startsAt",
       sessionAttendances: "id, clientId, eventId, eventSessionId, recordedAt",
+    });
+    // New directSaleTransactions table (see LocalDirectSaleTransaction
+    // above) for Session 28's vendor terminal Direct Sale mode. No
+    // .upgrade() transform, same reasoning as every prior version bump in
+    // this file.
+    this.version(21).stores({
+      events: "id, clientId, slug, organizationId, category, startsAt",
+      orders: "id, clientId, userId, eventId, syncStatus, createdAt",
+      mobileMoneyAccounts: "id, clientId, organizationId",
+      settlements: "id, organizationId, status, createdAt",
+      outbox: "++id, status, type, createdAt",
+      meta: "key",
+      vendors: "id, clientId, eventId, ownerUserId, badgeCode, status, syncStatus",
+      wallets: "id, clientId, eventId, ownerUserId, code, syncStatus",
+      walletTransactions: "id, clientId, walletId, type, status, syncStatus, createdAt",
+      sponsors: "id, clientId, eventId, syncStatus",
+      discountCodes: "id, clientId, eventId, ticketTypeId, code",
+      surveyQuestions: "id, clientId, eventId",
+      pendingSurveys: "eventId",
+      sponsorCampaigns: "id, clientId, sponsorId, code",
+      recommendedEvents: "id",
+      credentials: "id, nfcUid, ticketId, walletId, status",
+      timingPoints: "id, clientId, eventId, sequenceOrder",
+      chipTimes: "id, clientId, eventId, timingPointId, recordedAt",
+      conferenceSessions: "id, clientId, eventId, startsAt",
+      sessionAttendances: "id, clientId, eventId, eventSessionId, recordedAt",
+      directSaleTransactions: "id, clientId, eventId, vendorUserId, status, syncStatus, createdAt",
     });
   }
 }

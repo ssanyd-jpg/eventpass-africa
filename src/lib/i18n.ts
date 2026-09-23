@@ -238,6 +238,26 @@ export const dictionaries = {
     "wallet.pickExhibitorFirst": "Pick which exhibitor this lead is for first.",
     "wallet.leadCaptured": "Lead captured.",
 
+    // Session 28 — vendor terminal Direct Sale (mobile money charge to a
+    // walk-up customer with no wristband).
+    "wallet.modeDirectSale": "Direct Sale",
+    "wallet.directSaleOfflineTitle": "Direct Sale needs a connection",
+    "wallet.directSaleOfflineMessage": "Direct Sale sends a live payment prompt to the customer's phone, so it can't work offline — reconnect to continue.",
+    "wallet.customerPhoneLabel": "Customer's phone",
+    "wallet.enterCustomerPhoneFirst": "Enter the customer's phone number first.",
+    "wallet.directSaleCharge": "Send payment prompt",
+    "wallet.directSaleSending": "Sending…",
+    "wallet.directSalePendingHint": "The customer will get a {network} prompt on their phone — confirming in about {countdown}s",
+    "wallet.directSaleStillConfirming": "Still confirming — this is taking a little longer than usual, hang tight",
+    "wallet.directSaleCheckStatus": "Check payment status",
+    "wallet.directSaleCancelling": "Cancelling…",
+    "wallet.directSaleCancelPayment": "Cancel payment",
+    "wallet.directSaleTimedOutMessage": "Still no confirmation — this is taking longer than usual. Keep waiting, or try again.",
+    "wallet.directSaleFailedMessage": "Payment wasn't confirmed — try again.",
+    "wallet.directSaleCancelledMessage": "Payment cancelled.",
+    "wallet.directSaleTryAgain": "Try again",
+    "wallet.directSaleConfirmedMessage": "Payment confirmed — {amount} via {network}.",
+
     "timing.title": "Timing scanner",
     "timing.gunTimeLabel": "Gun time:",
     "timing.selectPointLabel": "This device is at",
@@ -624,6 +644,26 @@ export const dictionaries = {
     "wallet.tapRecordedCouponExpired": "Mgusano umerekodiwa. Kuponi imeisha muda au haitumiki.",
     "wallet.pickExhibitorFirst": "Chagua mchuuzi wa maonyesho wa anwani hii kwanza.",
     "wallet.leadCaptured": "Mawasiliano yamenaswa.",
+
+    // Session 28 — vendor terminal Direct Sale. TODO: native speaker
+    // review — literal renderings, same caveat as wallet.modeLead above.
+    "wallet.modeDirectSale": "Mauzo ya Moja kwa Moja",
+    "wallet.directSaleOfflineTitle": "Mauzo ya Moja kwa Moja yanahitaji mtandao",
+    "wallet.directSaleOfflineMessage": "Mauzo ya Moja kwa Moja hutuma ombi la malipo moja kwa moja kwa simu ya mteja, kwa hiyo haiwezi kufanya kazi bila mtandao — unganisha tena ili kuendelea.",
+    "wallet.customerPhoneLabel": "Simu ya mteja",
+    "wallet.enterCustomerPhoneFirst": "Weka namba ya simu ya mteja kwanza.",
+    "wallet.directSaleCharge": "Tuma ombi la malipo",
+    "wallet.directSaleSending": "Inatuma…",
+    "wallet.directSalePendingHint": "Mteja atapata ombi la {network} kwenye simu yake — inathibitishwa baada ya sekunde {countdown}",
+    "wallet.directSaleStillConfirming": "Bado inathibitishwa — inachukua muda kidogo zaidi ya kawaida, subiri",
+    "wallet.directSaleCheckStatus": "Kagua hali ya malipo",
+    "wallet.directSaleCancelling": "Inaghairi…",
+    "wallet.directSaleCancelPayment": "Ghairi malipo",
+    "wallet.directSaleTimedOutMessage": "Bado hakuna uthibitisho — inachukua muda mrefu zaidi ya kawaida. Endelea kusubiri, au jaribu tena.",
+    "wallet.directSaleFailedMessage": "Malipo hayakuthibitishwa — jaribu tena.",
+    "wallet.directSaleCancelledMessage": "Malipo yameghairiwa.",
+    "wallet.directSaleTryAgain": "Jaribu tena",
+    "wallet.directSaleConfirmedMessage": "Malipo yamethibitishwa — {amount} kupitia {network}.",
 
     "timing.title": "Kichunguzi cha muda",
     "timing.gunTimeLabel": "Muda tangu kuanza:",

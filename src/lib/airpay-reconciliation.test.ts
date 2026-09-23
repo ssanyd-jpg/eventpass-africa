@@ -94,7 +94,23 @@ describe("summarizeAirpayReconciliation — exception detection", () => {
       method: "HALOTEL",
       label: "HaloPesa",
       createdAt: "2026-09-16T11:30:00.000Z",
+      source: "TOPUP",
     });
+  });
+
+  // Session 28 — a Direct Sale record (no wallet at all) is unioned into the
+  // same report; source defaults to "TOPUP" when absent so every
+  // pre-existing TopupRecord literal above keeps passing unchanged.
+  it("tags a Direct Sale record's exception row with source DIRECT_SALE", () => {
+    const summary = summarizeAirpayReconciliation("TZS", [
+      topup({ airpayRef: "AP-1", amountCents: 10_000, source: "TOPUP" }),
+      topup({ airpayRef: null, walletCode: "•••4321", amountCents: 5_000, mobileNetwork: "AIRTEL", source: "DIRECT_SALE" }),
+    ]);
+
+    expect(summary.totalCount).toBe(2);
+    expect(summary.exceptions).toHaveLength(1);
+    expect(summary.exceptions[0].source).toBe("DIRECT_SALE");
+    expect(summary.exceptions[0].walletCode).toBe("•••4321");
   });
 });
 

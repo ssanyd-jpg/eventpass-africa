@@ -418,6 +418,35 @@ export const payloadSchemas = {
     item: z.string().trim().max(120).nullable().optional(),
     attendeeTicketId: z.string().min(1).optional(),
   }),
+  // Session 28 — vendor terminal Direct Sale: a mobile money charge to a
+  // walk-up customer with no wristband, via an AirPay STK push. No
+  // walletCode/vendorId at all — unlike CHARGE_WALLET/SPLIT_PAYMENT this
+  // never resolves a Wallet or a Vendor stall, only the event and whichever
+  // staff account is operating the terminal (session.user.id server-side).
+  CHARGE_DIRECT_SALE: z.object({
+    clientId: z.string().min(1),
+    eventId: z.string().min(1),
+    eventClientId: z.string().nullable().optional(),
+    amountCents: z.number().int().min(1),
+    customerPhone: z.string().min(6).max(20),
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]),
+    item: z.string().trim().max(120).nullable().optional(),
+  }),
+  // Dual id/clientId lookup, same shape as CHECK_TOPUP_STATUS/
+  // CHECK_ORDER_PAYMENT_STATUS — the terminal polls this every 5s while a
+  // Direct Sale is PENDING.
+  CHECK_DIRECT_SALE_STATUS: z.object({
+    clientId: z.string().min(1),
+    directSaleId: z.string().min(1),
+    directSaleClientId: z.string().nullable().optional(),
+  }),
+  // Staff "never mind" for a still-PENDING direct sale, same dual-lookup
+  // shape as CANCEL_PENDING_ORDER.
+  CANCEL_DIRECT_SALE: z.object({
+    clientId: z.string().min(1),
+    directSaleId: z.string().min(1),
+    directSaleClientId: z.string().nullable().optional(),
+  }),
   SPONSOR_TAP: z.object({
     clientId: z.string().min(1),
     walletCode: z.string().min(1).max(40),
@@ -3326,6 +3355,191 @@ export async function handleSplitPayment(userId: string, organizationId: string,
     declined: result.declined,
     reason: result.declined ? "INSUFFICIENT_BALANCE_AFTER_TOPUP" : undefined,
   };
+}
+
+function shapeDirectSaleTransaction(t: any) {
+  return {
+    id: t.id,
+    clientId: t.clientId,
+    eventId: t.eventId,
+    vendorUserId: t.vendorUserId,
+    amountCents: t.amountCents,
+    currency: t.currency,
+    customerPhone: t.customerPhone,
+    mobileNetwork: t.mobileNetwork,
+    airpayRef: t.airpayRef ?? null,
+    providerReference: t.providerReference ?? null,
+    providerMessage: t.providerMessage ?? null,
+    status: t.status,
+    item: t.item ?? null,
+    createdAt: t.createdAt.toISOString(),
+    resolvedAt: t.resolvedAt ? t.resolvedAt.toISOString() : null,
+  };
+}
+
+// Session 28 — vendor terminal Direct Sale: STK-push a walk-up customer with
+// no wristband. Mirrors handleTopupWallet's exact initiate-then-branch
+// shape (instant PAID vs. PENDING-awaiting-confirmation vs. FAILED), but
+// against the standalone DirectSaleTransaction table instead of
+// WalletTransaction — there's no wallet to credit either way.
+export async function handleChargeDirectSale(userId: string, organizationId: string, payload: any) {
+  const clientId = String(payload.clientId);
+
+  const existing = await prisma.directSaleTransaction.findUnique({ where: { clientId } });
+  if (existing) {
+    if (existing.eventId) {
+      const event = await prisma.event.findUnique({ where: { id: existing.eventId }, select: { organizationId: true } });
+      if (!event || event.organizationId !== organizationId) {
+        return { ok: false, reason: "FORBIDDEN" };
+      }
+    }
+    return { ok: true, transaction: shapeDirectSaleTransaction(existing) };
+  }
+
+  const event = await resolveEventId(String(payload.eventId), payload.eventClientId);
+  if (!event) {
+    return { ok: false, retry: true, reason: "EVENT_NOT_SYNCED_YET" };
+  }
+  if (event.organizationId !== organizationId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (event.status !== "LIVE") {
+    return { ok: false, reason: "EVENT_NOT_LIVE" };
+  }
+
+  const amountCents = Number(payload.amountCents);
+  const customerPhone = String(payload.customerPhone).trim();
+  const mobileNetwork = String(payload.mobileNetwork);
+  const item = payload.item ? String(payload.item).trim() || null : null;
+
+  const provider = getActivePaymentProvider();
+  const charge = await provider.initiateCharge({
+    orderClientId: clientId,
+    amountCents,
+    phoneNumber: customerPhone,
+    mobileNetwork,
+    description: `Direct sale — ${event.title}`,
+  });
+
+  const baseData = {
+    clientId,
+    eventId: event.id,
+    vendorUserId: userId,
+    amountCents,
+    currency: event.currency,
+    customerPhone,
+    mobileNetwork,
+    item,
+    providerReference: charge.reference || null,
+    providerMessage: charge.message ?? null,
+  };
+
+  if (charge.status === "PAID") {
+    const transaction = await prisma.directSaleTransaction.create({
+      data: { ...baseData, status: "CONFIRMED", airpayRef: charge.reference || null, resolvedAt: new Date() },
+    });
+    await sendDirectSaleReceipt(transaction);
+    return { ok: true, transaction: shapeDirectSaleTransaction(transaction) };
+  }
+
+  // PENDING (awaiting the customer's confirmation on their phone) or FAILED
+  // (declined outright, e.g. an invalid number) — the terminal's polling
+  // loop (CHECK_DIRECT_SALE_STATUS) takes it from here for PENDING.
+  const transaction = await prisma.directSaleTransaction.create({
+    data: { ...baseData, status: charge.status === "PENDING" ? "PENDING" : "FAILED", resolvedAt: charge.status === "PENDING" ? null : new Date() },
+  });
+  return { ok: true, transaction: shapeDirectSaleTransaction(transaction) };
+}
+
+// Best-effort SMS receipt via Africa's Talking (src/lib/sms.ts), same
+// silent-skip-if-unconfigured discipline as every other sendNotification
+// call in this file — never blocks/throws the charge itself.
+async function sendDirectSaleReceipt(transaction: { customerPhone: string; amountCents: number; currency: string; mobileNetwork: string }) {
+  await sendNotification({
+    type: "DIRECT_SALE_RECEIPT",
+    channel: "SMS",
+    recipient: transaction.customerPhone,
+    subject: "Payment received",
+    body: `Chaap: payment of ${formatCents(transaction.amountCents, transaction.currency)} received via ${transaction.mobileNetwork}. Thank you!`,
+  });
+}
+
+// Polled every 5s by the terminal while a Direct Sale is PENDING. Mirrors
+// handleCheckTopupStatus's CAS-on-status shape exactly, minus any wallet
+// balance to credit.
+export async function handleCheckDirectSaleStatus(payload: any) {
+  const tx =
+    (await prisma.directSaleTransaction.findUnique({ where: { id: String(payload.directSaleId) } })) ??
+    (payload.directSaleClientId
+      ? await prisma.directSaleTransaction.findUnique({ where: { clientId: String(payload.directSaleClientId) } })
+      : null);
+
+  if (!tx) {
+    return { ok: false, retry: true, reason: "TRANSACTION_NOT_SYNCED_YET" };
+  }
+  if (tx.status !== "PENDING") {
+    return { ok: true, transaction: shapeDirectSaleTransaction(tx) };
+  }
+  if (!tx.providerReference) {
+    return { ok: true, transaction: shapeDirectSaleTransaction(tx) };
+  }
+
+  const result = await verifyAirpayOrder(tx.providerReference);
+  if (result.status === "PENDING") {
+    return { ok: true, transaction: shapeDirectSaleTransaction(tx) };
+  }
+
+  if (result.status === "PAID") {
+    // Compare-and-swap so a racing auto-poll tick can't double-confirm.
+    const updated = await prisma.directSaleTransaction.updateMany({
+      where: { id: tx.id, status: "PENDING" },
+      data: { status: "CONFIRMED", providerMessage: result.message ?? null, airpayRef: result.reference || null, resolvedAt: new Date() },
+    });
+    const fresh = await prisma.directSaleTransaction.findUniqueOrThrow({ where: { id: tx.id } });
+    // Only just transitioned by THIS call — same "only the winner notifies"
+    // discipline as handleCheckTopupStatus.
+    if (updated.count > 0) {
+      await sendDirectSaleReceipt(fresh);
+    }
+    return { ok: true, transaction: shapeDirectSaleTransaction(fresh) };
+  }
+
+  // FAILED
+  await prisma.directSaleTransaction.updateMany({
+    where: { id: tx.id, status: "PENDING" },
+    data: { status: "FAILED", providerMessage: result.message ?? null, resolvedAt: new Date() },
+  });
+  const fresh = await prisma.directSaleTransaction.findUniqueOrThrow({ where: { id: tx.id } });
+  return { ok: true, transaction: shapeDirectSaleTransaction(fresh) };
+}
+
+// Staff "never mind" for a still-PENDING direct sale — same dual-lookup,
+// CAS-if-still-PENDING, idempotent-on-replay shape as
+// handleCancelPendingOrder. No inventory/balance to release, unlike that
+// order-cancellation counterpart.
+export async function handleCancelDirectSale(userId: string, payload: any) {
+  const tx =
+    (await prisma.directSaleTransaction.findUnique({ where: { id: String(payload.directSaleId) } })) ??
+    (payload.directSaleClientId
+      ? await prisma.directSaleTransaction.findUnique({ where: { clientId: String(payload.directSaleClientId) } })
+      : null);
+
+  if (!tx) {
+    return { ok: false, retry: true, reason: "TRANSACTION_NOT_SYNCED_YET" };
+  }
+  if (tx.vendorUserId !== userId) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  if (tx.status !== "PENDING") {
+    return { ok: true, transaction: shapeDirectSaleTransaction(tx) };
+  }
+
+  await prisma.directSaleTransaction.updateMany({
+    where: { id: tx.id, status: "PENDING" },
+    data: { status: "CANCELLED", resolvedAt: new Date() },
+  });
+  const fresh = await prisma.directSaleTransaction.findUniqueOrThrow({ where: { id: tx.id } });
+  return { ok: true, transaction: shapeDirectSaleTransaction(fresh) };
 }
 
 // Buyer-initiated cash-out of a leftover wallet balance. No real
