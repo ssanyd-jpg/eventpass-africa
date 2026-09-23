@@ -124,12 +124,22 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Hero — capped at ~85% of the mobile viewport height (dvh with a vh
-          fallback for older browsers) so the stats card below peeks into
-          view on first load, hinting that there's more to scroll to. Reset
-          to a normal content-sized block from sm up, where there's enough
-          width for the hero to read fine without a height cap. */}
-      <section className="relative flex min-h-[85vh] min-h-[85dvh] flex-col justify-center overflow-hidden border-b border-border bg-gunmetal sm:block sm:min-h-0">
+      {/* Hero — capped so the stats card below peeks into view on first
+          load, hinting that there's more to scroll to. This deliberately
+          isn't a flat "85vh" anymore: a height expressed as a pure viewport
+          percentage combined with the navbar's fixed ~98px eats a "leftover"
+          gap that itself scales with viewport height, so any fixed overlap
+          margin tuned for one phone's leftover lands mid-word through the
+          stats label's text on another (verified: sliced clean through
+          "Live on Chaap right now" at 375x667 while looking fine at
+          390x844). Pinning the leftover to a constant 16px via calc() —
+          100dvh minus the navbar and that 16px — keeps the peek a blank
+          sliver of the card's top edge on every phone height, never mid-
+          label, while still landing around ~85% of the viewport on typical
+          phone sizes. dvh has a vh fallback for older browsers. Reset to a
+          normal content-sized block from sm up, where there's enough width
+          for the hero to read fine without a height cap. */}
+      <section className="relative flex min-h-[calc(100vh-114px)] min-h-[calc(100dvh-114px)] flex-col justify-center overflow-hidden border-b border-border bg-gunmetal sm:block sm:min-h-0">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-40"
@@ -168,7 +178,7 @@ export default async function HomePage() {
 
       <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
         {/* Social proof / live stats */}
-        <section className="-mt-8 mb-14 rounded-2xl border border-border bg-surface p-6 shadow-lg shadow-black/20 sm:-mt-10 sm:p-8">
+        <section className="mb-14 rounded-2xl border border-border bg-surface p-6 shadow-lg shadow-black/20 sm:-mt-10 sm:p-8">
           <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-muted">Live on Chaap right now</p>
           <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="pb-5 sm:px-6 sm:pb-0 sm:first:pl-0">
