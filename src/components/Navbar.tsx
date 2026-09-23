@@ -55,10 +55,10 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6">
+        <Link href="/" className="flex flex-shrink-0 items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-9 w-9 rounded-lg" />
+          <img src="/icon.svg" alt="" className="h-9 w-9 flex-shrink-0 rounded-lg" />
           <span className="flex flex-col leading-none">
             <span className="font-display text-base font-extrabold tracking-tight text-silver">
               CHAAP
@@ -87,9 +87,11 @@ export default function Navbar() {
           {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <LocaleToggle />
-          <SyncStatusBadge />
+          <div className="hidden sm:block">
+            <SyncStatusBadge />
+          </div>
           {user ? (
             <div className="flex items-center gap-2">
               <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
@@ -105,10 +107,10 @@ export default function Navbar() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/login" className="btn-secondary !px-3 !py-1.5 text-xs">
+              <Link href="/login" className="btn-secondary whitespace-nowrap !px-3 !py-1.5 text-xs">
                 {t("nav.logIn")}
               </Link>
-              <Link href="/register" className="btn-primary !px-3 !py-1.5 text-xs">
+              <Link href="/register" className="btn-primary whitespace-nowrap !px-3 !py-1.5 text-xs">
                 {t("nav.signUp")}
               </Link>
             </div>
