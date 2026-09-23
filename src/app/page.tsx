@@ -102,8 +102,8 @@ const FOR_ORGANISERS = [
   },
   {
     icon: PhoneMoneyIcon,
-    title: "M-Pesa integrated",
-    description: "Accept M-Pesa, cards, and cash side by side, with same-day settlement.",
+    title: "All mobile money networks",
+    description: "Accept M-Pesa, Airtel, HaloPesa and cards through AirPay Tanzania — one integration, every payment method.",
   },
   {
     icon: OfflineSyncIcon,
@@ -124,8 +124,12 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-border bg-gunmetal">
+      {/* Hero — capped at ~85% of the mobile viewport height (dvh with a vh
+          fallback for older browsers) so the stats card below peeks into
+          view on first load, hinting that there's more to scroll to. Reset
+          to a normal content-sized block from sm up, where there's enough
+          width for the hero to read fine without a height cap. */}
+      <section className="relative flex min-h-[85vh] min-h-[85dvh] flex-col justify-center overflow-hidden border-b border-border bg-gunmetal sm:block sm:min-h-0">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-40"
