@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 // denser, more reliable scans on low-end cameras, and means the scanner's
 // checkIn(code) logic needs no changes: the QR is just an alternate input
 // feeding the same short code as manual entry.
-export default function TicketQr({ code }: { code: string }) {
+export default function TicketQr({ code, size = 180 }: { code: string; size?: number }) {
   const [svg, setSvg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,12 +23,15 @@ export default function TicketQr({ code }: { code: string }) {
   }, [code]);
 
   if (!svg) {
-    return <div className="aspect-square w-full max-w-[180px] animate-pulse rounded-lg bg-surface2" />;
+    return (
+      <div className="aspect-square w-full animate-pulse rounded-lg bg-surface2" style={{ maxWidth: size }} />
+    );
   }
 
   return (
     <div
-      className="w-full max-w-[180px] overflow-hidden rounded-lg"
+      className="w-full overflow-hidden rounded-lg"
+      style={{ maxWidth: size }}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: svg }}
     />

@@ -6,16 +6,21 @@ import type { EventType } from "@/lib/event-modes";
 export const EVENTS_PAGE_SIZE = 12;
 
 // Color-coded per the event type it represents — MARATHON/FOOTBALL/CONFERENCE/
-// GENERAL colors are the ones the product spec pinned down; CONCERT/FESTIVAL
-// get the two remaining unused hues so every EVENT_TYPES value has a badge.
+// GENERAL/FESTIVAL colors are the ones the product spec pinned down; CONCERT
+// gets the one remaining unused hue so every EVENT_TYPES value has a badge.
 export const EVENT_TYPE_BADGE_COLORS: Record<EventType, string> = {
   MARATHON: "border-teal-400/40 bg-teal-400/10 text-teal-600 dark:text-teal-300",
   FOOTBALL: "border-green-400/40 bg-green-400/10 text-green-600 dark:text-green-300",
   CONFERENCE: "border-blue-400/40 bg-blue-400/10 text-blue-600 dark:text-blue-300",
   GENERAL: "border-amber-400/40 bg-amber-400/10 text-amber-600 dark:text-amber-300",
-  CONCERT: "border-purple-400/40 bg-purple-400/10 text-purple-600 dark:text-purple-300",
-  FESTIVAL: "border-pink-400/40 bg-pink-400/10 text-pink-600 dark:text-pink-300",
+  FESTIVAL: "border-purple-400/40 bg-purple-400/10 text-purple-600 dark:text-purple-300",
+  CONCERT: "border-pink-400/40 bg-pink-400/10 text-pink-600 dark:text-pink-300",
 };
+
+// Sell-through ratio above which a still-available event counts as "selling
+// fast" — a nudge shown instead of (never alongside) the plain sold-out/free
+// badges, since a fully sold-out event has nothing left to feel urgent about.
+const SELLING_FAST_THRESHOLD = 0.7;
 
 export interface TicketTypePricing {
   priceCents: number;
@@ -27,6 +32,7 @@ export interface EventPricing {
   lowestPriceCents: number | null;
   soldOut: boolean;
   isFree: boolean;
+  sellingFast: boolean;
 }
 
 // Same lowest-price/sold-out logic as EventCard's client-side (Dexie) version
@@ -40,7 +46,11 @@ export function computeEventPricing(ticketTypes: TicketTypePricing[]): EventPric
   const soldOut =
     ticketTypes.length > 0 && ticketTypes.every((tt) => tt.quantitySold >= tt.quantityTotal);
   const isFree = ticketTypes.length > 0 && ticketTypes.every((tt) => tt.priceCents === 0);
-  return { lowestPriceCents, soldOut, isFree };
+  const totalCapacity = ticketTypes.reduce((sum, tt) => sum + tt.quantityTotal, 0);
+  const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.quantitySold, 0);
+  const sellingFast =
+    !soldOut && totalCapacity > 0 && totalSold / totalCapacity >= SELLING_FAST_THRESHOLD;
+  return { lowestPriceCents, soldOut, isFree, sellingFast };
 }
 
 const publicEventSelect = {

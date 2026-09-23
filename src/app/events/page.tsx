@@ -109,7 +109,22 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
       </form>
 
       {events.length === 0 ? (
-        <div className="card p-12 text-center text-muted">No events match your filters.</div>
+        hasActiveFilters ? (
+          <div className="card flex flex-col items-center gap-3 p-12 text-center">
+            <span aria-hidden className="text-5xl">🔍</span>
+            <p className="font-semibold">No events match your filters.</p>
+            <p className="text-sm text-muted">Try widening your search or clearing a filter.</p>
+            <Link href="/events" className="btn-secondary mt-2">Clear filters</Link>
+          </div>
+        ) : (
+          <div className="card flex flex-col items-center gap-3 p-12 text-center">
+            <span aria-hidden className="text-5xl">🎪</span>
+            <p className="font-semibold">No events yet — check back soon</p>
+            <p className="max-w-sm text-sm text-muted">
+              Organisers across East Africa are getting set up. New marathons, festivals, and shows will show up here as soon as they go live.
+            </p>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => (

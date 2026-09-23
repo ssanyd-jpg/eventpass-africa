@@ -41,6 +41,51 @@ const NETWORKS = [
   { value: "HALOTEL", label: "HaloPesa" },
 ];
 
+const CHECKOUT_STEPS = [
+  { key: "select", label: "Select" },
+  { key: "questions", label: "Details" },
+  { key: "confirm", label: "Pay" },
+] as const;
+
+// Purely visual — the "questions" step is skipped entirely in the flow when
+// an event has no registration questions/waiver (see hasQuestionsStep), but
+// the indicator still shows all three dots for a consistent "3 steps" shape
+// rather than reflowing to 2.
+function CheckoutStepIndicator({ step }: { step: "select" | "questions" | "confirm" }) {
+  const currentIndex = CHECKOUT_STEPS.findIndex((s) => s.key === step);
+  return (
+    <div className="mb-5 flex items-center" aria-label="Checkout progress">
+      {CHECKOUT_STEPS.map((s, i) => {
+        const isDone = i < currentIndex;
+        const isActive = i === currentIndex;
+        return (
+          <div key={s.key} className="flex flex-1 items-center last:flex-none">
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition ${
+                  isDone
+                    ? "bg-accent text-white"
+                    : isActive
+                      ? "border-2 border-accent text-accent-hover"
+                      : "border border-border text-muted"
+                }`}
+              >
+                {isDone ? "✓" : i + 1}
+              </div>
+              <span className={`text-[11px] font-medium ${isActive ? "text-foreground" : "text-muted"}`}>
+                {s.label}
+              </span>
+            </div>
+            {i < CHECKOUT_STEPS.length - 1 && (
+              <div className={`mx-2 h-px flex-1 ${isDone ? "bg-accent" : "bg-border"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // useSearchParams (for the waitlist purchase-link's ?waitlistEntryId=) needs
 // a Suspense boundary around its caller — same wrapping login/page.tsx uses.
 export default function EventDetailClient() {
@@ -343,14 +388,15 @@ function EventDetailContent() {
         </div>
 
         {event.status === "CANCELLED" ? (
-          <div className="card h-fit p-5">
+          <div className="card h-fit p-5 lg:sticky lg:top-24 lg:self-start">
             <p className="font-semibold text-danger">{t("event.cancelledCardTitle")}</p>
             <p className="mt-2 text-sm text-muted">
               {t("event.cancelledCardBody")}
             </p>
           </div>
         ) : (
-        <div className="card h-fit p-5">
+        <div className="card h-fit p-5 lg:sticky lg:top-24 lg:self-start">
+          <CheckoutStepIndicator step={step} />
           {step === "select" && (
             <>
               <h2 className="mb-4 font-semibold">{t("event.selectTickets")}</h2>
@@ -383,15 +429,32 @@ function EventDetailContent() {
               <div className="space-y-4">
                 {event.ticketTypes.map((tt) => {
                   const remaining = tt.quantityTotal - tt.quantitySold;
+                  const isSoldOut = remaining <= 0;
+                  const isLowStock = !isSoldOut && tt.quantityTotal > 0 && remaining / tt.quantityTotal <= 0.2;
                   const qty = quantities[tt.id] ?? 0;
-                  const soldOutWithWaitlist = remaining <= 0 && event.waitlistEnabled;
+                  const soldOutWithWaitlist = isSoldOut && event.waitlistEnabled;
                   const currentPriceCents = currentTierPriceCents(tt);
                   const nextTier = nextTierFor(tt);
                   return (
-                    <div key={tt.id} className="border-b border-border pb-4 last:border-0 last:pb-0">
+                    <div
+                      key={tt.id}
+                      className={`border-b border-border pb-4 last:border-0 last:pb-0 ${isSoldOut ? "opacity-60" : ""}`}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-medium">{tt.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{tt.name}</p>
+                            {isSoldOut && (
+                              <span className="pill border-danger/40 bg-danger/10 !py-0.5 text-[10px] text-danger">
+                                {t("event.soldOut")}
+                              </span>
+                            )}
+                            {isLowStock && (
+                              <span className="pill border-warn/40 bg-warn/10 !py-0.5 text-[10px] text-warn">
+                                Only {remaining} left
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-muted">{formatCents(currentPriceCents, event.currency)}</p>
                           {nextTier && (
                             <p className="text-xs text-accent-hover">
@@ -399,11 +462,11 @@ function EventDetailContent() {
                               {nextTier.atQuantity} tickets sold ({tt.quantitySold} sold so far)
                             </p>
                           )}
-                          <p className="text-xs text-muted">
-                            {remaining > 0 ? t("event.leftSuffix", { count: remaining }) : t("event.soldOut")}
-                          </p>
+                          {!isSoldOut && !isLowStock && (
+                            <p className="text-xs text-muted">{t("event.leftSuffix", { count: remaining })}</p>
+                          )}
                         </div>
-                        {!soldOutWithWaitlist && (
+                        {!soldOutWithWaitlist && !isSoldOut && (
                           <div className="flex items-center gap-2">
                             <button
                               className="btn-secondary h-8 w-8 !rounded-full !p-0"
@@ -494,17 +557,25 @@ function EventDetailContent() {
                 </div>
               )}
 
-              <div className="mt-5 flex items-center justify-between text-sm">
-                <span className="text-muted">{t("event.total")}</span>
-                <span className="font-semibold">{formatCents(totalCents, event.currency)}</span>
+              {/* Sticky on mobile so Total + Continue stay reachable while
+                  scrolling a long ticket-type list, without needing a
+                  separate fixed-position bar (it un-sticks once the card
+                  itself scrolls out of view). Reverts to a plain static
+                  block from lg up, where the whole panel is already
+                  lg:sticky in the viewport. */}
+              <div className="sticky bottom-0 -mx-5 -mb-5 mt-5 border-t border-border bg-surface p-4 lg:static lg:mx-0 lg:mb-0 lg:border-0 lg:bg-transparent lg:p-0">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted">{t("event.total")}</span>
+                  <span className="font-semibold">{formatCents(totalCents, event.currency)}</span>
+                </div>
+                <button
+                  className="btn-primary mt-4 w-full"
+                  disabled={totalQty === 0 || !groupReady}
+                  onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
+                >
+                  {t("event.continue")}
+                </button>
               </div>
-              <button
-                className="btn-primary mt-4 w-full"
-                disabled={totalQty === 0 || !groupReady}
-                onClick={() => setStep(hasQuestionsStep ? "questions" : "confirm")}
-              >
-                {t("event.continue")}
-              </button>
             </>
           )}
 
@@ -536,7 +607,7 @@ function EventDetailContent() {
                 )}
               </div>
 
-              <div className="mt-4 flex gap-2">
+              <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex gap-2 border-t border-border bg-surface p-4 lg:static lg:mx-0 lg:mb-0 lg:border-0 lg:bg-transparent lg:p-0">
                 <button className="btn-secondary flex-1" onClick={() => setStep("select")}>
                   {t("event.back")}
                 </button>
@@ -612,8 +683,13 @@ function EventDetailContent() {
                 </div>
               )}
 
-              <div className="mt-4 rounded-lg border border-border bg-surface2 p-3 text-xs text-muted">
-                {online ? t("event.onlinePaymentHint") : t("event.offlinePaymentHint")}
+              <div
+                className={`mt-4 flex items-start gap-2.5 rounded-lg border p-3 text-xs ${
+                  online ? "border-accent/40 bg-accent-soft text-foreground" : "border-border bg-surface2 text-muted"
+                }`}
+              >
+                {online && <span aria-hidden className="mt-0.5 text-base">📲</span>}
+                <span>{online ? t("event.onlinePaymentHint") : t("event.offlinePaymentHint")}</span>
               </div>
 
               {!user && (
@@ -622,7 +698,11 @@ function EventDetailContent() {
                 </p>
               )}
 
-              <div className="mt-4 flex gap-2">
+              {/* Same sticky-while-in-view treatment as the select step's
+                  Total/Continue bar — keeps Back/Pay reachable on a long
+                  confirm panel (discount code + network + phone fields)
+                  without scrolling all the way down on mobile. */}
+              <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex gap-2 border-t border-border bg-surface p-4 lg:static lg:mx-0 lg:mb-0 lg:border-0 lg:bg-transparent lg:p-0">
                 <button className="btn-secondary flex-1" onClick={() => setStep(hasQuestionsStep ? "questions" : "select")}>
                   {t("event.back")}
                 </button>

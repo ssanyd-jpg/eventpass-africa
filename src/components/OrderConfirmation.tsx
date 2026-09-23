@@ -139,14 +139,55 @@ async function cancelPendingOrder(order: LocalOrder, event: LocalEvent | null | 
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 3 * 60 * 1000;
+// Purely cosmetic countdown shown alongside the spinner — the M-Pesa prompt
+// usually confirms in well under this, but the real timeout that can
+// actually cancel/retry the order is POLL_TIMEOUT_MS above, tracked
+// separately via pollTimedOut. Once this hits zero the copy just admits
+// it's taking a bit longer; polling keeps going regardless.
+const PENDING_COUNTDOWN_SECONDS = 30;
+
+// Native share sheet when available (most mobile browsers); clipboard copy
+// otherwise (desktop Safari/Firefox, or if the user dismisses the share
+// sheet's permission prompt) — never throws either way.
+async function shareEvent(title: string, url: string) {
+  const shareData = { title: `${title} — Chaap`, text: `Check out ${title} on Chaap!`, url };
+  if (typeof navigator !== "undefined" && navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return "shared" as const;
+    } catch {
+      return "cancelled" as const;
+    }
+  }
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    await navigator.clipboard.writeText(url);
+    return "copied" as const;
+  }
+  return "unsupported" as const;
+}
 
 export default function OrderConfirmation({ order }: { order: LocalOrder }) {
   const { user } = useAppSession();
   const [pendingByTicket, setPendingByTicket] = useState<Record<string, PendingTransfer>>({});
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [countdown, setCountdown] = useState(PENDING_COUNTDOWN_SECONDS);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
 
   const realTicketIds = order.tickets.filter((t) => !t.id.startsWith("local:")).map((t) => t.id);
+
+  // Ticks down once a second while the payment is PENDING; resets whenever a
+  // *new* PENDING wait starts (a fresh order, or the same order bouncing
+  // back to PENDING after a transient status flicker — see stoppedRef above
+  // for why that bounce can happen).
+  useEffect(() => {
+    if (order.status !== "PENDING") return;
+    setCountdown(PENDING_COUNTDOWN_SECONDS);
+    const interval = setInterval(() => {
+      setCountdown((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [order.id, order.status]);
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(order.eventId);
@@ -227,14 +268,45 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.id]);
 
+  const isConfirmed = order.status === "PAID" || order.status === "NEEDS_REVIEW" || !order.status;
+  const eventUrl = event
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/events/${event.slug}`
+    : "";
+
   return (
     <div className="mx-auto max-w-2xl px-4 pb-20 pt-10 sm:px-6">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-ok/20 text-2xl text-ok">
-          ✓
-        </div>
-        <h1 className="text-2xl font-bold">You&apos;re going!</h1>
+        {isConfirmed ? (
+          <div className="animate-pop-in mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-ok/20 text-4xl text-ok">
+            ✓
+          </div>
+        ) : order.status === "PENDING" ? (
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-warn/20 text-4xl">
+            ⏳
+          </div>
+        ) : (
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-danger/20 text-4xl">
+            ✕
+          </div>
+        )}
+        <h1 className="text-2xl font-bold">{isConfirmed ? "You're going! 🎉" : order.status === "PENDING" ? "Almost there…" : "Payment not confirmed"}</h1>
         <p className="mt-1 text-muted">{order.eventTitle}</p>
+
+        {isConfirmed && event && (
+          <button
+            type="button"
+            className="btn-secondary mt-4 !px-4 !py-2 text-xs"
+            onClick={async () => {
+              const result = await shareEvent(order.eventTitle, eventUrl);
+              if (result === "copied") {
+                setShareStatus("copied");
+                setTimeout(() => setShareStatus("idle"), 2000);
+              }
+            }}
+          >
+            {shareStatus === "copied" ? "Link copied!" : "📣 Tell a friend about this event"}
+          </button>
+        )}
 
         {order.status === "PENDING" && !pollTimedOut && (
           <div className="mt-3 inline-flex flex-col items-center gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
@@ -243,7 +315,9 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
                 aria-hidden="true"
                 className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-warn border-t-transparent"
               />
-              Waiting for M-Pesa confirmation on your phone — this usually takes under 30 seconds
+              {countdown > 0
+                ? `You will receive an M-Pesa prompt on your phone — confirming in about ${countdown}s`
+                : "Still confirming — this is taking a little longer than usual, hang tight"}
             </span>
             <div className="flex gap-3">
               <button
@@ -342,10 +416,18 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
                 )}
               </div>
               <div className="flex flex-col items-center gap-3 p-4 sm:flex-row sm:items-center">
-                <TicketQr code={t.code} />
+                <TicketQr code={t.code} size={220} />
                 <div className="text-center sm:text-left">
                   <p className="font-mono text-2xl font-bold tracking-widest text-accent-hover">{t.code}</p>
                   <p className="mt-1 text-xs text-muted">Show this QR code or code at the gate for entry.</p>
+                  <button
+                    type="button"
+                    disabled
+                    title="Coming soon"
+                    className="btn-secondary mt-3 w-full !py-1.5 text-xs opacity-60 sm:w-auto"
+                  >
+                    📱 Add to Apple/Google Wallet — Coming soon
+                  </button>
                   {canTransfer && (
                     <Link href={`/account/tickets/${t.id}`} className="mt-1 inline-block text-xs font-medium text-accent-hover">
                       Resell this ticket →

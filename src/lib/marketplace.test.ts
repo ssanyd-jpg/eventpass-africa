@@ -89,6 +89,25 @@ describe("computeEventPricing", () => {
       ]).isFree
     ).toBe(false);
   });
+
+  it("is selling fast once combined sell-through crosses 70%, but never once sold out", () => {
+    expect(
+      computeEventPricing([{ priceCents: 1000, quantityTotal: 100, quantitySold: 69 }]).sellingFast
+    ).toBe(false);
+    expect(
+      computeEventPricing([{ priceCents: 1000, quantityTotal: 100, quantitySold: 70 }]).sellingFast
+    ).toBe(true);
+    expect(
+      computeEventPricing([
+        { priceCents: 1000, quantityTotal: 50, quantitySold: 45 },
+        { priceCents: 2000, quantityTotal: 50, quantitySold: 30 },
+      ]).sellingFast
+    ).toBe(true); // 75/100 = 75%, combined across ticket types, not per-type
+    expect(
+      computeEventPricing([{ priceCents: 1000, quantityTotal: 100, quantitySold: 100 }]).sellingFast
+    ).toBe(false); // fully sold out — "sold out" already covers this, not "selling fast"
+    expect(computeEventPricing([]).sellingFast).toBe(false);
+  });
 });
 
 describe("getPublicEvents", () => {
