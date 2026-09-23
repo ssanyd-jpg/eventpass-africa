@@ -8,6 +8,16 @@ import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import SyncStatusBadge from "@/components/SyncStatusBadge";
 
+const MORE_PREFIXES = [
+  "/account/wallet",
+  "/account/groups",
+  "/account/sessions",
+  "/account/loyalty",
+  "/account/rewards",
+  "/account/support",
+  "/account/vendor-applications",
+];
+
 function NavLink({
   href,
   children,
@@ -31,6 +41,76 @@ function NavLink({
     >
       {children}
     </Link>
+  );
+}
+
+// Desktop-only dropdown used for "Dashboard" (when it has sub-pages) and
+// "More" — mirrors the mobile Account sheet's click-outside-to-close
+// behavior, but closes on any inner link click via event bubbling instead of
+// an explicit onClick per link (Next's <Link> renders a plain <a>, so a
+// native click still bubbles to this wrapper before navigation completes).
+function DesktopDropdown({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        className={`flex items-center gap-1 text-sm font-medium transition ${
+          active ? "text-foreground" : "text-muted hover:text-foreground"
+        }`}
+      >
+        {label}
+        <svg
+          aria-hidden
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          className="absolute left-0 top-full z-50 mt-2 w-56 rounded-xl border border-border bg-surface p-2 shadow-lg shadow-black/30"
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <NavLink href={href} className="block rounded-lg px-3 py-2 hover:bg-surface2">
+      {children}
+    </NavLink>
   );
 }
 
@@ -66,6 +146,7 @@ export default function Navbar() {
   // own sign-out control and no use for this organiser/buyer nav (whose own
   // useAppSession() cache doesn't even model a VENDOR session's fields).
   const isVendorPortal = pathname?.startsWith("/vendor");
+  const isGateCrew = user?.organizationRole === "GATE_CREW";
 
   // Close the mobile "Account" menu whenever the route changes (a NavLink
   // click inside it navigates before this effect runs, so this is the
@@ -100,27 +181,58 @@ export default function Navbar() {
           </span>
         </Link>
 
+        {/* Desktop top level stays to 4 items max — Browse, Dashboard, My
+            Tickets, and a single "More" dropdown — so a logged-in OWNER
+            doesn't get a dozen links crammed into one row at 1280px. Dashboard
+            itself becomes a dropdown (rather than growing the top level) for
+            anyone who isn't GATE_CREW, since it's the only place the
+            organiser back-office pages (Analytics, Customers, Withdrawals,
+            Payments, Settlements, Team, Audit Log, Devices, Admin) were
+            reachable from — dropping them outright would strand those pages
+            with no nav path. */}
         <nav className="hidden items-center gap-6 md:flex">
           <NavLink href="/events">{t("nav.browse")}</NavLink>
+          {user &&
+            (isGateCrew ? (
+              <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>
+            ) : (
+              <DesktopDropdown label={t("nav.dashboard")} active={pathname?.startsWith("/dashboard") ?? false}>
+                <DropdownLink href="/dashboard">{t("nav.dashboard")}</DropdownLink>
+                <DropdownLink href="/dashboard/analytics">{t("nav.analytics")}</DropdownLink>
+                <DropdownLink href="/dashboard/customers">{t("nav.customers")}</DropdownLink>
+                <DropdownLink href="/dashboard/support">{t("nav.supportInbox")}</DropdownLink>
+                <DropdownLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</DropdownLink>
+                <DropdownLink href="/dashboard/payments">{t("nav.payments")}</DropdownLink>
+                <DropdownLink href="/dashboard/settlements">{t("nav.settlements")}</DropdownLink>
+                {user.organizationRole === "OWNER" && (
+                  <>
+                    <MenuDivider />
+                    <DropdownLink href="/dashboard/team">{t("nav.team")}</DropdownLink>
+                    <DropdownLink href="/dashboard/audit">{t("nav.auditLog")}</DropdownLink>
+                    <DropdownLink href="/dashboard/devices">{t("nav.devices")}</DropdownLink>
+                  </>
+                )}
+                {user.role === "ADMIN" && (
+                  <>
+                    <MenuDivider />
+                    <DropdownLink href="/admin">{t("nav.admin")}</DropdownLink>
+                  </>
+                )}
+              </DesktopDropdown>
+            ))}
           {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
-          {user && <NavLink href="/account/vendor-applications">{t("nav.myVendorApps")}</NavLink>}
-          {user && <NavLink href="/account/wallet">{t("nav.myWallets")}</NavLink>}
-          {user && <NavLink href="/account/groups">{t("nav.myGroups")}</NavLink>}
-          {user && <NavLink href="/account/sessions">{t("nav.sessions")}</NavLink>}
-          {user && <NavLink href="/account/loyalty">{t("nav.myStatus")}</NavLink>}
-          {user && <NavLink href="/account/rewards">{t("nav.myRewards")}</NavLink>}
-          {user && <NavLink href="/account/support">{t("nav.support")}</NavLink>}
-          {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/team">{t("nav.team")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/audit">{t("nav.auditLog")}</NavLink>}
-          {user?.organizationRole === "OWNER" && <NavLink href="/dashboard/devices">{t("nav.devices")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/analytics">{t("nav.analytics")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/customers">{t("nav.customers")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/support">{t("nav.supportInbox")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/payments">{t("nav.payments")}</NavLink>}
-          {user && user.organizationRole !== "GATE_CREW" && <NavLink href="/dashboard/settlements">{t("nav.settlements")}</NavLink>}
-          {user?.role === "ADMIN" && <NavLink href="/admin">{t("nav.admin")}</NavLink>}
+          {user && (
+            <DesktopDropdown label={t("nav.more")} active={MORE_PREFIXES.some((p) => pathname?.startsWith(p))}>
+              <DropdownLink href="/account/wallet">{t("nav.myWallets")}</DropdownLink>
+              <DropdownLink href="/account/groups">{t("nav.myGroups")}</DropdownLink>
+              <DropdownLink href="/account/sessions">{t("nav.sessions")}</DropdownLink>
+              <DropdownLink href="/account/loyalty">{t("nav.myStatus")}</DropdownLink>
+              <DropdownLink href="/account/rewards">{t("nav.myRewards")}</DropdownLink>
+              <DropdownLink href="/account/support">{t("nav.support")}</DropdownLink>
+              <MenuDivider />
+              <DropdownLink href="/account/vendor-applications">{t("nav.myVendorApps")}</DropdownLink>
+            </DesktopDropdown>
+          )}
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -191,7 +303,7 @@ export default function Navbar() {
 
                 {user.organizationRole !== "GATE_CREW" && (
                   <>
-                    <MobileMenuDivider />
+                    <MenuDivider />
                     <MobileMenuLink href="/dashboard/analytics" onClick={closeMenu}>{t("nav.analytics")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/customers" onClick={closeMenu}>{t("nav.customers")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/support" onClick={closeMenu}>{t("nav.supportInbox")}</MobileMenuLink>
@@ -202,7 +314,7 @@ export default function Navbar() {
                 )}
                 {user.organizationRole === "OWNER" && (
                   <>
-                    <MobileMenuDivider />
+                    <MenuDivider />
                     <MobileMenuLink href="/dashboard/team" onClick={closeMenu}>{t("nav.team")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/audit" onClick={closeMenu}>{t("nav.auditLog")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/devices" onClick={closeMenu}>{t("nav.devices")}</MobileMenuLink>
@@ -210,7 +322,7 @@ export default function Navbar() {
                 )}
                 {user.role === "ADMIN" && (
                   <>
-                    <MobileMenuDivider />
+                    <MenuDivider />
                     <MobileMenuLink href="/admin" onClick={closeMenu}>{t("nav.admin")}</MobileMenuLink>
                   </>
                 )}
@@ -239,6 +351,6 @@ function MobileMenuLink({
   );
 }
 
-function MobileMenuDivider() {
+function MenuDivider() {
   return <div className="my-1.5 border-t border-border" />;
 }

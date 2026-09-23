@@ -8,6 +8,7 @@ export const dictionaries = {
   en: {
     "nav.browse": "Browse",
     "nav.account": "Account",
+    "nav.more": "More",
     "nav.myTickets": "My Tickets",
     "nav.myVendorApps": "My Vendor Apps",
     "nav.myWallets": "My Wallets",
@@ -393,6 +394,7 @@ export const dictionaries = {
   sw: {
     "nav.browse": "Vinjari",
     "nav.account": "Akaunti",
+    "nav.more": "Zaidi",
     "nav.myTickets": "Tiketi Zangu",
     "nav.myVendorApps": "Maombi Yangu ya Wachuuzi",
     "nav.myWallets": "Pochi Zangu",
