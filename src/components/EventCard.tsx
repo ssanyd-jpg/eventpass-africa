@@ -22,6 +22,7 @@ export default function EventCard({ event }: { event: LocalEvent }) {
           alt={event.title}
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           loading="lazy"
+          decoding="async"
         />
         <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">
           {event.category}

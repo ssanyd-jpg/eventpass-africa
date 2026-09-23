@@ -11,6 +11,7 @@ import { useTranslation } from "@/lib/use-translation";
 import { formatCents, formatDateTime, generateTicketCode } from "@/lib/format";
 import QuestionFields from "@/components/QuestionFields";
 import Spinner from "@/components/Spinner";
+import { useSwipeBack } from "@/lib/use-swipe-gesture";
 
 // Session 27 — a client-safe copy of the same resolution rule as
 // currentPriceCents/nextTierInfo in src/lib/pricing.ts. Duplicated rather
@@ -189,6 +190,16 @@ function EventDetailContent() {
   const hasQuestionsStep = registrationQuestions.length > 0 || !!event?.waiverText;
   const answersValid = registrationQuestions.every((q) => !q.required || (answers[q.id] ?? "").trim());
   const waiverOk = !event?.waiverText || waiverAccepted;
+
+  // Session E — edge-swipe to go back a checkout step (spec item 4), the
+  // same gesture the "Back" buttons on the questions/confirm steps already
+  // perform. Only armed past the first step — on "select" there's nothing
+  // to swipe back to within this flow, and it stays as ordinary page
+  // navigation there.
+  useSwipeBack(() => {
+    if (step === "questions") setStep("select");
+    else if (step === "confirm") setStep(hasQuestionsStep ? "questions" : "select");
+  }, step !== "select");
 
   if (events === undefined) {
     return (

@@ -24,6 +24,7 @@ export default function PublicEventCard({ event }: { event: PublicEventListItem 
           alt={event.title}
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           loading="lazy"
+          decoding="async"
         />
         {/* Gradient wash so the badges (and, on hover, the scaled-up photo
             underneath) always keep readable contrast regardless of how

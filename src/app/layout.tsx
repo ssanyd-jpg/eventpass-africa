@@ -4,6 +4,7 @@ import { Montserrat } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Navbar from "@/components/Navbar";
+import ClientChrome from "@/components/ClientChrome";
 
 // Brand primary typeface "Helium" is not a distributable web font; Montserrat
 // (the brand's specified secondary/fallback face) is used for all UI text.
@@ -44,6 +45,7 @@ export default function RootLayout({
             <Navbar />
             <main className="flex-1">{children}</main>
           </div>
+          <ClientChrome />
         </Providers>
       </body>
     </html>

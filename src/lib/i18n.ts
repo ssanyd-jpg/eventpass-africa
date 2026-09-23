@@ -7,6 +7,7 @@ export type Locale = "en" | "sw";
 export const dictionaries = {
   en: {
     "nav.browse": "Browse",
+    "nav.account": "Account",
     "nav.myTickets": "My Tickets",
     "nav.myVendorApps": "My Vendor Apps",
     "nav.myWallets": "My Wallets",
@@ -391,6 +392,7 @@ export const dictionaries = {
   },
   sw: {
     "nav.browse": "Vinjari",
+    "nav.account": "Akaunti",
     "nav.myTickets": "Tiketi Zangu",
     "nav.myVendorApps": "Maombi Yangu ya Wachuuzi",
     "nav.myWallets": "Pochi Zangu",

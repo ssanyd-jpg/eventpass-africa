@@ -199,7 +199,7 @@ export default function DashboardPage() {
               <div key={event.id} className="card flex flex-col overflow-hidden">
                 <div className="relative h-32 w-full bg-surface2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={event.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 pt-6">
                     <p className="truncate font-semibold text-white">{event.title}</p>
                   </div>
