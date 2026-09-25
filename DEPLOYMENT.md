@@ -277,11 +277,65 @@ instead — don't leave the endpoint open.
   top-up. Airpay answers `PENDING` (the M-Pesa prompt goes to the caller's
   phone), and the wallet is only credited once that charge is confirmed —
   today that happens when the attendee next opens the app (the wallet page
-  polls it), **not** automatically. Until a background job polls pending
-  top-ups, a feature-phone user who never opens the app will see the money
-  leave their phone without the balance changing.
+  polls it). A feature-phone user who never opens the app is covered by the
+  pending top-up sweep in §9, which credits them on its next run.
 - Limits: TZS 2,000 minimum, TZS 500,000 maximum per top-up; TZS wallets
   only.
+
+## 9. Pending top-up sweep (rides on the reminders cron)
+
+Session 35 — **the problem.** A wallet top-up is a two-step thing: the
+charge is started (row saved as `PENDING`), then the attendee approves the
+mobile-money prompt on their phone. AirPay has no webhook, so the balance is
+only credited when something polls `verifyAirpayOrder` for that order —
+until now, only the app's own polling loop. A USSD user (§8) who dials the
+shortcode, pays, and never opens the app has a paid-but-uncredited top-up:
+they paid and their balance never moves.
+
+**The sweep.** `runPendingTopupSweep()` (`src/lib/pending-topups.ts`) finds
+every wallet `TOPUP` still `PENDING` that was created in the last 24 hours,
+asks AirPay about each, and then:
+
+- **paid** → credits the wallet, marks the row `COMPLETED` (with its
+  `airpayRef`, so it shows up in AirPay reconciliation) and sends the
+  attendee a WhatsApp/SMS: "Your top-up of TZS X has been confirmed — your
+  new balance is TZS Y";
+- **declined** → marks it `FAILED`, balance untouched;
+- **still pending** (or AirPay unreachable) → left alone for the next run.
+
+It is safe to run repeatedly and alongside the app: the credit is a
+compare-and-swap on `status = PENDING`, so a top-up the app already
+resolved is never credited twice, and a resolved row is never picked up
+again. Top-ups older than 24 hours are assumed abandoned (the prompt
+expired unanswered) and are not polled. It covers in-app top-ups too, not
+only USSD ones.
+
+**Where it runs.** Vercel's Hobby plan allows two cron jobs and both are
+taken (`/api/cron/reminders` at `0 6 * * *`, `/api/cron/waitlist` at
+`0 7 * * *`), so the sweep is **not** in `vercel.json`. Instead
+`/api/cron/reminders` runs it after the reminder job, once a day at 06:00
+UTC; the response includes a `pendingTopups` object with the counts. The
+sweep runs even if the reminder job fails and never fails the reminders
+run. `/api/cron/pending-topups` also exists as a standalone endpoint (same
+`CRON_SECRET` bearer gate; returns `processed`, `confirmed`, `failed`,
+`stillPending`, `alreadyResolved`) for triggering by hand:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/cron/pending-topups
+```
+
+**Limits on Hobby.** With one run a day, a feature-phone user's balance can
+be credited up to ~24 hours after they pay. A top-up made just after the
+06:00 run that isn't resolved by the next one is at the edge of the 24-hour
+window (Hobby crons may fire anywhere in their hour), so a late run can
+skip it — check for stragglers with `/dashboard/events/<id>/airpay-reconciliation`
+or by looking for old `PENDING` top-ups.
+
+**Upgrading to Vercel Pro** lifts the once-a-day limit and the two-cron cap.
+Then add `{ "path": "/api/cron/pending-topups", "schedule": "* * * * *" }`
+(or every few minutes) to `vercel.json` and remove the sweep call from the
+reminders route: top-ups would be credited within a minute or so of payment,
+which is close to real time for a USSD user.
 
 ## Post-deploy checklist
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendEventReminders } from "@/lib/reminders";
+import { runPendingTopupSweep } from "@/lib/pending-topups";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
 // `Authorization: Bearer ${CRON_SECRET}` header it adds automatically for
@@ -18,6 +19,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, reason: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const result = await sendEventReminders();
-  return NextResponse.json(result);
+  // Session 35 — Vercel Hobby allows two crons and both slots are taken
+  // (this one and /api/cron/waitlist), so the pending top-up sweep rides
+  // along on this daily run instead of getting its own. It runs whether or
+  // not the reminders job succeeded — a paid-but-uncredited top-up shouldn't
+  // wait another day because an unrelated reminder send threw — and a sweep
+  // failure never turns a successful reminders run into a 500.
+  let remindersError: unknown = null;
+  let result: Awaited<ReturnType<typeof sendEventReminders>> | null = null;
+  try {
+    result = await sendEventReminders();
+  } catch (error) {
+    remindersError = error;
+  }
+
+  let pendingTopups: Awaited<ReturnType<typeof runPendingTopupSweep>> | { ok: false; reason: string };
+  try {
+    pendingTopups = await runPendingTopupSweep();
+  } catch (error) {
+    console.error("[cron/reminders] pending top-up sweep failed", error);
+    pendingTopups = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
+  if (remindersError) throw remindersError;
+  return NextResponse.json({ ...result, pendingTopups });
 }
