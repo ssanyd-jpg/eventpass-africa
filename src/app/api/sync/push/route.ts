@@ -39,6 +39,7 @@ import {
   handleRecordSessionAttendance,
   handleCaptureExhibitorLead,
 } from "@/lib/sync-handlers";
+import { handleInitiateWalletTransfer, handleCompleteWalletTransfer } from "@/lib/wallet-transfer-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
 import { logAudit, buildSyncAuditEntry } from "@/lib/audit";
 import { checkAndTrackDevice } from "@/lib/device-handlers";
@@ -182,6 +183,12 @@ export async function POST(request: Request) {
         break;
       case "WITHDRAW_WALLET":
         result = await handleWithdrawWallet(session.user.id, body.payload);
+        break;
+      case "INITIATE_WALLET_TRANSFER":
+        result = await handleInitiateWalletTransfer(session.user.id, body.payload);
+        break;
+      case "COMPLETE_WALLET_TRANSFER":
+        result = await handleCompleteWalletTransfer(session.user.id, body.payload);
         break;
       case "APPROVE_WITHDRAWAL":
         result = await handleApproveWithdrawal(session.user.id, session.user.organizationId, body.payload);

@@ -51,6 +51,8 @@ const TRANSACTION_LABELS: Record<string, string> = {
   SPONSOR_TAP: "Sponsor tap",
   WITHDRAWAL: "Withdrawal",
   CARRY_OVER: "Carry-over",
+  TRANSFER_OUT: "Transfer sent",
+  TRANSFER_IN: "Transfer received",
 };
 
 const MAIN_MENU = "CON Welcome to Chaap\n1. Check balance\n2. Top up wallet\n3. View last transaction";

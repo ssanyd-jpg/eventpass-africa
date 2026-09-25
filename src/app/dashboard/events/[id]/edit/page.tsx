@@ -122,6 +122,7 @@ export default function EditEventPage() {
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [carryOverEnabled, setCarryOverEnabled] = useState(false);
+  const [transferEnabled, setTransferEnabled] = useState(false);
   const [eventType, setEventType] = useState<EventType>("GENERAL");
   const [ticketTypes, setTicketTypes] = useState<DraftTicketType[]>([]);
   const [vendorApplicationsOpen, setVendorApplicationsOpen] = useState(false);
@@ -221,6 +222,7 @@ export default function EditEventPage() {
       setStartsAt(isoToLocalInput(event.startsAt));
       setEndsAt(event.endsAt ? isoToLocalInput(event.endsAt) : "");
       setCarryOverEnabled(event.carryOverEnabled);
+      setTransferEnabled(event.transferEnabled ?? false);
       setEventType(event.eventType);
       setVendorApplicationsOpen(event.vendorApplicationsOpen);
       setVendorStallFeeMajor(String(event.vendorStallFeeCents / 100));
@@ -592,6 +594,7 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: endsAt ? new Date(endsAt).toISOString() : null,
       carryOverEnabled,
+      transferEnabled,
       eventType,
       vendorApplicationsOpen,
       vendorStallFeeCents,
@@ -616,6 +619,7 @@ export default function EditEventPage() {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: endsAt ? new Date(endsAt).toISOString() : null,
       carryOverEnabled,
+      transferEnabled,
       eventType,
       vendorApplicationsOpen,
       vendorStallFeeCents,
@@ -966,6 +970,24 @@ export default function EditEventPage() {
             </p>
           </div>
         )}
+
+        <div className="border-t border-border pt-5">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={transferEnabled}
+              disabled={currency !== "TZS"}
+              onChange={(e) => setTransferEnabled(e.target.checked)}
+            />
+            <span className="label !mb-0">Allow wallet transfers between attendees</span>
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Lets a wristband holder send part of their wallet balance to another attendee at this event — by NFC
+            tap, a 6-digit code, or phone number. Each transfer is TZS 1,000–100,000. Transfers move money between
+            attendees only; they don&apos;t change your top-up or spend totals.
+            {currency !== "TZS" && " Available for TZS events only."}
+          </p>
+        </div>
 
         <div className="border-t border-border pt-5">
           <label className="flex items-center gap-2">

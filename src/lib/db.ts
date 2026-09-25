@@ -64,6 +64,10 @@ export interface LocalEvent {
   currency: string;
   // Session 11 — organiser opt-in for wristband balance carry-over.
   carryOverEnabled: boolean;
+  // Session 37 — organiser opt-in for peer-to-peer wallet transfers.
+  // Optional because rows cached before this field existed don't have it;
+  // absent means off.
+  transferEnabled?: boolean;
   // Session 12 — GENERAL | MARATHON | CONFERENCE. MARATHON unlocks the
   // timing scanner, timing dashboard, and public leaderboard. Session 14
   // added FOOTBALL — display-only, no dedicated tooling of its own. Session
@@ -464,7 +468,7 @@ export interface LocalWalletTransaction {
   id: string;
   clientId?: string | null;
   walletId: string;
-  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL" | "CARRY_OVER" | "LOYALTY_CREDIT";
+  type: "TOPUP" | "SALE" | "SPONSOR_TAP" | "WITHDRAWAL" | "CARRY_OVER" | "LOYALTY_CREDIT" | "TRANSFER_OUT" | "TRANSFER_IN";
   status: "PENDING" | "COMPLETED" | "FAILED";
   amountCents: number | null;
   currency: string;
@@ -585,7 +589,9 @@ export type OutboxOpType =
   | "CAPTURE_EXHIBITOR_LEAD"
   | "CHARGE_DIRECT_SALE"
   | "CHECK_DIRECT_SALE_STATUS"
-  | "CANCEL_DIRECT_SALE";
+  | "CANCEL_DIRECT_SALE"
+  | "INITIATE_WALLET_TRANSFER"
+  | "COMPLETE_WALLET_TRANSFER";
 
 export interface OutboxEntry {
   id?: number;

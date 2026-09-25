@@ -14,6 +14,7 @@ import {
   sponsorTapsBySponsor,
 } from "@/lib/analytics";
 import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
+import { summarizeTransferVolume } from "@/lib/wallet-transfer";
 import { buildCsvDocument, centsToMajorUnits, type CsvSection } from "@/lib/csv";
 
 // A full (un-truncated) export of the organizer analytics dashboard's own
@@ -51,6 +52,7 @@ export async function GET() {
   const vendorStats = summarizeVendors(vendors);
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
+  const transferStats = summarizeTransferVolume(walletTxs);
   const vendorSpend = spendByVendor(walletTxs, EXPORT_LIMIT);
   const tapsBySponsor = sponsorTapsBySponsor(walletTxs, EXPORT_LIMIT);
 
@@ -117,6 +119,13 @@ export async function GET() {
           formatCents(cents, currency),
         ]),
         ["Wallet Count", "", walletBalanceStats.walletCount, ""],
+        ...Object.entries(transferStats.transferVolumeByCurrency).map(([currency, cents]) => [
+          "Wallet transfer volume",
+          currency,
+          centsToMajorUnits(cents),
+          formatCents(cents, currency),
+        ]),
+        ["Wallet Transfer Count", "", transferStats.transferCount, ""],
       ],
     },
     {

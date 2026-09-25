@@ -781,6 +781,9 @@ model Event {
   // null = the face value of the ticket is the only cap.
   resaleEnabled   Boolean @default(false)
   maxResalePrice  Int?
+  // Session 37 — organiser opt-in for peer-to-peer wallet transfers between
+  // wristband holders at this event (see WalletTransfer). Off by default.
+  transferEnabled Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -788,6 +791,7 @@ model Event {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   ticketListings        TicketListing[]
+  walletTransfers       WalletTransfer[]
   ticketTypes           TicketType[]
   orders                Order[]
   tickets               Ticket[]
@@ -1511,10 +1515,17 @@ model Wallet {
   credentials  Credential[]
   ticketGroup  TicketGroup?
 
+  // Session 37 — peer-to-peer transfers this wallet sent / received.
+  transfersSent     WalletTransfer[] @relation("WalletTransfersSent")
+  transfersReceived WalletTransfer[] @relation("WalletTransfersReceived")
+
   @@unique([eventId, ownerUserId])
 }
 
-// type is TOPUP | SALE | SPONSOR_TAP | WITHDRAWAL | CARRY_OVER. status is
+// type is TOPUP | SALE | SPONSOR_TAP | WITHDRAWAL | CARRY_OVER |
+// LOYALTY_CREDIT | TRANSFER_OUT | TRANSFER_IN (Session 37 — a
+// peer-to-peer WalletTransfer writes one of each, and the row's `note`
+// holds the OTHER party's first name for the history list). status is
 // PENDING | COMPLETED | FAILED (plain-string convention — see
 // MobileMoneyAccount.provider). Only TOPUP/WITHDRAWAL are ever PENDING
 // (waiting on an async mobile-money charge / an organiser payout review);
@@ -1610,6 +1621,58 @@ model WalletTransaction {
   // to Wallet through this column with no index to use — this was the
   // single least-indexed hot column in the schema.
   @@index([walletId, createdAt])
+}
+
+// Session 37 — peer-to-peer wallet transfer between two wristband holders at
+// the same event. method is NFC | CODE | PHONE (how the sender identified the
+// recipient); status is PENDING | COMPLETED | CANCELLED | EXPIRED — plain
+// strings, same convention as everything else here.
+//
+// A transfer is two-phase on purpose: initiateTransfer debits the sender (a
+// PENDING TRANSFER_OUT) and completeTransfer credits the recipient, so a
+// crash or a dropped connection between the two can never lose money — an
+// unfinished transfer expires after 15 minutes and refunds the sender.
+//
+// The CODE method starts from the RECIPIENT: "Receive transfer" creates a
+// row with a 6-digit transferCode and no sender or amount yet
+// (senderWalletId/amountCents null, status PENDING). The sender claims it
+// with a compare-and-swap, which fills both in — that is what makes a code
+// single-use. Every other method creates the row fully populated.
+//
+// senderTransactionId/recipientTransactionId are plain ids, not relations,
+// same discipline as WalletTransaction.spentByTicketId: the transactions are
+// never deleted independently of their wallet.
+model WalletTransfer {
+  id                     String    @id @default(cuid())
+  // Idempotency key. For a CODE transfer this is the RECIPIENT's key (the
+  // one that created the code); the sender's replay key lives on the
+  // TRANSFER_OUT WalletTransaction.clientId instead.
+  clientId               String?   @unique
+  method                 String
+  status                 String    @default("PENDING")
+  amountCents            Int?
+  currency               String    @default("TZS")
+  transferCode           String?
+  senderTransactionId    String?
+  recipientTransactionId String?
+  initiatedAt            DateTime  @default(now())
+  completedAt            DateTime?
+  expiresAt              DateTime
+
+  senderWalletId String?
+  senderWallet   Wallet? @relation("WalletTransfersSent", fields: [senderWalletId], references: [id], onDelete: Cascade)
+
+  recipientWalletId String
+  recipientWallet   Wallet  @relation("WalletTransfersReceived", fields: [recipientWalletId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, status])
+  @@index([transferCode, status])
+  @@index([status, expiresAt])
+  @@index([senderWalletId])
+  @@index([recipientWalletId])
 }
 
 // Session 28 — vendor terminal "Direct Sale": a mobile money charge to a

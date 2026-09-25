@@ -626,6 +626,83 @@ async function applyWithdrawWalletResult(payload: any, result: any) {
   }
 }
 
+// Session 37 — INITIATE_/COMPLETE_WALLET_TRANSFER. The local "sending…" row
+// is keyed by the INITIATE op's clientId, which is also the TRANSFER_OUT
+// row's server clientId, so a successful result remaps it exactly like
+// applyWithdrawWalletResult. A soft decline (ok:true, declined:true — expired
+// code, unknown number, insufficient balance…) carries no server row: the
+// local one is kept and marked as a conflict with a human message instead
+// of being left "pending" forever. COMPLETE's decline doesn't touch a row
+// INITIATE already marked failed — that result explained what went wrong.
+export const TRANSFER_DECLINE_MESSAGES: Record<string, string> = {
+  INSUFFICIENT_BALANCE: "Insufficient balance — the transfer was not sent.",
+  RECIPIENT_NOT_FOUND: "We couldn't find that recipient — nothing was sent.",
+  INVALID_CODE: "That transfer code isn't valid — nothing was sent.",
+  CODE_EXPIRED: "That transfer code has expired — nothing was sent.",
+  SELF_TRANSFER: "You can't send money to yourself.",
+  DIFFERENT_EVENT: "Transfers only work between wallets at the same event.",
+  TRANSFERS_DISABLED: "The organiser hasn't enabled wallet transfers for this event.",
+  EVENT_NOT_LIVE: "This event isn't live, so transfers are unavailable.",
+  CURRENCY_NOT_SUPPORTED: "Transfers aren't available for this event's currency.",
+  AMOUNT_TOO_LOW: "That amount is below the minimum transfer.",
+  AMOUNT_TOO_HIGH: "That amount is above the maximum transfer.",
+  WALLET_NOT_FOUND: "Wallet not found — nothing was sent.",
+  TRANSFER_EXPIRED: "The transfer expired and your money was returned.",
+  TRANSFER_CANCELLED: "The transfer was cancelled and your money was returned.",
+};
+
+// A COMPLETE_WALLET_TRANSFER whose INITIATE never produced a transfer (declined,
+// or dropped as invalid) has nothing to complete and would otherwise be
+// retried forever waiting for a TRANSFER_OUT row that will never exist.
+async function abandonTransferCompletion(initiateClientId: string) {
+  const queued = await db.outbox.where("type").equals("COMPLETE_WALLET_TRANSFER").toArray();
+  for (const entry of queued) {
+    if (entry.id != null && entry.payload.initiateClientId === initiateClientId) {
+      await db.outbox.delete(entry.id);
+    }
+  }
+}
+
+async function applyInitiateWalletTransferResult(payload: any, result: any) {
+  const localId = payload.clientId as string;
+  if (result.declined) {
+    await abandonTransferCompletion(localId);
+    const local = await db.walletTransactions.get(localId);
+    if (local) {
+      await db.walletTransactions.put({
+        ...local,
+        status: "FAILED",
+        syncStatus: "conflict",
+        syncError: TRANSFER_DECLINE_MESSAGES[result.reason] ?? "The transfer couldn't be completed.",
+      });
+    }
+    return;
+  }
+  await db.walletTransactions.delete(localId);
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
+async function applyCompleteWalletTransferResult(payload: any, result: any) {
+  if (result.declined) {
+    const local = await db.walletTransactions.get(payload.initiateClientId as string);
+    if (local && local.syncStatus !== "conflict") {
+      await db.walletTransactions.put({
+        ...local,
+        syncStatus: "conflict",
+        syncError: TRANSFER_DECLINE_MESSAGES[result.reason] ?? "The transfer couldn't be completed.",
+      });
+    }
+    return;
+  }
+  await db.walletTransactions.put({ ...result.transaction, syncStatus: "synced" });
+  if (result.wallet) {
+    await db.wallets.put({ ...result.wallet, syncStatus: "synced" });
+  }
+}
+
 // APPROVE_WITHDRAWAL acts on an already-synced transaction id — no
 // local-temp-id to remap, same shape as applyCheckTopupStatusResult.
 async function applyApproveWithdrawalResult(_payload: any, result: any) {
@@ -686,6 +763,12 @@ function outboxResourceKey(entry: { type: OutboxOpType; payload: Record<string, 
     case "TOPUP_WALLET":
     case "WITHDRAW_WALLET":
       return `wallet:${p.walletId}`;
+    // Session 37 — a transfer's INITIATE and COMPLETE share the sender's
+    // bucket so they run strictly in order, and stay ordered against any
+    // top-up/withdrawal on that same wallet.
+    case "INITIATE_WALLET_TRANSFER":
+    case "COMPLETE_WALLET_TRANSFER":
+      return `wallet:${p.senderWalletId}`;
     case "CHARGE_WALLET":
     case "SPLIT_PAYMENT":
     case "SPONSOR_TAP":
@@ -764,6 +847,18 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
         }
         // non-retryable: drop from outbox but record conflict on the local record if we can
         await db.outbox.delete(entry.id);
+        if (entry.type === "INITIATE_WALLET_TRANSFER") {
+          await abandonTransferCompletion(entry.payload.clientId as string);
+          const local = await db.walletTransactions.get(entry.payload.clientId as string);
+          if (local) {
+            await db.walletTransactions.put({
+              ...local,
+              status: "FAILED",
+              syncStatus: "conflict",
+              syncError: "The transfer couldn't be sent — nothing was taken.",
+            });
+          }
+        }
         failed++;
         return;
       }
@@ -846,6 +941,12 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
           break;
         case "WITHDRAW_WALLET":
           await applyWithdrawWalletResult(entry.payload, result);
+          break;
+        case "INITIATE_WALLET_TRANSFER":
+          await applyInitiateWalletTransferResult(entry.payload, result);
+          break;
+        case "COMPLETE_WALLET_TRANSFER":
+          await applyCompleteWalletTransferResult(entry.payload, result);
           break;
         case "APPROVE_WITHDRAWAL":
           await applyApproveWithdrawalResult(entry.payload, result);

@@ -32,6 +32,8 @@ const TYPE_LABEL: Record<string, string> = {
   WITHDRAWAL: "Withdrawal",
   CARRY_OVER: "Carry-over",
   LOYALTY_CREDIT: "Loyalty reward",
+  TRANSFER_OUT: "Sent",
+  TRANSFER_IN: "Received",
 };
 
 interface NDEFWriterLike {
@@ -80,9 +82,24 @@ export default function WalletDetailPage() {
   const [wSubmitting, setWSubmitting] = useState(false);
   const [wError, setWError] = useState<string | null>(null);
 
+  // Session 37 — "Receive": a 6-digit code (valid 15 minutes) another
+  // attendee types into their transfer page to send money to this wallet.
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [receiveBusy, setReceiveBusy] = useState(false);
+  const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [receiveCode, setReceiveCode] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
   useEffect(() => {
     setNfcSupported(typeof window !== "undefined" && "NDEFWriter" in window);
   }, []);
+
+  // Countdown tick, only while a code is on screen.
+  useEffect(() => {
+    if (!receiveCode) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [receiveCode]);
 
   useEffect(() => {
     if (status !== "loading" && !user) router.push(`/login?callbackUrl=/account/wallet/${walletId}`);
@@ -117,6 +134,43 @@ export default function WalletDetailPage() {
       walletTransactionId,
       walletTransactionClientId,
     });
+  }
+
+  // Generating a code needs the server (it has to exist before anyone can
+  // claim it), so unlike the sender's side this is online-only.
+  async function generateReceiveCode() {
+    if (!wallet) return;
+    setReceiveOpen(true);
+    setReceiveError(null);
+    if (!navigator.onLine) {
+      setReceiveError("Generating a transfer code needs a connection. Try again when you're back online.");
+      return;
+    }
+    setReceiveBusy(true);
+    try {
+      const res = await fetch("/api/wallet-transfer/receive-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId: wallet.id, clientId: newLocalId() }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) {
+        setReceiveError(
+          json?.reason === "TRANSFERS_DISABLED"
+            ? "The organiser hasn't enabled wallet transfers for this event."
+            : json?.reason === "RATE_LIMITED"
+              ? "Too many requests. Wait a minute and try again."
+              : "Couldn't generate a code. Try again."
+        );
+        return;
+      }
+      setNowMs(Date.now());
+      setReceiveCode({ code: json.code, expiresAt: new Date(json.expiresAt).getTime() });
+    } catch {
+      setReceiveError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setReceiveBusy(false);
+    }
   }
 
   async function bindNfc() {
@@ -281,6 +335,43 @@ export default function WalletDetailPage() {
         {nfcStatus && <p className="text-xs text-muted">{nfcStatus}</p>}
       </div>
 
+      {!eventCancelled && event?.transferEnabled === true && (
+        <div className="mt-6">
+          <div className="grid grid-cols-2 gap-3">
+            <Link href={`/account/wallet/${wallet.id}/transfer`} className="btn-primary inline-flex items-center justify-center">
+              Send
+            </Link>
+            <button type="button" className="btn-secondary" onClick={generateReceiveCode} disabled={receiveBusy}>
+              Receive
+            </button>
+          </div>
+          {receiveOpen && (
+            <div className="card mt-3 p-5 text-center">
+              <h2 className="font-semibold">Receive transfer</h2>
+              {receiveBusy ? (
+                <p className="mt-2 text-sm text-muted">Generating a code…</p>
+              ) : receiveError ? (
+                <p className="mt-2 text-sm text-danger">{receiveError}</p>
+              ) : receiveCode && receiveCode.expiresAt > nowMs ? (
+                <>
+                  <p className="mt-2 font-mono text-4xl font-bold tracking-widest">{receiveCode.code}</p>
+                  <p className="mt-2 text-sm text-muted">
+                    Give this code to the person sending you money. Expires in{" "}
+                    {Math.floor((receiveCode.expiresAt - nowMs) / 60000)}:
+                    {String(Math.floor(((receiveCode.expiresAt - nowMs) % 60000) / 1000)).padStart(2, "0")}.
+                  </p>
+                </>
+              ) : receiveCode ? (
+                <p className="mt-2 text-sm text-muted">That code has expired.</p>
+              ) : null}
+              <button type="button" className="btn-secondary mt-3 w-full" onClick={generateReceiveCode} disabled={receiveBusy}>
+                {receiveCode ? "New code" : "Try again"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {eventCancelled ? (
         <div className="card mt-6 p-5">
           <p className="font-semibold text-danger">This event was cancelled.</p>
@@ -394,7 +485,13 @@ export default function WalletDetailPage() {
             <div key={t.id} className="flex items-center justify-between p-4 text-sm">
               <div>
                 <p className="font-medium">
-                  {TYPE_LABEL[t.type] ?? t.type}
+                  {/* Session 37 — a transfer names the OTHER party by first
+                      name only (stored in note; see WalletTransfer). */}
+                  {t.type === "TRANSFER_OUT"
+                    ? `Sent to ${t.note ?? "someone"}`
+                    : t.type === "TRANSFER_IN"
+                      ? `Received from ${t.note ?? "someone"}`
+                      : TYPE_LABEL[t.type] ?? t.type}
                   {t.vendorName ? ` — ${t.vendorName}` : ""}
                   {t.sponsorName ? ` — ${t.sponsorName}` : ""}
                 </p>
@@ -407,17 +504,27 @@ export default function WalletDetailPage() {
                     Check status
                   </button>
                 )}
+                {t.type === "TRANSFER_OUT" && t.status === "PENDING" && (
+                  <p className="mt-1 text-xs text-muted">Sending…</p>
+                )}
+                {t.type === "TRANSFER_OUT" && t.status === "FAILED" && (
+                  <p className="mt-1 text-xs text-muted">{t.syncError ?? t.providerMessage ?? "Not sent — your money was returned."}</p>
+                )}
                 {t.status === "PENDING" && t.type === "WITHDRAWAL" && (
                   <p className="mt-1 text-xs text-muted">Waiting for organizer review</p>
                 )}
               </div>
               <div className="text-right">
                 {t.amountCents !== null && (
-                  <p className="font-semibold">
+                  <p
+                    className={`font-semibold ${
+                      t.status === "FAILED" ? "" : t.type === "TRANSFER_OUT" ? "text-danger" : t.type === "TRANSFER_IN" ? "text-ok" : ""
+                    }`}
+                  >
                     {/* CARRY_OVER is the one signed type — a credit on the
                         new wallet, a debit on the old one (see the
                         WalletTransaction note in prisma/schema.prisma). */}
-                    {t.type === "TOPUP" || t.type === "LOYALTY_CREDIT" || (t.type === "CARRY_OVER" && t.amountCents > 0) ? "+" : "-"}
+                    {t.type === "TOPUP" || t.type === "LOYALTY_CREDIT" || t.type === "TRANSFER_IN" || (t.type === "CARRY_OVER" && t.amountCents > 0) ? "+" : "-"}
                     {formatCents(Math.abs(t.amountCents), t.currency)}
                   </p>
                 )}

@@ -34,7 +34,10 @@ export type NotificationType =
   // Session 33
   | "LOYALTY_REWARD"
   // Session 28
-  | "DIRECT_SALE_RECEIPT";
+  | "DIRECT_SALE_RECEIPT"
+  // Session 37
+  | "WALLET_TRANSFER_SENT"
+  | "WALLET_TRANSFER_RECEIVED";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

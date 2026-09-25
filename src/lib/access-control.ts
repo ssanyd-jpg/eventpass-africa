@@ -28,6 +28,10 @@ const GATE_CREW_ALLOWED_OPS: ReadonlySet<OpType> = new Set<OpType>([
   "TOPUP_WALLET",
   "CHECK_TOPUP_STATUS",
   "WITHDRAW_WALLET",
+  // Session 37 — a buyer moving their own balance, same self-action as
+  // WITHDRAW_WALLET above.
+  "INITIATE_WALLET_TRANSFER",
+  "COMPLETE_WALLET_TRANSFER",
   "CHECK_ORDER_PAYMENT_STATUS",
   // Buyer self-action, same as CHECK_ORDER_PAYMENT_STATUS above — a gate
   // crew member is still a buyer for their own orders. MARK_ORDER_PAID is

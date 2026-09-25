@@ -17,6 +17,7 @@ import {
 } from "@/lib/analytics";
 import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
 import { summarizeCarryOverVolume } from "@/lib/carry-over";
+import { summarizeTransferVolume } from "@/lib/wallet-transfer";
 import { summarizeGroupSales } from "@/lib/ticket-groups";
 import { getOrganizerResaleListings } from "@/lib/resale";
 import { summarizeResaleRevenue } from "@/lib/resale-pricing";
@@ -68,6 +69,7 @@ export default async function OrganizerAnalyticsPage() {
   const walletBalanceStats = summarizeWalletBalances(wallets);
   const walletActivityStats = summarizeWalletActivity(walletTxs);
   const carryOverVolumeByCurrency = summarizeCarryOverVolume(walletTxs);
+  const transferStats = summarizeTransferVolume(walletTxs);
   const groupSales = summarizeGroupSales(ticketGroups);
   const vendorSpend = spendByVendor(walletTxs);
   const tapsByZone = sponsorTapsBySponsor(walletTxs);
@@ -209,6 +211,19 @@ export default async function OrganizerAnalyticsPage() {
             ))
           )}
           <p className="mt-1 text-xs text-muted">Balance carried in from your past events</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Wallet transfers</p>
+          {Object.keys(transferStats.transferVolumeByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(transferStats.transferVolumeByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
+          <p className="mt-1 text-xs text-muted">
+            {transferStats.transferCount} transfer{transferStats.transferCount === 1 ? "" : "s"} between attendees
+          </p>
         </div>
       </div>
 

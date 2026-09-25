@@ -93,6 +93,7 @@ export async function GET(request: Request) {
     status: e.status,
     currency: e.currency,
     carryOverEnabled: e.carryOverEnabled,
+    transferEnabled: e.transferEnabled,
     eventType: e.eventType,
     gunStartAt: e.gunStartAt ? e.gunStartAt.toISOString() : null,
     vendorApplicationsOpen: e.vendorApplicationsOpen,

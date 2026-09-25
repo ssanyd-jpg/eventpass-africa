@@ -10,6 +10,8 @@ const TYPE_LABEL: Record<string, string> = {
   SPONSOR_TAP: "Sponsor tap",
   WITHDRAWAL: "Withdrawal",
   CARRY_OVER: "Carry-over",
+  TRANSFER_OUT: "Sent",
+  TRANSFER_IN: "Received",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -79,7 +81,7 @@ export default async function GroupDetailPage({ params }: { params: { groupId: s
               <div className="text-right">
                 {t.amountCents !== null && (
                   <p className="font-semibold">
-                    {t.type === "TOPUP" ? "+" : "-"}
+                    {t.type === "TOPUP" || t.type === "TRANSFER_IN" ? "+" : "-"}
                     {formatCents(Math.abs(t.amountCents), t.currency)}
                   </p>
                 )}

@@ -183,6 +183,8 @@ export const payloadSchemas = {
     // Session 11 — optional end datetime and the carry-over opt-in toggle.
     endsAt: z.string().nullable().optional(),
     carryOverEnabled: z.boolean().optional(),
+    // Session 37 — organiser opt-in for peer-to-peer wallet transfers.
+    transferEnabled: z.boolean().optional(),
     // Session 12 — GENERAL | MARATHON | CONFERENCE. Session 14 added
     // FOOTBALL (display-only, no dedicated tooling — unlike MARATHON).
     // Session 22 added CONCERT | FESTIVAL — see EVENT_TYPES in event-modes.ts,
@@ -359,6 +361,37 @@ export const payloadSchemas = {
     amountCents: z.number().int().min(100).max(50000000),
     phoneNumber: z.string().min(6).max(20),
     mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]),
+  }),
+  // Session 37 — peer-to-peer wallet transfer (see wallet-transfer.ts). The
+  // recipient is identified by exactly the one field matching `method`; the
+  // server re-resolves it rather than trusting a wallet id from the client,
+  // so a code entered offline is validated at sync time. Amount limits are
+  // deliberately NOT in the schema: a range violation here is a 400 the
+  // outbox drops silently, while the lib reports it as a soft decline the
+  // sender's row can show.
+  INITIATE_WALLET_TRANSFER: z
+    .object({
+      clientId: z.string().min(1),
+      senderWalletId: z.string().min(1),
+      senderWalletClientId: z.string().nullable().optional(),
+      method: z.enum(["NFC", "CODE", "PHONE"]),
+      amountCents: z.number().int().positive(),
+      nfcUid: z.string().min(1).max(100).optional(),
+      code: z.string().min(1).max(20).optional(),
+      phone: z.string().min(6).max(20).optional(),
+    })
+    .refine(
+      (p) => (p.method === "NFC" ? !!p.nfcUid : p.method === "CODE" ? !!p.code : !!p.phone),
+      { message: "Missing the recipient identifier for this transfer method" }
+    ),
+  // Acts on the transfer the INITIATE op created, found via that op's
+  // clientId (which the TRANSFER_OUT row carries) — an offline client never
+  // learns the transfer's server id.
+  COMPLETE_WALLET_TRANSFER: z.object({
+    clientId: z.string().min(1),
+    senderWalletId: z.string().min(1),
+    senderWalletClientId: z.string().nullable().optional(),
+    initiateClientId: z.string().min(1),
   }),
   APPROVE_WITHDRAWAL: z.object({
     clientId: z.string().min(1),
@@ -629,6 +662,7 @@ export function shapeEvent(e: any, organizerName: string) {
     status: e.status,
     currency: e.currency,
     carryOverEnabled: e.carryOverEnabled ?? false,
+    transferEnabled: e.transferEnabled ?? false,
     // Session 14 fix — previously missing here, which meant
     // applyEditOrCancelEventResult's full db.events.put(server) silently
     // wiped a MARATHON event's eventType/gunStartAt back to undefined on
@@ -1248,6 +1282,7 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
   if (payload.startsAt !== undefined) data.startsAt = new Date(payload.startsAt);
   if (payload.endsAt !== undefined) data.endsAt = payload.endsAt ? new Date(payload.endsAt) : null;
   if (payload.carryOverEnabled !== undefined) data.carryOverEnabled = Boolean(payload.carryOverEnabled);
+  if (payload.transferEnabled !== undefined) data.transferEnabled = Boolean(payload.transferEnabled);
   if (payload.eventType !== undefined) data.eventType = String(payload.eventType);
   if (payload.vendorApplicationsOpen !== undefined) data.vendorApplicationsOpen = Boolean(payload.vendorApplicationsOpen);
   if (payload.waitlistEnabled !== undefined) data.waitlistEnabled = Boolean(payload.waitlistEnabled);
