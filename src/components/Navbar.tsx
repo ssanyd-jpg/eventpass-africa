@@ -173,7 +173,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6">
         <Link href="/" className="flex flex-shrink-0 items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-9 w-9 flex-shrink-0 rounded-lg" />
+          <img src="/chaap-icon.webp" alt="" className="h-9 w-9 flex-shrink-0 rounded-lg" />
           <span className="flex flex-col leading-none">
             <span className="font-display text-base font-extrabold tracking-tight text-silver">
               CHAAP

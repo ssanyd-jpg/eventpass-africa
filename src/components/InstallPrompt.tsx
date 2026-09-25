@@ -80,7 +80,7 @@ export default function InstallPrompt() {
     >
       <div className="flex items-start gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon.svg" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
+        <img src="/chaap-icon.webp" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold">Add Chaap to your home screen</p>
           {ios ? (

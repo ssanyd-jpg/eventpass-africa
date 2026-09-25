@@ -278,7 +278,7 @@ export default async function HomePage() {
             <div>
               <div className="flex items-center gap-2.5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/icon.svg" alt="" className="h-8 w-8 rounded-lg" />
+                <img src="/chaap-icon.webp" alt="" className="h-8 w-8 rounded-lg" />
                 <span className="font-display text-base font-extrabold tracking-tight text-silver">CHAAP</span>
               </div>
               <p className="mt-3 max-w-xs text-sm text-muted">East Africa&apos;s event platform.</p>

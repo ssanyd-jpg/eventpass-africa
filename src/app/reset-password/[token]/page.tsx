@@ -39,7 +39,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-12">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/icon.svg" alt="" className="mb-4 h-12 w-12 rounded-xl" />
+      <img src="/chaap-icon.webp" alt="" className="mb-4 h-12 w-12 rounded-xl" />
       <h1 className="mb-1 text-2xl font-bold">Set a new password</h1>
 
       {done ? (

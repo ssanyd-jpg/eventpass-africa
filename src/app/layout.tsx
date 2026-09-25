@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   description:
     "Browse events, sell tickets, scan gate entry, and settle vendor payouts same-day — all with 100% offline capability.",
   manifest: "/manifest.json",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: { icon: "/favicon.ico", apple: "/chaap-apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {
