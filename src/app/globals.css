@@ -10,15 +10,45 @@
   --silver: #d9d9d9;
   --gunmetal: #0d0d0d;
 
-  --background: var(--gunmetal);
-  --foreground: #f2f2f2;
-  --surface: #131722;
-  --surface-2: #1b2130;
-  --border: #262d40;
-  --muted: #98a0b3;
-  --accent: var(--helix-blue);
-  --accent-hover: #2b80ff;
-  --accent-soft: rgba(0, 102, 255, 0.15);
+  /* Session 39 — "sunset" theme (Option C-Fixed). These are the source-of-
+     truth values; the semantic tokens below (--background, --surface,
+     --accent, ...) are what every component actually reads, so re-pointing
+     them here retints the whole app without touching a single component. */
+  --surface-app: #211a1d;
+  --surface-card: #2a2226;
+  --card-border: rgba(255, 255, 255, 0.08);
+
+  --chrome-sidebar-bg: linear-gradient(rgba(10, 5, 12, 0.4), rgba(10, 5, 12, 0.4)),
+    linear-gradient(165deg, #2b1b4e 0%, #a83a5a 55%, #ff9142 100%);
+  --chrome-topbar-bg: linear-gradient(rgba(10, 5, 12, 0.3), rgba(10, 5, 12, 0.3)),
+    linear-gradient(90deg, #6b2d5c, #c6453f, #ff9142);
+  --chrome-border: rgba(255, 255, 255, 0.14);
+
+  --nav-active-bg: rgba(255, 255, 255, 0.22);
+  --nav-active-text: #ffffff;
+  --nav-inactive-bg: rgba(10, 5, 12, 0.28);
+  --nav-inactive-text: #f3e4dc;
+
+  --text-heading: #f7f0ee;
+  --text-muted: #a79aa0;
+  --text-on-chrome: #fbe3d6;
+
+  --accent-solid: #ff9142;
+  --accent-gradient: linear-gradient(180deg, #ff9142, #c6453f);
+
+  --background: var(--surface-app);
+  --foreground: var(--text-heading);
+  --surface: var(--surface-card);
+  /* Not in the sunset spec (inputs, secondary buttons, pills, table-row
+     hover) — a step lighter than --surface-card in the same warm hue. */
+  --surface-2: #342b30;
+  --border: var(--card-border);
+  --muted: var(--text-muted);
+  --accent: var(--accent-solid);
+  /* Also used as a *text* colour on dark (71 call sites), so it has to be a
+     lighter orange, not a darker hover shade. */
+  --accent-hover: #ffa766;
+  --accent-soft: rgba(255, 145, 66, 0.15);
   --ok: #22c55e;
   --warn: #f59e0b;
   /* Session 23 — kept independent of --crimson-red (the brand mark's own
@@ -55,7 +85,47 @@ body {
     border-radius: 1rem;
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent bg-accent-gradient px-5 py-2.5 text-sm font-semibold text-background transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /* Header nav chips (sunset theme). Every chip — not just the active one —
+     carries its own dark scrim so the label stays legible wherever it lands
+     on the gradient. The negative margin cancels the padding so adding the
+     chip doesn't move anything in the header row. */
+  .nav-chip {
+    margin: -0.25rem -0.5rem;
+    border-radius: 9999px;
+    padding: 0.25rem 0.5rem;
+    background: var(--nav-inactive-bg);
+    color: var(--nav-inactive-text);
+  }
+  .nav-chip:hover,
+  .nav-chip-active {
+    color: var(--nav-active-text);
+  }
+  .nav-chip-active {
+    background: var(--nav-active-bg);
+  }
+  /* Same active/inactive states for a standalone row of nav links (the admin
+     section tabs) — no negative margin, since there's no header row to keep
+     still, and the pill's own border stays so it reads on the dark base. */
+  .nav-pill {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: color 0.12s ease, background-color 0.12s ease;
+    background: var(--nav-inactive-bg);
+    color: var(--nav-inactive-text);
+  }
+  .nav-pill:hover,
+  .nav-pill-active {
+    color: var(--nav-active-text);
+  }
+  .nav-pill-active {
+    background: var(--nav-active-bg);
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-full border border-border bg-surface2 px-5 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-50;

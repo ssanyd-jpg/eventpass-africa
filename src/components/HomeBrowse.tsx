@@ -83,7 +83,7 @@ export default function HomeBrowse() {
               onClick={() => setCategory(c)}
               className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
                 category === c
-                  ? "border-accent bg-accent text-white"
+                  ? "border-accent bg-accent text-background"
                   : "border-border bg-surface2 text-muted hover:text-foreground"
               }`}
             >
@@ -96,7 +96,7 @@ export default function HomeBrowse() {
             onClick={() => setVendorsOnly((v) => !v)}
             className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
               vendorsOnly
-                ? "border-accent bg-accent text-white"
+                ? "border-accent bg-accent text-background"
                 : "border-border bg-surface2 text-muted hover:text-foreground"
             }`}
           >

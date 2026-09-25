@@ -38,7 +38,7 @@ export default function EventCard({ event }: { event: LocalEvent }) {
           </span>
         )}
         {event.vendorApplicationsOpen && new Date(event.startsAt) > new Date() && (
-          <span className="absolute bottom-3 left-3 rounded-full bg-accent/90 px-2.5 py-1 text-xs font-semibold text-white">
+          <span className="absolute bottom-3 left-3 rounded-full bg-accent/90 px-2.5 py-1 text-xs font-semibold text-background">
             Vendors welcome
           </span>
         )}

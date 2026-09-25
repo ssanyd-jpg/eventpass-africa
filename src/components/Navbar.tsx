@@ -23,11 +23,15 @@ function NavLink({
   children,
   className = "",
   onClick,
+  chrome = false,
 }: {
   href: string;
   children: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  // true for links sitting directly on the gradient header (chip treatment);
+  // false for links inside a dropdown/menu panel, which is a plain card.
+  chrome?: boolean;
 }) {
   const pathname = usePathname();
   const active = pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -36,7 +40,11 @@ function NavLink({
       href={href}
       onClick={onClick}
       className={`text-sm font-medium transition ${
-        active ? "text-foreground" : "text-muted hover:text-foreground"
+        chrome
+          ? `nav-chip ${active ? "nav-chip-active" : ""}`
+          : active
+            ? "text-foreground"
+            : "text-muted hover:text-foreground"
       } ${className}`}
     >
       {children}
@@ -76,8 +84,8 @@ function DesktopDropdown({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="true"
-        className={`flex items-center gap-1 text-sm font-medium transition ${
-          active ? "text-foreground" : "text-muted hover:text-foreground"
+        className={`nav-chip flex items-center gap-1 text-sm font-medium transition ${
+          active ? "nav-chip-active" : ""
         }`}
       >
         {label}
@@ -123,7 +131,7 @@ function LocaleToggle() {
           key={l}
           onClick={() => setLocale(l)}
           className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase transition ${
-            locale === l ? "bg-accent text-white" : "text-muted hover:text-foreground"
+            locale === l ? "bg-accent text-background" : "text-on-chrome hover:text-white"
           }`}
         >
           {l}
@@ -169,7 +177,7 @@ export default function Navbar() {
   const closeMenu = () => setMenuOpen(false);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-chrome-border bg-chrome-topbar">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6">
         <Link href="/" className="flex flex-shrink-0 items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -191,10 +199,10 @@ export default function Navbar() {
             reachable from — dropping them outright would strand those pages
             with no nav path. */}
         <nav className="hidden items-center gap-6 md:flex">
-          <NavLink href="/events">{t("nav.browse")}</NavLink>
+          <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
           {user &&
             (isGateCrew ? (
-              <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>
+              <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>
             ) : (
               <DesktopDropdown label={t("nav.dashboard")} active={pathname?.startsWith("/dashboard") ?? false}>
                 <DropdownLink href="/dashboard">{t("nav.dashboard")}</DropdownLink>
@@ -220,7 +228,7 @@ export default function Navbar() {
                 )}
               </DesktopDropdown>
             ))}
-          {user && <NavLink href="/account/tickets">{t("nav.myTickets")}</NavLink>}
+          {user && <NavLink href="/account/tickets" chrome>{t("nav.myTickets")}</NavLink>}
           {user && (
             <DesktopDropdown label={t("nav.more")} active={MORE_PREFIXES.some((p) => pathname?.startsWith(p))}>
               <DropdownLink href="/account/wallet">{t("nav.myWallets")}</DropdownLink>
@@ -237,25 +245,25 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           <LocaleToggle />
-          <div className="hidden sm:block">
+          <div className="hidden sm:block [&>.pill]:text-on-chrome">
             <SyncStatusBadge />
           </div>
           {user ? (
             <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
+              <span className="hidden text-sm text-on-chrome sm:inline">{user.name}</span>
               <button
                 onClick={() => {
                   signOut({ redirect: false });
                   router.push("/");
                 }}
-                className="btn-secondary !px-3 !py-1.5 text-xs"
+                className="btn-secondary !px-3 !py-1.5 !text-on-chrome text-xs"
               >
                 {t("nav.signOut")}
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/login" className="btn-secondary whitespace-nowrap !px-3 !py-1.5 text-xs">
+              <Link href="/login" className="btn-secondary whitespace-nowrap !px-3 !py-1.5 !text-on-chrome text-xs">
                 {t("nav.logIn")}
               </Link>
               <Link href="/register" className="btn-primary whitespace-nowrap !px-3 !py-1.5 text-xs">
@@ -272,16 +280,16 @@ export default function Navbar() {
           logged-in OWNER (every seeded demo account included, via
           seed.ts's auto-created personal org) doesn't get a dozen links
           crammed into one row on a phone screen. */}
-      <div className="flex items-center gap-5 border-t border-border px-4 py-2 md:hidden">
-        <NavLink href="/events">{t("nav.browse")}</NavLink>
-        {user && <NavLink href="/dashboard">{t("nav.dashboard")}</NavLink>}
+      <div className="flex items-center gap-5 border-t border-chrome-border px-4 py-2 md:hidden">
+        <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
+        {user && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
         {user && (
           <div ref={menuRef} className="relative ml-auto">
             <button
               onClick={() => setMenuOpen((v) => !v)}
               aria-expanded={menuOpen}
               aria-haspopup="true"
-              className="flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-foreground"
+              className="nav-chip flex items-center gap-1.5 text-sm font-medium transition"
             >
               <span aria-hidden className="flex flex-col gap-[3px]">
                 <span className="block h-0.5 w-4 rounded-full bg-current" />

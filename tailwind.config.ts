@@ -29,6 +29,9 @@ const config: Config = {
           hover: "var(--accent-hover)",
           soft: "var(--accent-soft)",
         },
+        heading: "var(--text-heading)",
+        "on-chrome": "var(--text-on-chrome)",
+        "chrome-border": "var(--chrome-border)",
         ok: "var(--ok)",
         warn: "var(--warn)",
         danger: "var(--danger)",
@@ -37,6 +40,13 @@ const config: Config = {
         crimson: "var(--crimson-red)",
         silver: "var(--silver)",
         gunmetal: "var(--gunmetal)",
+      },
+      // Sunset theme gradients — the layered scrim + gradient values live in
+      // globals.css as --chrome-*-bg / --accent-gradient.
+      backgroundImage: {
+        "chrome-topbar": "var(--chrome-topbar-bg)",
+        "chrome-sidebar": "var(--chrome-sidebar-bg)",
+        "accent-gradient": "var(--accent-gradient)",
       },
       fontFamily: {
         sans: ["var(--font-montserrat)", "system-ui", "sans-serif"],

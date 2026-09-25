@@ -139,7 +139,7 @@ export default async function HomePage() {
           phone sizes. dvh has a vh fallback for older browsers. Reset to a
           normal content-sized block from sm up, where there's enough width
           for the hero to read fine without a height cap. */}
-      <section className="relative flex min-h-[calc(100vh-114px)] min-h-[calc(100dvh-114px)] flex-col justify-center overflow-hidden border-b border-border bg-gunmetal sm:block sm:min-h-0">
+      <section className="relative flex min-h-[calc(100vh-114px)] min-h-[calc(100dvh-114px)] flex-col justify-center overflow-hidden border-b border-border bg-background sm:block sm:min-h-0">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-40"

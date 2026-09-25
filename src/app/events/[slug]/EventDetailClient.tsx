@@ -65,7 +65,7 @@ function CheckoutStepIndicator({ step }: { step: "select" | "questions" | "confi
               <div
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition ${
                   isDone
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-background"
                     : isActive
                       ? "border-2 border-accent text-accent-hover"
                       : "border border-border text-muted"
