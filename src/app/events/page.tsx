@@ -61,8 +61,11 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
         </p>
       </div>
 
-      <form method="GET" className="card mb-8 grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="lg:col-span-2">
+      <form
+        method="GET"
+        className="card mb-8 grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(22rem,2fr)]"
+      >
+        <div>
           <label className="label" htmlFor="search">Search</label>
           <input
             id="search"
@@ -90,17 +93,17 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
             ))}
           </select>
         </div>
-        <div className="flex gap-2">
-          <div className="flex-1">
+        <div className="flex flex-wrap gap-2">
+          <div className="min-w-0 flex-1 basis-[10.5rem]">
             <label className="label" htmlFor="dateFrom">From</label>
             <input id="dateFrom" type="date" name="dateFrom" defaultValue={filters.dateFrom ?? ""} className="input" />
           </div>
-          <div className="flex-1">
+          <div className="min-w-0 flex-1 basis-[10.5rem]">
             <label className="label" htmlFor="dateTo">To</label>
             <input id="dateTo" type="date" name="dateTo" defaultValue={filters.dateTo ?? ""} className="input" />
           </div>
         </div>
-        <div className="flex items-end gap-2 lg:col-span-5">
+        <div className="flex items-end gap-2 lg:col-span-full">
           <button type="submit" className="btn-primary">Apply filters</button>
           {hasActiveFilters && (
             <Link href="/events" className="btn-secondary">Clear</Link>
