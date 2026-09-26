@@ -198,7 +198,7 @@ export default function Navbar() {
             Payments, Settlements, Team, Audit Log, Devices, Admin) were
             reachable from — dropping them outright would strand those pages
             with no nav path. */}
-        <nav className="hidden items-center gap-6 md:flex">
+        <nav className="hidden items-center gap-6 lg:flex">
           <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
           {user &&
             (isGateCrew ? (
@@ -250,13 +250,13 @@ export default function Navbar() {
           </div>
           {user ? (
             <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-on-chrome sm:inline">{user.name}</span>
+              <span className="hidden max-w-[12rem] truncate text-sm text-on-chrome sm:inline">{user.name}</span>
               <button
                 onClick={() => {
                   signOut({ redirect: false });
                   router.push("/");
                 }}
-                className="btn-secondary !px-3 !py-1.5 !text-on-chrome text-xs"
+                className="btn-secondary flex-shrink-0 whitespace-nowrap !px-3 !py-1.5 !text-on-chrome text-xs"
               >
                 {t("nav.signOut")}
               </button>
@@ -280,7 +280,7 @@ export default function Navbar() {
           logged-in OWNER (every seeded demo account included, via
           seed.ts's auto-created personal org) doesn't get a dozen links
           crammed into one row on a phone screen. */}
-      <div className="flex items-center gap-5 border-t border-chrome-border px-4 py-2 md:hidden">
+      <div className="flex items-center gap-5 border-t border-chrome-border px-4 py-2 sm:px-6 lg:hidden">
         <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
         {user && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
         {user && (
