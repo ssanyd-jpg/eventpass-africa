@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import PublicEventCard from "@/components/PublicEventCard";
+import EventTypeSelect from "./EventTypeSelect";
 import { getPublicEvents, getPublicEventCities } from "@/lib/marketplace";
 import { EVENT_TYPES, EVENT_MODE_CONFIG } from "@/lib/event-modes";
 
@@ -77,12 +78,15 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
         </div>
         <div>
           <label className="label" htmlFor="eventType">Event type</label>
-          <select id="eventType" name="eventType" defaultValue={filters.eventType ?? ""} className="input">
-            <option value="">All types</option>
-            {EVENT_TYPES.map((type) => (
-              <option key={type} value={type}>{EVENT_MODE_CONFIG[type].label}</option>
-            ))}
-          </select>
+          <EventTypeSelect
+            id="eventType"
+            name="eventType"
+            defaultValue={filters.eventType ?? ""}
+            options={[
+              { value: "", label: "All types" },
+              ...EVENT_TYPES.map((type) => ({ value: type, label: EVENT_MODE_CONFIG[type].label })),
+            ]}
+          />
         </div>
         <div>
           <label className="label" htmlFor="city">City</label>
