@@ -6,6 +6,14 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text?: string;
+  // Session 39 — Case A organiser branding. Overrides only the display name
+  // shown in the recipient's inbox ("Organiser Name <noreply@chaap-...>");
+  // the actual sending address stays the shared, domain-verified one, so
+  // this needs no per-organiser email infrastructure — a "from" display
+  // name can vary per-send on a shared verified sending domain. Omitted (or
+  // the organiser hasn't set a display name) falls back to the existing
+  // plain address, unchanged from before this field existed.
+  fromName?: string;
 }
 
 export interface SendEmailResult {
@@ -29,7 +37,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return { ok: true };
   }
 
-  const from = process.env.CHAAP_FROM_EMAIL || "noreply@chaap-africa.com";
+  const fromAddress = process.env.CHAAP_FROM_EMAIL || "noreply@chaap-africa.com";
+  // Only wrap a bare address — if CHAAP_FROM_EMAIL was itself set to a
+  // "Name <address>" form, that operator-level choice wins over a
+  // per-organiser override rather than silently double-wrapping it.
+  const from = input.fromName && !fromAddress.includes("<") ? `${input.fromName} <${fromAddress}>` : fromAddress;
 
   try {
     const resend = new Resend(apiKey);

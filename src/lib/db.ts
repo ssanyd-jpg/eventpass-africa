@@ -83,6 +83,11 @@ export interface LocalEvent {
   waitlistEnabled: boolean;
   organizationId: string;
   organizerName: string;
+  // Session 39 — Case A branding override (see Organization.displayName's
+  // schema comment); a distinct concept from organizerName above. Optional
+  // because rows cached before this field existed don't have it; absent or
+  // null both mean "no branding configured, use Chaap's default."
+  organizationDisplayName?: string | null;
   createdAt: string;
   updatedAt: string;
   ticketTypes: LocalTicketType[];

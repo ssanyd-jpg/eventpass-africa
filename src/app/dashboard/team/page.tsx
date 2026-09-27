@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate } from "@/lib/format";
 import InviteForm from "./InviteForm";
+import BrandingForm from "./BrandingForm";
 import { removeMember } from "./actions";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -30,7 +31,7 @@ export default async function TeamPage() {
     );
   }
 
-  const [members, invites] = await Promise.all([
+  const [members, invites, organization] = await Promise.all([
     prisma.organizationMembership.findMany({
       where: { organizationId: session.user.organizationId },
       include: { user: { select: { id: true, name: true, email: true } } },
@@ -39,6 +40,10 @@ export default async function TeamPage() {
     prisma.organizationInvite.findMany({
       where: { organizationId: session.user.organizationId, status: "PENDING", expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.organization.findUniqueOrThrow({
+      where: { id: session.user.organizationId },
+      select: { displayName: true, brandColor: true, logoUrl: true },
     }),
   ]);
 
@@ -93,6 +98,16 @@ export default async function TeamPage() {
       )}
 
       <InviteForm />
+
+      <div className="mt-8">
+        <BrandingForm
+          initial={{
+            displayName: organization.displayName ?? "",
+            brandColor: organization.brandColor ?? "",
+            logoUrl: organization.logoUrl ?? "",
+          }}
+        />
+      </div>
     </div>
   );
 }

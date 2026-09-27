@@ -58,6 +58,31 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Session 39 — Case A organiser branding ("show MY brand to MY attendees",
+  // not the Tikafrica-style external white-label/reseller question, which is
+  // a separate, unresolved decision this doesn't depend on). All three
+  // nullable and independent: null means "use Chaap's default branding," so
+  // an organiser who never visits the branding settings screen sees exactly
+  // today's behavior. Plain columns rather than a separate
+  // OrganizationBranding model — true 1:1 attributes with no independent
+  // lifecycle of their own, same reasoning as `name` above.
+  // displayName is deliberately distinct from `name`: `name` is the
+  // organisation's own account/legal name (already shown as "hosted by" via
+  // organizerName on synced events); displayName is what replaces the word
+  // "Chaap" in attendee-facing copy, and an organiser may want those to
+  // differ (or set only one).
+  displayName String?
+  // Public URL (Vercel Blob, same as event cover photos — see
+  // /api/upload) of an organiser-uploaded logo. Not yet rendered anywhere
+  // (see the branding investigation): the one attendee-facing surface that
+  // would show it, the shared Navbar, has no per-event/org context to key
+  // off at render time. Stored now so the settings screen has somewhere to
+  // save it; wiring up a rendering location is a follow-up.
+  logoUrl     String?
+  // Hex string (e.g. "#FF6A00"), validated at the settings form, not here.
+  // Same "stored but not yet rendered" status as logoUrl above.
+  brandColor  String?
+
   membership          OrganizationMembership[]
   invites             OrganizationInvite[]
   events              Event[]

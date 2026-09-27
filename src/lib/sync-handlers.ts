@@ -595,13 +595,13 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
     where: { clientId },
     include: {
       ticketTypes: { include: { pricingTiers: true } },
-      organization: { select: { name: true } },
+      organization: { select: { name: true, displayName: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
   if (existing) {
-    return { ok: true, event: shapeEvent(existing, existing.organization.name) };
+    return { ok: true, event: shapeEvent(existing, existing.organization.name, existing.organization.displayName) };
   }
 
   const baseSlug = slugify(String(payload.title));
@@ -637,16 +637,22 @@ export async function handleCreateEvent(userId: string, organizationId: string, 
     },
     include: {
       ticketTypes: { include: { pricingTiers: true } },
-      organization: { select: { name: true } },
+      organization: { select: { name: true, displayName: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
 
-  return { ok: true, event: shapeEvent(created, created.organization.name) };
+  return { ok: true, event: shapeEvent(created, created.organization.name, created.organization.displayName) };
 }
 
-export function shapeEvent(e: any, organizerName: string) {
+// Session 39 — orgDisplayName is the Case A branding override (a distinct
+// concept from organizerName above: organizerName is the org's own
+// account/legal name, "hosted by"; orgDisplayName is what should replace
+// the word "Chaap" in attendee-facing copy, and an organiser may set only
+// one or neither). null/undefined means the organiser hasn't configured
+// branding — callers fall back to Chaap's own branding themselves.
+export function shapeEvent(e: any, organizerName: string, orgDisplayName?: string | null) {
   return {
     id: e.id,
     clientId: e.clientId,
@@ -677,6 +683,7 @@ export function shapeEvent(e: any, organizerName: string) {
     waitlistEnabled: e.waitlistEnabled ?? false,
     organizationId: e.organizationId,
     organizerName,
+    organizationDisplayName: orgDisplayName ?? null,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
     ticketTypes: e.ticketTypes.map((tt: any) => ({
@@ -1147,6 +1154,7 @@ export async function handleSellTickets(userId: string, payload: any) {
         ticketCodes,
         extraLines: [discountLine, waiverLine].map((l) => l.trim()).filter(Boolean),
       }),
+      organizationId: event.organizationId,
     });
     if (buyer.phone) {
       const codePart = ticketCodes.length === 1 ? `Code: ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
@@ -1540,13 +1548,13 @@ export async function handleEditEvent(userId: string, organizationId: string, pa
     data,
     include: {
       ticketTypes: { include: { pricingTiers: true } },
-      organization: { select: { name: true } },
+      organization: { select: { name: true, displayName: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
   });
 
-  return { ok: true, event: shapeEvent(updated, updated.organization.name) };
+  return { ok: true, event: shapeEvent(updated, updated.organization.name, updated.organization.displayName) };
 }
 
 export async function handleCancelEvent(userId: string, organizationId: string, payload: any) {
@@ -1563,7 +1571,7 @@ export async function handleCancelEvent(userId: string, organizationId: string, 
     data: { status: "CANCELLED" },
     include: {
       ticketTypes: { include: { pricingTiers: true } },
-      organization: { select: { name: true } },
+      organization: { select: { name: true, displayName: true } },
       vendors: { where: { status: "APPROVED" }, select: { id: true, name: true, category: true, boothNumber: true } },
       registrationQuestions: { orderBy: { sortOrder: "asc" } },
     },
@@ -1584,7 +1592,7 @@ export async function handleCancelEvent(userId: string, organizationId: string, 
     });
   }
 
-  return { ok: true, event: shapeEvent(updated, updated.organization.name) };
+  return { ok: true, event: shapeEvent(updated, updated.organization.name, updated.organization.displayName) };
 }
 
 export async function handleRefundOrder(userId: string, organizationId: string, payload: any) {
@@ -1718,6 +1726,7 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
             totalFormatted,
             ticketCodes,
           }),
+          organizationId: fresh.event.organizationId,
         });
         if (buyer.phone) {
           const codePart = ticketCodes.length === 1 ? `Code: ${ticketCodes[0]}` : `${ticketCodes.length} tickets confirmed`;
@@ -1890,6 +1899,7 @@ export async function handleMarkOrderPaid(userId: string, organizationId: string
         recipient: buyer.email,
         subject: `Your tickets for ${fresh.event.title}`,
         body: `Hi ${buyer.name}, your payment for ${fresh.event.title} was confirmed. Total: ${totalFormatted}. Ticket code(s): ${ticketCodes.join(", ")}.`,
+        organizationId: fresh.event.organizationId,
         html: await buildOrderConfirmationHtml({
           buyerName: buyer.name,
           eventTitle: fresh.event.title,

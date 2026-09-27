@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       : undefined,
     include: {
       ticketTypes: { include: { pricingTiers: true } },
-      organization: { select: { name: true } },
+      organization: { select: { name: true, displayName: true } },
       // Public summary only — no contact info/badgeCode. Full vendor
       // detail (all statuses) goes out separately in myVendors below,
       // gated to the vendor's own owner or the event's organizer.
@@ -101,6 +101,9 @@ export async function GET(request: Request) {
     waitlistEnabled: e.waitlistEnabled,
     organizationId: e.organizationId,
     organizerName: e.organization.name,
+    // Session 39 — Case A branding override; see Organization.displayName's
+    // schema comment. null = organiser hasn't configured branding.
+    organizationDisplayName: e.organization.displayName ?? null,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
     ticketTypes: e.ticketTypes.map((tt) => ({

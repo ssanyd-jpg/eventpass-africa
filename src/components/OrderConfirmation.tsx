@@ -149,8 +149,13 @@ const PENDING_COUNTDOWN_SECONDS = 30;
 // Native share sheet when available (most mobile browsers); clipboard copy
 // otherwise (desktop Safari/Firefox, or if the user dismisses the share
 // sheet's permission prompt) — never throws either way.
-async function shareEvent(title: string, url: string) {
-  const shareData = { title: `${title} — Chaap`, text: `Check out ${title} on Chaap!`, url };
+// Session 39 — brandName is the Case A branding override (an event's
+// organizationDisplayName, already synced onto LocalEvent — see db.ts).
+// Undefined/null (no branding configured) falls back to "Chaap", exactly
+// today's behavior.
+async function shareEvent(title: string, url: string, brandName?: string | null) {
+  const brand = brandName || "Chaap";
+  const shareData = { title: `${title} — ${brand}`, text: `Check out ${title} on ${brand}!`, url };
   if (typeof navigator !== "undefined" && navigator.share) {
     try {
       await navigator.share(shareData);
@@ -297,7 +302,7 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
             type="button"
             className="btn-secondary mt-4 !px-4 !py-2 text-xs"
             onClick={async () => {
-              const result = await shareEvent(order.eventTitle, eventUrl);
+              const result = await shareEvent(order.eventTitle, eventUrl, event.organizationDisplayName);
               if (result === "copied") {
                 setShareStatus("copied");
                 setTimeout(() => setShareStatus("idle"), 2000);

@@ -48,7 +48,9 @@ export type AuditAction =
   | "VOLUNTEER_CHECKED_IN"
   // Session 33
   | "LOYALTY_REWARD_CREATED"
-  | "LOYALTY_REWARD_STATUS_CHANGED";
+  | "LOYALTY_REWARD_STATUS_CHANGED"
+  // Session 39
+  | "BRANDING_UPDATED";
 
 interface LogAuditInput {
   organizationId: string;
