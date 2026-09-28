@@ -87,7 +87,12 @@ export default function TimingDashboardPage() {
       </Link>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Timing dashboard</h1>
-        <a href={`/api/dashboard/events/${eventId}/timing/export`} className="btn-secondary">Export CSV</a>
+        <div className="flex flex-wrap gap-2">
+          <a href={`/api/dashboard/events/${eventId}/timing/export`} className="btn-secondary">Export CSV</a>
+          {data.totalFinishers > 0 && (
+            <a href={`/api/dashboard/events/${eventId}/results`} className="btn-primary">📄 Download Official Results PDF</a>
+          )}
+        </div>
       </div>
 
       {data.gunStartAt && (

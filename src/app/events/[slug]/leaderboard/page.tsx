@@ -94,7 +94,10 @@ export default function PublicLeaderboardPage() {
           <p className="text-sm text-muted">{t("leaderboard.live")}</p>
           <h1 className="text-2xl font-bold">{data.eventTitle}</h1>
         </div>
-        <button className="btn-secondary" onClick={share}>{copied ? t("leaderboard.linkCopied") : t("leaderboard.share")}</button>
+        <div className="flex gap-2">
+          <Link href={`/events/${slug}/results`} className="btn-secondary">Official results ↗</Link>
+          <button className="btn-secondary" onClick={share}>{copied ? t("leaderboard.linkCopied") : t("leaderboard.share")}</button>
+        </div>
       </div>
 
       {data.ticketTypes.length > 1 && (
