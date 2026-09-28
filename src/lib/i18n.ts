@@ -410,6 +410,19 @@ export const dictionaries = {
     "eventType.football": "Football Match",
     "eventType.concert": "Concert",
     "eventType.festival": "Festival",
+
+    // Post-event WhatsApp memory message (see src/lib/post-event-memory.ts) —
+    // built line-by-line, not as one block, so individual lines can be
+    // omitted when the attendee has no data for them.
+    "memory.greeting": "Hi {name}! 🎉",
+    "memory.recapIntro": "Here's your {event} recap:",
+    "memory.checkedInAt": "✅ You checked in at {time}",
+    "memory.finishedIn": "🏃 You finished in {finishTime}",
+    "memory.spentAtVendor": "💳 You spent {amount} at {vendorCount} vendor",
+    "memory.spentAtVendors": "💳 You spent {amount} at {vendorCount} vendors",
+    "memory.website": "🌍 chaap.africa",
+    "memory.thankYou": "Thank you for being part of {event}.",
+    "memory.seeYouNextTime": "See you next time! — The Chaap team",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -822,6 +835,16 @@ export const dictionaries = {
     "eventType.football": "Mechi ya Mpira wa Miguu",
     "eventType.concert": "Tamasha la Muziki",
     "eventType.festival": "Sherehe",
+
+    "memory.greeting": "Habari {name}! 🎉",
+    "memory.recapIntro": "Huu ni muhtasari wako wa {event}:",
+    "memory.checkedInAt": "✅ Uliingia saa {time}",
+    "memory.finishedIn": "🏃 Ulimaliza kwa {finishTime}",
+    "memory.spentAtVendor": "💳 Ulitumia {amount} kwa muuzaji {vendorCount}",
+    "memory.spentAtVendors": "💳 Ulitumia {amount} kwa wauzaji {vendorCount}",
+    "memory.website": "🌍 Tembelea chaap.africa",
+    "memory.thankYou": "Asante kwa kuwa sehemu ya {event}.",
+    "memory.seeYouNextTime": "Tuonane tena! — Timu ya Chaap",
   },
 } as const;
 

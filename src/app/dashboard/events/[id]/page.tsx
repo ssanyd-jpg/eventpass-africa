@@ -16,6 +16,7 @@ import Spinner from "@/components/Spinner";
 import TimingSetupSection from "@/components/TimingSetupSection";
 import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
 import { hasFeature } from "@/lib/event-modes";
+import { sendPostEventMemories } from "./post-event-memory-actions";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -62,12 +63,34 @@ export default function ManageEventPage() {
   const [refundError, setRefundError] = useState<string | null>(null);
   const [markingPaid, setMarkingPaid] = useState<string | null>(null);
 
+  // Post-event WhatsApp memory recap — status comes from the live DB (not
+  // the offline Dexie cache, which has no NotificationLog/attendee-phone
+  // data), same "small fetch alongside the mostly-offline page" pattern the
+  // reconciliation warning in cancelEvent already uses below.
+  const [memoryStatus, setMemoryStatus] = useState<{
+    eligible: boolean;
+    alreadySent: boolean;
+    eligibleAttendeeCount: number;
+  } | null>(null);
+  const [sendingMemories, setSendingMemories] = useState(false);
+  const [memoriesSentCount, setMemoriesSentCount] = useState<number | null>(null);
+
   // Middleware already redirects GATE_CREW away from this route server-side
   // — this is defense-in-depth for a device offline with an already-cached
   // page shell (see src/middleware.ts).
   useEffect(() => {
     if (user?.organizationRole === "GATE_CREW") router.replace("/dashboard");
   }, [user, router]);
+
+  useEffect(() => {
+    if (!id || user?.organizationRole === "GATE_CREW") return;
+    fetch(`/api/dashboard/events/${id}/post-event-memory`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.ok) setMemoryStatus(body);
+      })
+      .catch(() => {});
+  }, [id, user]);
 
   const event = useLiveQuery(async () => {
     const byId = await db.events.get(id);
@@ -209,6 +232,17 @@ export default function ManageEventPage() {
     }
   }
 
+  async function onSendMemories() {
+    setSendingMemories(true);
+    try {
+      const result = await sendPostEventMemories(event!.id);
+      setMemoriesSentCount(result.notifiedCount);
+      setMemoryStatus((prev) => (prev ? { ...prev, alreadySent: true } : prev));
+    } finally {
+      setSendingMemories(false);
+    }
+  }
+
   async function cancelEvent() {
     // Session 9: warn if cash operators still have unreconciled floats.
     // Best-effort — a failed/offline check never blocks cancellation, it
@@ -301,6 +335,21 @@ export default function ManageEventPage() {
           )}
           <Link href={`/scan/${event.id}/wallet`} className="btn-secondary">Wallets</Link>
           <Link href={`/scan/${event.id}`} className="btn-primary">Scan gate</Link>
+          {memoryStatus && (memoryStatus.eligible || memoryStatus.alreadySent) && (
+            <button
+              onClick={onSendMemories}
+              disabled={sendingMemories || memoryStatus.alreadySent}
+              className="btn-secondary disabled:opacity-50"
+            >
+              {sendingMemories
+                ? "Sending…"
+                : memoriesSentCount !== null
+                  ? `Memories sent to ${memoriesSentCount} attendee${memoriesSentCount === 1 ? "" : "s"}`
+                  : memoryStatus.alreadySent
+                    ? "Memories already sent"
+                    : "Send post-event memories ↗"}
+            </button>
+          )}
         </div>
       </div>
 

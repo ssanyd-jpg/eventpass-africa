@@ -143,6 +143,17 @@ attendee who never paid online (cash/offline order, or a walk-up wristband
 provisioned by email) has no phone on file, so their WhatsApp/SMS sends are
 silently skipped — they still get the email.
 
+**Post-event memories**: `src/lib/post-event-memory-data.ts`'s
+`runPostEventMemorySweep()` sends every checked-in attendee with a phone on
+file a personalised WhatsApp recap (check-in time, cashless spend, marathon
+finish time where available). Unlike event reminders below, this is
+**organiser-triggered, not automatic** — a "Send post-event memories" button
+on `/dashboard/events/[id]` (OWNER/STAFF only) fires it once the event has
+ended, and it's idempotent per attendee via the same `NotificationLog`
+pattern as every other notification here. Recommend organisers send it
+1–2 hours after the event closes, once final check-ins and cashless spend
+have settled.
+
 ## 5. Mobile money charging (optional)
 
 Checkout currently uses `src/lib/payments/simulated.ts` — no real charge

@@ -37,7 +37,10 @@ export type NotificationType =
   | "DIRECT_SALE_RECEIPT"
   // Session 37
   | "WALLET_TRANSFER_SENT"
-  | "WALLET_TRANSFER_RECEIVED";
+  | "WALLET_TRANSFER_RECEIVED"
+  // Post-event WhatsApp memory recap (organiser-triggered — see
+  // post-event-memory-data.ts)
+  | "POST_EVENT_MEMORY";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

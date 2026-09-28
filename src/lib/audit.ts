@@ -50,7 +50,9 @@ export type AuditAction =
   | "LOYALTY_REWARD_CREATED"
   | "LOYALTY_REWARD_STATUS_CHANGED"
   // Session 39
-  | "BRANDING_UPDATED";
+  | "BRANDING_UPDATED"
+  // Post-event WhatsApp memory recap
+  | "POST_EVENT_MEMORY";
 
 interface LogAuditInput {
   organizationId: string;
