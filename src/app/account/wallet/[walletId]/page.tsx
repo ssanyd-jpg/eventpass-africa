@@ -12,11 +12,13 @@ import { formatCents, formatDateTime } from "@/lib/format";
 import TicketQr from "@/components/TicketQr";
 import { SkeletonPage } from "@/components/Skeleton";
 
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 const STATUS_STYLE: Record<string, string> = {

@@ -103,7 +103,7 @@ const FOR_ORGANISERS = [
   {
     icon: PhoneMoneyIcon,
     title: "All mobile money networks",
-    description: "Accept M-Pesa, Airtel, HaloPesa and cards through AirPay Tanzania — one integration, every payment method.",
+    description: "Accept M-Pesa, Airtel Money, Tigo Pesa and cards through AirPay Tanzania — one integration, every payment method.",
   },
   {
     icon: OfflineSyncIcon,

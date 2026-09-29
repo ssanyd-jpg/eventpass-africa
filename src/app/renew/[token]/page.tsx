@@ -42,7 +42,7 @@ export default async function RenewalPage({ params }: { params: { token: string 
 
       {status.state === "ALREADY_DECLINED" && (
         <div className="card mt-6 p-5 text-center">
-          <p className="font-semibold">You've already declined this renewal offer.</p>
+          <p className="font-semibold">You&apos;ve already declined this renewal offer.</p>
           <p className="mt-2 text-sm text-muted">You can always renew manually at chaap.africa.</p>
         </div>
       )}

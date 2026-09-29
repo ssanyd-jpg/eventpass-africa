@@ -181,6 +181,19 @@ asynchronous; checkout needs a "waiting for you to confirm on your phone"
 state and a network selector that don't exist yet), and treat that as a
 follow-up task once credentials are verified against the sandbox.
 
+**Bankcode availability, confirmed by Airpay support.** Only three of
+Tanzania's mobile money networks are live on Airpay's side today —
+`MPESA`, `AIRTEL`, and `TIGO` (Tigo Pesa / MIXX by Yas). **HaloPesa and
+T-Pesa are not yet available** and will be enabled by Airpay later; until
+then, `mapNetworkToBankcode()` in `airpay.ts` has no case for either, every
+`mobileNetwork` zod schema that represents an actual Airpay charge
+(`SELL_TICKETS`, `TOPUP_WALLET`, `SPLIT_PAYMENT`, `CHARGE_DIRECT_SALE` in
+`sync-handlers.ts`) excludes them, and no buyer-facing checkout dropdown
+offers them as an option. This is distinct from `WITHDRAW_WALLET`'s and
+`ADD_MOBILE_MONEY_ACCOUNT`'s own `HALOTEL`/`HALOPESA` values, which
+describe a payout *destination* an organiser pays out to manually — not an
+Airpay charge — and are unaffected by this restriction.
+
 ## 6. Event reminders (Vercel Cron)
 
 `src/lib/reminders.ts`'s `sendEventReminders()` finds every LIVE event

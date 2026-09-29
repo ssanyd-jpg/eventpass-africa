@@ -11,8 +11,8 @@ export interface SendSmsResult {
 }
 
 // Tanzania-only normalization — the app's one supported SMS market (see
-// NETWORKS in src/app/events/[slug]/page.tsx: MPESA/TIGO/AIRTEL/HALOTEL are
-// all Tanzania-only mobile money networks). Accepts a local "0712345678"
+// NETWORKS in src/app/events/[slug]/page.tsx: MPESA/TIGO/AIRTEL are all
+// Tanzania-only mobile money networks). Accepts a local "0712345678"
 // (what a buyer types at checkout), an already-prefixed "+255712345678", or
 // a bare "255712345678", and always returns the E.164 form a real SMS
 // provider expects.

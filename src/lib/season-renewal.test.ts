@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { createTestUser, createTestOrganization, addMembership, createTestEvent } from "@/lib/test-fixtures";
+import { createTestUser, createTestOrganization, addMembership } from "@/lib/test-fixtures";
 import { createSeasonPass, publishSeasonPass, purchaseSeasonPass } from "@/lib/season-pass";
 import {
   getSeasonPassesEligibleForRenewal,
@@ -39,7 +39,6 @@ afterEach(async () => {
 });
 
 let seq = 0;
-const uid = (p: string) => `${p}-${Date.now()}-${++seq}`;
 
 async function newOrganizer() {
   const user = await createTestUser();

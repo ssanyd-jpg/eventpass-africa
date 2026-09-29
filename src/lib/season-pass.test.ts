@@ -45,9 +45,6 @@ afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 500));
 });
 
-let seq = 0;
-const uid = (p: string) => `${p}-${Date.now()}-${++seq}`;
-
 async function newOrganizer() {
   const user = await createTestUser();
   const organization = await createTestOrganization();

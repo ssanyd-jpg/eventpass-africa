@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatCents } from "@/lib/format";
 
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 export default function PurchaseForm({
@@ -60,13 +62,13 @@ export default function PurchaseForm({
   }
 
   if (!purchasable) {
-    return <div className="card p-5 text-center text-muted">This season pass isn't available for purchase right now.</div>;
+    return <div className="card p-5 text-center text-muted">This season pass isn&apos;t available for purchase right now.</div>;
   }
 
   if (confirmed) {
     return (
       <div className="card p-5 text-center">
-        <p className="text-lg font-semibold">🎟 You're in!</p>
+        <p className="text-lg font-semibold">🎟 You&apos;re in!</p>
         <p className="mt-1 text-sm text-muted">Check WhatsApp for your confirmation. Your wristband will be activated at your first match.</p>
         <button className="btn-secondary mt-4" onClick={() => router.refresh()}>Done</button>
       </div>

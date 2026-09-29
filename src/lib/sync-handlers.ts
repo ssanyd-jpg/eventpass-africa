@@ -112,7 +112,10 @@ export const payloadSchemas = {
     // itself defaults an unset network to MPESA.
     paymentMethod: z.enum(["AIRPAY_ONLINE", "OFFLINE_DEFERRED"]).optional(),
     phoneNumber: z.string().min(6).max(20).optional(),
-    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+    // Airpay Tanzania's only confirmed bankcodes today — see
+    // mapNetworkToBankcode in airpay.ts. HALOTEL/HaloPesa and T-Pesa aren't
+    // available on their side yet, so they're not accepted here either.
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL"]).optional(),
     // Session 13 — group/family checkout. When present, every ticket being
     // purchased in this order is named for one member and linked to one
     // shared wallet (see handleSellTickets). memberNames maps 1:1 onto the
@@ -323,7 +326,8 @@ export const payloadSchemas = {
     walletClientId: z.string().nullable().optional(),
     amountCents: z.number().int().min(100).max(50000000),
     phoneNumber: z.string().min(6).max(20).optional(),
-    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+    // See SELL_TICKETS's own comment on why HALOTEL isn't in this list.
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL"]).optional(),
   }),
   CHECK_TOPUP_STATUS: z.object({
     clientId: z.string().min(1),
@@ -447,7 +451,8 @@ export const payloadSchemas = {
     walletContributionCents: z.number().int().min(0),
     topUpAmountCents: z.number().int().min(1),
     phoneNumber: z.string().min(6).max(20),
-    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]).optional(),
+    // See SELL_TICKETS's own comment on why HALOTEL isn't in this list.
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL"]).optional(),
     item: z.string().trim().max(120).nullable().optional(),
     attendeeTicketId: z.string().min(1).optional(),
   }),
@@ -462,7 +467,8 @@ export const payloadSchemas = {
     eventClientId: z.string().nullable().optional(),
     amountCents: z.number().int().min(1),
     customerPhone: z.string().min(6).max(20),
-    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL", "HALOTEL"]),
+    // See SELL_TICKETS's own comment on why HALOTEL isn't in this list.
+    mobileNetwork: z.enum(["MPESA", "TIGO", "AIRTEL"]),
     item: z.string().trim().max(120).nullable().optional(),
   }),
   // Dual id/clientId lookup, same shape as CHECK_TOPUP_STATUS/

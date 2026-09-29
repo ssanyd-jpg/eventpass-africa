@@ -35,11 +35,13 @@ function nextTierFor(tt: LocalTicketType): { priceCents: number; atQuantity: num
   return upcoming.length > 0 ? { priceCents: upcoming[0].priceCents, atQuantity: upcoming[0].fromQuantity } : null;
 }
 
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 const CHECKOUT_STEPS = [

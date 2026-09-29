@@ -3,7 +3,7 @@ export interface ChargeRequest {
   amountCents: number;
   /** E.164-ish local format, e.g. "255712345678" — required by real mobile money providers for STK push. */
   phoneNumber?: string;
-  /** Which network to charge, e.g. "MPESA" | "TIGO" | "AIRTEL" | "HALOTEL" — checkout will need a network selector once a real provider goes live; unset defaults to MPESA. */
+  /** Which network to charge — "MPESA" | "TIGO" | "AIRTEL" (Airpay Tanzania's only confirmed bankcodes today; HALOTEL/HaloPesa and T-Pesa aren't available yet — see mapNetworkToBankcode in airpay.ts) — unset defaults to MPESA. */
   mobileNetwork?: string;
   description: string;
 }

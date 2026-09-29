@@ -6,11 +6,13 @@ import Link from "next/link";
 import { formatCents, formatDateTime } from "@/lib/format";
 import type { PublicListing } from "@/lib/resale";
 
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 const POLL_INTERVAL_MS = 3000;

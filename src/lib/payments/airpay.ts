@@ -11,9 +11,12 @@ import {
 
 /**
  * Airpay Tanzania — the chosen aggregator for real mobile money charging.
- * Airpay fronts the major Tanzanian mobile money networks (M-Pesa, Tigo
- * Pesa, Airtel Money, HaloPesa) behind one merchant integration ("Seamless
- * mobile money"), so checkout doesn't need a separate adapter per network.
+ * Airpay fronts three Tanzanian mobile money networks today (M-Pesa, Tigo
+ * Pesa / MIXX by Yas, Airtel Money) behind one merchant integration
+ * ("Seamless mobile money"), so checkout doesn't need a separate adapter per
+ * network. HaloPesa and T-Pesa are NOT yet available on Airpay Tanzania —
+ * confirmed directly by Airpay support — so neither is offered as a
+ * checkout option; see mapNetworkToBankcode below.
  *
  * Built from a merchant-provided API reference PDF, not Airpay's public
  * site (they don't publish this — see the README's "Simulated pieces"
@@ -77,6 +80,13 @@ async function getAccessToken(creds: AirpayCredentials): Promise<string> {
   return token;
 }
 
+// Confirmed with Airpay support: MPESA, AIRTEL, and TIGO (Tigo Pesa / MIXX
+// by Yas) are the only bankcodes Airpay Tanzania currently accepts.
+// HALOTEL/HaloPesa and T-Pesa are NOT yet available on their side — there is
+// deliberately no case for either here, and no checkout UI offers them as
+// an option (see mobileNetwork's zod enums in sync-handlers.ts and every
+// NETWORKS selector across src/app). An unrecognized network still falls
+// through to MPESA rather than throwing, same as before this confirmation.
 function mapNetworkToBankcode(network?: string): string {
   switch ((network ?? "").toUpperCase()) {
     case "TIGO":
@@ -137,6 +147,10 @@ export const airpayProvider: PaymentProvider = {
       amount: (req.amountCents / 100).toFixed(2),
       mer_dom: base64MerchantDomain(creds.merchantDomain),
       customvar: req.orderClientId,
+      // chmod/txnsubtype/channel/currency_code (a number, not a string)/
+      // iso_currency, plus buyer_phone above stripped to a bare local
+      // subscriber number — every one of these is a fixed value confirmed
+      // directly by Airpay support, not still-unverified assumptions.
       chmod: "mmoney",
       txnsubtype: "2",
       channel: "mmoney",

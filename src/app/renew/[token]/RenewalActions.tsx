@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { formatCents } from "@/lib/format";
 
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 export default function RenewalActions({ token, price, currency }: { token: string; price: number; currency: string }) {
@@ -76,7 +78,7 @@ export default function RenewalActions({ token, price, currency }: { token: stri
   if (result === "DECLINED") {
     return (
       <div className="card p-5 text-center">
-        <p className="font-semibold">Understood — your pass won't auto-renew.</p>
+        <p className="font-semibold">Understood — your pass won&apos;t auto-renew.</p>
         <p className="mt-1 text-sm text-muted">You can always renew manually at chaap.africa.</p>
       </div>
     );

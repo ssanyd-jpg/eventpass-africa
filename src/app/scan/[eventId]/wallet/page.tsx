@@ -37,11 +37,13 @@ const DIRECT_SALE_COUNTDOWN_SECONDS = 30;
 // Same network list as the buyer's own top-up form (account/wallet/[walletId]/page.tsx) —
 // Session 15's split payment needs the same phone+network pair to STK-push
 // the shortfall.
+// HaloPesa/T-Pesa aren't available on Airpay Tanzania yet — confirmed by
+// Airpay support — so neither is offered here (see mapNetworkToBankcode in
+// src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
   { value: "TIGO", label: "Tigo Pesa" },
   { value: "AIRTEL", label: "Airtel Money" },
-  { value: "HALOTEL", label: "HaloPesa" },
 ];
 
 // Session 15 — shown instead of a flat decline when a charge's balance is
