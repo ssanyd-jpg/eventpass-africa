@@ -40,7 +40,15 @@ export type NotificationType =
   | "WALLET_TRANSFER_RECEIVED"
   // Post-event WhatsApp memory recap (organiser-triggered — see
   // post-event-memory-data.ts)
-  | "POST_EVENT_MEMORY";
+  | "POST_EVENT_MEMORY"
+  // Season ticket / membership management — see season-pass.ts/
+  // season-renewal.ts. SEASON_PASS_RENEWAL_DECLINED isn't part of the
+  // spec's literal 3-type list but is needed for declineRenewal's own
+  // WhatsApp acknowledgement to have a distinct, correct type.
+  | "SEASON_PASS_PURCHASED"
+  | "SEASON_PASS_RENEWAL_OFFERED"
+  | "SEASON_PASS_RENEWED"
+  | "SEASON_PASS_RENEWAL_DECLINED";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

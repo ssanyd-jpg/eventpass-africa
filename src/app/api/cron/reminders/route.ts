@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendEventReminders } from "@/lib/reminders";
 import { runPendingTopupSweep } from "@/lib/pending-topups";
+import { runSeasonRenewalSweep } from "@/lib/season-renewal";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
 // `Authorization: Bearer ${CRON_SECRET}` header it adds automatically for
@@ -41,6 +42,17 @@ export async function GET(request: Request) {
     pendingTopups = { ok: false, reason: "SWEEP_FAILED" };
   }
 
+  // Season pass auto-renewal offers — same "rides along on this one daily
+  // slot" reasoning as the pending top-up sweep above (Hobby plan, both
+  // cron slots already taken). Independent of both other sweeps' outcomes.
+  let seasonRenewal: Awaited<ReturnType<typeof runSeasonRenewalSweep>> | { ok: false; reason: string };
+  try {
+    seasonRenewal = await runSeasonRenewalSweep();
+  } catch (error) {
+    console.error("[cron/reminders] season renewal sweep failed", error);
+    seasonRenewal = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
   if (remindersError) throw remindersError;
-  return NextResponse.json({ ...result, pendingTopups });
+  return NextResponse.json({ ...result, pendingTopups, seasonRenewal });
 }

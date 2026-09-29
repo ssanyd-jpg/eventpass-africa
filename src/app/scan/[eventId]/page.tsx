@@ -25,7 +25,7 @@ import { resolveGateSignal } from "@/lib/ticket-types";
 // after 3s per spec item 1.
 const RESULT_AUTO_RESET_MS = 3000;
 function resultTone(kind: ScanResult["kind"]): ScanResultTone {
-  if (kind === "valid") return "success";
+  if (kind === "valid" || kind === "seasonPass") return "success";
   if (kind === "already" || kind === "paymentPending" || kind === "notProvisioned" || kind === "wristbandReplaced") return "warn";
   return "danger";
 }
@@ -44,7 +44,8 @@ type ScanResult = {
     | "paymentPending"
     | "paymentFailed"
     | "notProvisioned"
-    | "wristbandReplaced";
+    | "wristbandReplaced"
+    | "seasonPass";
   message: string;
   ticketTypeName?: string;
   boothNumber?: string | null;
@@ -282,6 +283,40 @@ export default function GateScannerPage() {
         return;
       }
       if (reading.uid) {
+        // No ticket resolved this uid — before falling back to "not
+        // provisioned", check whether it's a season pass holder's wristband
+        // instead (see src/lib/season-pass.ts's own comment on why this
+        // check is online-only, unlike the ticket check above).
+        if (online) {
+          const event = eventRef.current;
+          try {
+            const res = await fetch(`/api/scan/${event?.id}/season-pass-check`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ nfcUid: reading.uid }),
+            });
+            const body = await res.json().catch(() => null);
+            if (body?.ok && body.holder) {
+              // ticketTypeName (not message) carries "Season pass holder ✅"
+              // here — the shared full-screen result below always renders
+              // attendeeLabel as the big title and ticketTypeName as the
+              // subtitle beneath it, same as every other result kind, so
+              // this is what actually puts that exact text on screen.
+              setResult({
+                kind: "seasonPass",
+                message: t("scan.seasonPassHolder"),
+                ticketTypeName: t("scan.seasonPassHolder"),
+                attendeeLabel: body.holder.holderName,
+                code: reading.uid,
+              });
+              return;
+            }
+          } catch {
+            // Offline/network failure — fall through to the ordinary
+            // not-provisioned/replaced result below, same as ticket
+            // resolution already does when nothing matches.
+          }
+        }
         const replaced = await isUidSuperseded(reading.uid, "ticket");
         setResult({
           kind: replaced ? "wristbandReplaced" : "notProvisioned",
@@ -290,7 +325,7 @@ export default function GateScannerPage() {
         });
       }
     },
-    [checkIn, t]
+    [checkIn, online, t]
   );
 
   function onSubmit(e: React.FormEvent) {

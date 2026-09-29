@@ -95,6 +95,7 @@ model Organization {
   credentials         Credential[]
   supportTickets      SupportTicket[]
   loyaltyRewards      LoyaltyReward[]
+  seasonPasses        SeasonPass[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -846,6 +847,7 @@ model Event {
   // Session 28 — vendor terminal direct mobile money sales to a walk-up
   // customer with no wristband (see DirectSaleTransaction below).
   directSaleTransactions DirectSaleTransaction[]
+  seasonPassEvents      SeasonPassEvent[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -1804,4 +1806,87 @@ model EventForecast {
 
   savedByUserId String
   savedBy       User   @relation("EventForecastSavedBy", fields: [savedByUserId], references: [id])
+}
+
+// Season ticket / membership management — an organisation-level pass valid
+// across a set of that organisation's own events (e.g. a football club's
+// home matches for a season), distinct from a single event's ticket types.
+// status is DRAFT (not yet purchasable) | ACTIVE | EXPIRED, same plain-string
+// "enum" convention as every other status field in this schema (see
+// MobileMoneyAccount.provider). price/autoRenewPrice are cents, same
+// convention as TicketType.priceCents; autoRenewPrice null means renewal (if
+// enabled) charges the same as `price`.
+model SeasonPass {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Int
+  currency    String   @default("TZS")
+  startDate   DateTime
+  endDate     DateTime
+  maxHolders  Int?
+  status      String   @default("DRAFT")
+
+  autoRenewEnabled Boolean @default(false)
+  autoRenewPrice   Int?
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  holders SeasonPassHolder[]
+  events  SeasonPassEvent[]
+
+  @@index([organizationId])
+  @@index([autoRenewEnabled, endDate])
+}
+
+// One holder of one SeasonPass. userId/credentialId are deliberately plain
+// (unrelated) scalar columns rather than Prisma relations — a soft
+// reference, same "id column with no @relation" choice this schema already
+// makes elsewhere for cross-cutting free-text ids — so this feature never
+// needs to touch the User or Credential models. credentialId is the
+// holder's wristband (one wristband valid for every event the pass covers,
+// unlike a per-event Credential); null until it's provisioned.
+// renewalStatus is ACTIVE (current, not yet offered a renewal) |
+// RENEWAL_OFFERED | RENEWAL_CONFIRMED | RENEWAL_DECLINED | EXPIRED.
+model SeasonPassHolder {
+  id    String @id @default(cuid())
+  name  String
+  phone String
+  email String?
+
+  purchasedAt DateTime @default(now())
+
+  renewalStatus      String    @default("ACTIVE")
+  renewalOfferedAt   DateTime?
+  renewalConfirmedAt DateTime?
+  // Unique, one-time-use link token for the /renew/[token] page — see
+  // sendRenewalOffer/processRenewal in src/lib/season-renewal.ts.
+  renewalToken String? @unique
+
+  seasonPassId String
+  seasonPass   SeasonPass @relation(fields: [seasonPassId], references: [id])
+
+  userId       String?
+  credentialId String? @unique
+
+  @@index([seasonPassId])
+  @@index([renewalStatus])
+}
+
+// Links a SeasonPass to one specific Event it covers (e.g. one home match) —
+// a season pass holder gets gate entry to every Event linked here (see
+// isSeasonPassHolder in src/lib/season-pass.ts).
+model SeasonPassEvent {
+  id String @id @default(cuid())
+
+  seasonPassId String
+  seasonPass   SeasonPass @relation(fields: [seasonPassId], references: [id])
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  @@unique([seasonPassId, eventId])
 }

@@ -52,7 +52,17 @@ export type AuditAction =
   // Session 39
   | "BRANDING_UPDATED"
   // Post-event WhatsApp memory recap
-  | "POST_EVENT_MEMORY";
+  | "POST_EVENT_MEMORY"
+  // Season ticket / membership management — SEASON_PASS_PURCHASED and
+  // SEASON_PASS_RENEWED get no buildSyncAuditEntry case below: both are
+  // buyer/attendee self-actions (a purchase or a renewal payment), same
+  // documented exclusion this file's own header comment already states for
+  // WITHDRAW_WALLET. SEASON_PASS_RENEWAL_OFFERED is logged only from the
+  // organiser's manual "Send renewal offers now" button — the cron sweep
+  // has no real actorUserId to attribute it to.
+  | "SEASON_PASS_PURCHASED"
+  | "SEASON_PASS_RENEWAL_OFFERED"
+  | "SEASON_PASS_RENEWED";
 
 interface LogAuditInput {
   organizationId: string;

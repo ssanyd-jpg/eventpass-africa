@@ -348,6 +348,32 @@ Then add `{ "path": "/api/cron/pending-topups", "schedule": "* * * * *" }`
 reminders route: top-ups would be credited within a minute or so of payment,
 which is close to real time for a USSD user.
 
+## 10. Season pass auto-renewal (rides on the reminders cron)
+
+`src/lib/season-renewal.ts`'s `runSeasonRenewalSweep()` finds every
+`autoRenewEnabled` season pass expiring within the next 30 days and sends
+each still-`ACTIVE` holder with a phone on file a WhatsApp renewal offer
+(a one-tap link to `/renew/[token]`, valid for 7 days), same as every other
+notification here (falls back to SMS/log if WhatsApp isn't configured).
+Idempotent via `NotificationLog`, same discipline as every other sweep in
+this file.
+
+**Where it runs.** Same two-cron-slot constraint as the pending top-up
+sweep above — `/api/cron/reminders` runs the season renewal sweep after the
+pending top-up sweep, once a day at 06:00 UTC; the response includes a
+`seasonRenewal` object with `offersSent`/`skipped` counts. It runs
+regardless of whether the reminder job or the top-up sweep succeeded, and a
+season renewal failure never fails the reminders run either.
+
+**Manual trigger.** An organiser can send offers immediately, without
+waiting for the next cron run, via the "Send renewal offers now" button on
+`/dashboard/season-passes` (per season pass) — same underlying
+`sendRenewalOffer()` call, same idempotency guarantee.
+
+**Upgrading to Vercel Pro** lifts the once-a-day limit, so renewal offers
+(and every other sweep riding on this cron) could move to their own
+more-frequent schedule instead of sharing the once-daily reminders slot.
+
 ## Post-deploy checklist
 
 - [ ] Log in as the seeded admin (`admin@chaap.dev` if you ran

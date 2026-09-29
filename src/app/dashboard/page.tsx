@@ -151,6 +151,7 @@ export default function DashboardPage() {
             View live monitoring
           </Link>
           <a href="/api/dashboard/analytics/export" className="btn-secondary">Export data</a>
+          <Link href="/dashboard/season-passes" className="btn-secondary">Season passes</Link>
         </div>
       )}
 
