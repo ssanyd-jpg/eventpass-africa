@@ -32,7 +32,11 @@ function LoginForm() {
     const res = await signIn("credentials", { redirect: false, email, password });
     setLoading(false);
     if (res?.error) {
-      setError("Invalid email or password.");
+      setError(
+        res.code === "rate_limited"
+          ? "Too many login attempts. Please try again in 15 minutes."
+          : "Invalid email or password."
+      );
       return;
     }
     router.push(params.get("callbackUrl") || "/");

@@ -460,6 +460,43 @@ history list; there's no job that fires it automatically at its
 ad revenue this month, active featured listings, broadcasts sent this
 month, and total broadcast recipients this month.
 
+## Rate Limiting
+
+`src/lib/rate-limit.ts` is the one rate-limiting mechanism in this codebase
+— a fixed-window counter backed by the `RateLimitHit` table in the same
+Postgres database the app already uses. **No Redis/Upstash is used or
+needed**: Vercel's serverless functions are stateless per-invocation, so an
+in-memory counter would reset (or simply not be shared) across instances
+and wouldn't actually enforce anything in production; the DB-backed
+approach works correctly across instances with no extra infrastructure.
+There's nothing to configure — it just works once `DATABASE_URL` is set.
+
+Limits currently enforced, all keyed so one abusive source can't exhaust
+another's quota:
+
+| Endpoint | Limit | Keyed by |
+|---|---|---|
+| Login (`src/auth.ts`) | 5 attempts / 15 min | email **and** IP (either tripping blocks the attempt; a successful login clears both) |
+| `/api/register` | 5 / 10 min | IP |
+| `/api/password-reset/request` | 5 / 10 min | IP |
+| `/api/vendor/magic-link/request` | 5 / 10 min, **and** 3 / hour | IP, and separately the target email |
+| `/api/sponsor/magic-link/request` | 5 / 10 min, **and** 3 / hour | IP, and separately the target email |
+| `/api/ussd` | 10 / min | phone number |
+| `/api/cron/*` | 10 / hour | IP — a second layer behind the `CRON_SECRET` bearer check, checked only *after* the secret matches so an anonymous flood never costs a DB round trip |
+
+The login and magic-link endpoints use two independent buckets on purpose:
+an IP-keyed bucket stops one source hammering many targets (credential
+stuffing, enumerating vendor/sponsor emails), while the
+email-keyed/phone-keyed bucket stops one target being hammered from many
+rotating IPs. Either bucket tripping blocks the request.
+
+On the login form specifically, a rate-limited attempt is surfaced to the
+user as "Too many login attempts. Please try again in 15 minutes." (via a
+custom `CredentialsSignin` error `code`) — distinct from the generic
+"Invalid email or password." shown for an actually-wrong password, so a
+legitimate user isn't left guessing why a correct password suddenly stops
+working.
+
 ## Post-deploy checklist
 
 - [ ] Log in as the seeded admin (`admin@chaap.dev` if you ran

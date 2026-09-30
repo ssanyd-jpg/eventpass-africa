@@ -21,6 +21,15 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return generic;
 
+  // Second bucket, keyed by the target email rather than the caller's IP —
+  // catches a single sponsor inbox being hammered from many different IPs,
+  // which the IP-keyed check above can't see.
+  const emailLimit = await checkRateLimit(`sponsor-magic-link-email:${parsed.data.email.toLowerCase()}`, {
+    limit: 3,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!emailLimit.allowed) return generic;
+
   // "Event code" is the event's existing public slug — same convention as
   // the vendor magic-link request route.
   const event = await prisma.event.findUnique({ where: { slug: parsed.data.eventCode.trim().toLowerCase() } });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sendEventReminders } from "@/lib/reminders";
 import { runPendingTopupSweep } from "@/lib/pending-topups";
 import { runSeasonRenewalSweep } from "@/lib/season-renewal";
+import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
 // `Authorization: Bearer ${CRON_SECRET}` header it adds automatically for
@@ -18,6 +19,17 @@ export async function GET(request: Request) {
 
   if (!secret || authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ ok: false, reason: "UNAUTHORIZED" }, { status: 401 });
+  }
+
+  // Second layer behind CRON_SECRET: even a correctly-authenticated caller
+  // (e.g. a leaked secret, or Vercel misfiring) shouldn't be able to
+  // trigger an unbounded number of sends/sweeps back to back. Deliberately
+  // checked AFTER the secret gate, not before — an anonymous flood should
+  // cost nothing more than the cheap string comparison above, not a DB
+  // round trip.
+  const { allowed } = await checkRateLimit(`cron:${clientIp(request)}`, { limit: 10, windowMs: 60 * 60 * 1000 });
+  if (!allowed) {
+    return NextResponse.json({ ok: false, reason: "RATE_LIMITED" }, { status: 429 });
   }
 
   // Session 35 — Vercel Hobby allows two crons and both slots are taken

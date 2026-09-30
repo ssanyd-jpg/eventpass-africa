@@ -1,8 +1,9 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/rate-limit";
+import { checkLoginRateLimit, resetLoginRateLimit } from "@/lib/login-rate-limit";
 import { authConfig } from "@/auth.config";
 import { deriveSessionLabel } from "@/lib/session-label";
 import { createUserSession, isSessionRevoked } from "@/lib/session-handlers";
@@ -10,6 +11,14 @@ import { consumeVendorMagicLinkToken } from "@/lib/vendor-auth";
 import { consumeSponsorMagicLinkToken } from "@/lib/sponsor-auth";
 
 const SESSION_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+// code becomes the `code` query param on the redirect and is what
+// next-auth/react's signIn({redirect:false}) returns as res.code — the
+// login form uses it to show a specific "too many attempts" message
+// instead of the generic "Invalid email or password.".
+class RateLimitedSignin extends CredentialsSignin {
+  code = "rate_limited";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -25,11 +34,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
 
-        const { allowed } = await checkRateLimit(`login:${email.toLowerCase()}`, {
-          limit: 5,
-          windowMs: 10 * 60 * 1000,
-        });
-        if (!allowed) return null;
+        const ip = clientIp(request);
+        const allowed = await checkLoginRateLimit(email, ip);
+        if (!allowed) throw new RateLimitedSignin();
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
@@ -44,6 +51,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const label = deriveSessionLabel(request.headers.get("user-agent"));
         const userSession = await createUserSession(user.id, label);
+
+        await resetLoginRateLimit(email, ip);
 
         return {
           id: user.id,

@@ -37,6 +37,11 @@ export async function checkRateLimit(
   return { allowed: true, remaining: limit - count - 1 };
 }
 
+/** Clears a bucket early — e.g. a successful login shouldn't count toward the same limit as the failed attempts before it. */
+export async function resetRateLimit(bucketKey: string): Promise<void> {
+  await prisma.rateLimitHit.deleteMany({ where: { bucketKey } });
+}
+
 export function clientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   return forwarded?.split(",")[0]?.trim() ?? "unknown";

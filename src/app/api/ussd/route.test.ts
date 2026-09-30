@@ -86,4 +86,39 @@ describe("POST /api/ussd", () => {
     expect(await response.text()).toBe("END Something went wrong. Please try again later");
     consoleError.mockRestore();
   });
+
+  it("stops answering the same phone number after 10 requests within a minute", async () => {
+    process.env.AT_USSD_SECRET = "test-ussd-secret";
+    mockHandleUssd.mockResolvedValue("CON Welcome to Chaap\n1. Check balance");
+    const phoneNumber = `+2557${Date.now()}`;
+
+    for (let i = 0; i < 10; i++) {
+      const response = await POST(
+        ussdRequest({ "x-at-ussd-secret": "test-ussd-secret" }, { phoneNumber })
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("CON Welcome to Chaap\n1. Check balance");
+    }
+
+    mockHandleUssd.mockClear();
+    const eleventh = await POST(ussdRequest({ "x-at-ussd-secret": "test-ussd-secret" }, { phoneNumber }));
+    expect(await eleventh.text()).toBe("END You're sending requests too fast. Please wait a moment and try again.");
+    expect(mockHandleUssd).not.toHaveBeenCalled();
+  });
+
+  it("tracks a different phone number independently of one that's already rate-limited", async () => {
+    process.env.AT_USSD_SECRET = "test-ussd-secret";
+    mockHandleUssd.mockResolvedValue("CON Welcome to Chaap\n1. Check balance");
+    const exhausted = `+2557${Date.now()}-exhausted`;
+    const fresh = `+2557${Date.now()}-fresh`;
+
+    for (let i = 0; i < 10; i++) {
+      await POST(ussdRequest({ "x-at-ussd-secret": "test-ussd-secret" }, { phoneNumber: exhausted }));
+    }
+
+    mockHandleUssd.mockClear();
+    const response = await POST(ussdRequest({ "x-at-ussd-secret": "test-ussd-secret" }, { phoneNumber: fresh }));
+    expect(await response.text()).toBe("CON Welcome to Chaap\n1. Check balance");
+    expect(mockHandleUssd).toHaveBeenCalledTimes(1);
+  });
 });
