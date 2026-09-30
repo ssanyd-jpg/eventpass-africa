@@ -77,6 +77,38 @@ was run against the live `neondb` database, resetting it to empty.
    as "applied" when its SQL never really ran leaves the schema silently
    out of sync with no error.
 
+**IP allowlisting must be kept in sync with Vercel's published ranges** — if
+enabled (see "Database IP Security" below), a connection from any IP not on
+the list is refused outright, including a legitimate one after Vercel
+rotates or adds ranges. Subscribe to the Vercel changelog
+(vercel.com/changelog) for notices of infrastructure/network changes, and
+re-check vercel.com/docs/infrastructure/networks against the Neon allowlist
+periodically — don't assume the ranges are static.
+
+## Database IP Security
+
+By default Neon accepts connections from any IP, which is fine during
+development but is worth locking down before real traffic and real user
+data are on the line.
+
+1. **Enable Neon IP allowlisting**: console.neon.tech → your project →
+   **Settings** → **IP Allow List** → add the IP ranges below.
+2. **Add Vercel's serverless function IP ranges** — Vercel publishes its
+   current ranges at vercel.com/docs/infrastructure/networks; add every
+   range listed there so deployed functions (where `DATABASE_URL` is used
+   at runtime) can still reach Neon.
+3. **Also allowlist the developer's local IP**, so `npx prisma migrate dev`,
+   `db push`, and `db seed` keep working from a local machine.
+4. **Warning**: once IP allowlisting is enabled, any connection from an
+   unlisted IP is refused — including local development, if the local IP
+   isn't on the list, and including Vercel itself if its ranges change and
+   the allowlist isn't updated (see the note at the end of the Database
+   Safety section above).
+5. **Recommendation**: enable this before the first live event, not while
+   still actively developing — an allowlist that has to be updated every
+   time a developer's IP changes (home, office, mobile hotspot) is friction
+   that isn't worth paying until real data is at stake.
+
 ## 2. Deploy to Vercel
 
 1. Push this repo to GitHub and import it in Vercel.
