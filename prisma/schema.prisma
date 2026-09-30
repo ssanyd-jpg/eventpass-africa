@@ -96,6 +96,8 @@ model Organization {
   supportTickets      SupportTicket[]
   loyaltyRewards      LoyaltyReward[]
   seasonPasses        SeasonPass[]
+  featuredListings    FeaturedListing[]
+  adBroadcasts        AdBroadcast[]
 }
 
 // action is a closed set of accountability events for actions an
@@ -810,6 +812,12 @@ model Event {
   // Session 37 — organiser opt-in for peer-to-peer wallet transfers between
   // wristband holders at this event (see WalletTransfer). Off by default.
   transferEnabled Boolean @default(false)
+  // Chaap Ads marketplace — plain page-view counter for the public
+  // /events/[slug] page (see EventDetailPage), incremented on every load.
+  // Backs the "performance" figure on a FeaturedListing's history entry
+  // (src/lib/chaap-ads.ts) — good enough for that at-a-glance number; not a
+  // deduped/unique-visitor count.
+  viewCount   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -848,6 +856,7 @@ model Event {
   // customer with no wristband (see DirectSaleTransaction below).
   directSaleTransactions DirectSaleTransaction[]
   seasonPassEvents      SeasonPassEvent[]
+  featuredListings      FeaturedListing[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -1889,4 +1898,59 @@ model SeasonPassEvent {
   event   Event  @relation(fields: [eventId], references: [id])
 
   @@unique([seasonPassId, eventId])
+}
+
+// Chaap Ads marketplace — paid placement on the public /events listing
+// (src/lib/chaap-ads.ts). eventId is deliberately NOT @unique: the spec's
+// "one active listing per event" is an at-a-time rule enforced in
+// createFeaturedListing (an ACTIVE-status check before creating), not an
+// ever-once-per-event rule — a hard unique constraint here would make an
+// event's FIRST listing (once it ends up EXPIRED) the only one it could
+// ever have, which directly contradicts item 5's "listing history" of past
+// listings for the same event.
+model FeaturedListing {
+  id              String   @id @default(cuid())
+  tier            String // FEATURED | SPOTLIGHT
+  startDate       DateTime
+  endDate         DateTime
+  amountPaidCents Int
+  currency        String   @default("TZS")
+  status          String   @default("ACTIVE") // ACTIVE | EXPIRED | CANCELLED
+  createdAt       DateTime @default(now())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  // getActiveFeaturedListings' one query (status="ACTIVE") and
+  // expireListings' sweep (status="ACTIVE" AND endDate < now) both filter
+  // on exactly this pair.
+  @@index([status, endDate])
+  @@index([eventId, status])
+  @@index([organizationId, createdAt])
+}
+
+// Chaap Ads marketplace — organiser-paid WhatsApp broadcast to previous
+// Chaap attendees across the WHOLE platform (matched by event type), not
+// just this organiser's own past buyers — that platform-wide reach is the
+// paid product's actual value, distinct from the free, own-event-only
+// Broadcast model above (see dashboard/customers/broadcast).
+model AdBroadcast {
+  id               String    @id @default(cuid())
+  message          String
+  targetEventTypes String[] @default([]) // empty = all event types
+  scheduledAt      DateTime
+  sentAt           DateTime?
+  recipientCount   Int       @default(0)
+  amountPaidCents  Int
+  currency         String    @default("TZS")
+  status           String    @default("SCHEDULED") // SCHEDULED | SENT | CANCELLED
+  createdAt        DateTime  @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
 }

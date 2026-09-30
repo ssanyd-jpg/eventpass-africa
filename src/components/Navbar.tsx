@@ -213,6 +213,7 @@ export default function Navbar() {
                 <DropdownLink href="/dashboard/payments">{t("nav.payments")}</DropdownLink>
                 <DropdownLink href="/dashboard/settlements">{t("nav.settlements")}</DropdownLink>
                 <DropdownLink href="/dashboard/season-passes">{t("nav.seasonPasses")}</DropdownLink>
+                <DropdownLink href="/dashboard/ads">{t("nav.ads")}</DropdownLink>
                 {user.organizationRole === "OWNER" && (
                   <>
                     <MenuDivider />
@@ -320,6 +321,7 @@ export default function Navbar() {
                     <MobileMenuLink href="/dashboard/payments" onClick={closeMenu}>{t("nav.payments")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/settlements" onClick={closeMenu}>{t("nav.settlements")}</MobileMenuLink>
                     <MobileMenuLink href="/dashboard/season-passes" onClick={closeMenu}>{t("nav.seasonPasses")}</MobileMenuLink>
+                    <MobileMenuLink href="/dashboard/ads" onClick={closeMenu}>{t("nav.ads")}</MobileMenuLink>
                   </>
                 )}
                 {user.organizationRole === "OWNER" && (

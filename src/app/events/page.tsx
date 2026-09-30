@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import PublicEventCard from "@/components/PublicEventCard";
+import SpotlightEventCard from "@/components/SpotlightEventCard";
+import FeaturedEventCard from "@/components/FeaturedEventCard";
 import EventTypeSelect from "./EventTypeSelect";
 import { getPublicEvents, getPublicEventCities } from "@/lib/marketplace";
+import { getActiveFeaturedListings } from "@/lib/chaap-ads";
 import { EVENT_TYPES, EVENT_MODE_CONFIG } from "@/lib/event-modes";
 
 export const metadata: Metadata = {
@@ -40,6 +43,16 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
   const hasActiveFilters = Boolean(
     filters.eventType || filters.city || filters.dateFrom || filters.dateTo || filters.search
   );
+
+  // Chaap Ads marketplace — paid placement only shows on the plain, page-1
+  // browse (no filters): a sponsored event from another city/type showing
+  // up inside someone's filtered search results would misrepresent their
+  // own filter, and "Regular events follow below as normal" (spec item 4)
+  // reads as describing that same unfiltered browse experience.
+  const showSponsored = page === 1 && !hasActiveFilters;
+  const { spotlight, featured } = showSponsored ? await getActiveFeaturedListings() : { spotlight: null, featured: [] };
+  const sponsoredEventIds = new Set([...(spotlight ? [spotlight.eventId] : []), ...featured.map((f) => f.eventId)]);
+  const regularEvents = sponsoredEventIds.size > 0 ? events.filter((e) => !sponsoredEventIds.has(e.id)) : events;
 
   function pageHref(targetPage: number) {
     const qs = new URLSearchParams();
@@ -115,7 +128,19 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
         </div>
       </form>
 
-      {events.length === 0 ? (
+      {spotlight && <SpotlightEventCard listing={spotlight} />}
+      {featured.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold text-muted">Featured</h2>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.map((listing) => (
+              <FeaturedEventCard key={listing.listingId} listing={listing} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {regularEvents.length === 0 ? (
         hasActiveFilters ? (
           <div className="card flex flex-col items-center gap-3 p-12 text-center">
             <span aria-hidden className="text-5xl">🔍</span>
@@ -134,7 +159,7 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
         )
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {events.map((event) => (
+          {regularEvents.map((event) => (
             <PublicEventCard key={event.id} event={event} />
           ))}
         </div>

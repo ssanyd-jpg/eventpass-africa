@@ -62,7 +62,14 @@ export type AuditAction =
   // has no real actorUserId to attribute it to.
   | "SEASON_PASS_PURCHASED"
   | "SEASON_PASS_RENEWAL_OFFERED"
-  | "SEASON_PASS_RENEWED";
+  | "SEASON_PASS_RENEWED"
+  // Chaap Ads marketplace — both are organiser self-actions with a real
+  // actorUserId (an owner/staff member paying from the dashboard), logged
+  // directly from src/app/dashboard/ads/actions.ts, same as
+  // LOYALTY_REWARD_CREATED — not a buildSyncAuditEntry case, since neither
+  // rides the offline sync queue.
+  | "FEATURED_LISTING_PURCHASED"
+  | "AD_BROADCAST_SENT";
 
 interface LogAuditInput {
   organizationId: string;

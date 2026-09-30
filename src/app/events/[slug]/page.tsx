@@ -58,6 +58,15 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
     : null;
   const resaleListingCount = resaleEvent?.resaleEnabled ? await countActiveListings(resaleEvent.id) : 0;
 
+  // Chaap Ads marketplace — a simple page-view counter (see
+  // Event.viewCount's own doc comment), backing the "performance" figure a
+  // Featured/Spotlight listing shows on the organiser dashboard. Fire here
+  // rather than blocking generateMetadata, so a crawler's metadata-only hit
+  // doesn't double-count.
+  if (resaleEvent) {
+    await prisma.event.update({ where: { id: resaleEvent.id }, data: { viewCount: { increment: 1 } } });
+  }
+
   const jsonLd = event
     ? {
         "@context": "https://schema.org",

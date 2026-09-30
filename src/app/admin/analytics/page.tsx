@@ -15,6 +15,7 @@ import {
   TREND_WINDOW_DAYS,
 } from "@/lib/analytics";
 import { getPlatformAnalyticsData } from "@/lib/analytics-data";
+import { getAdminAdsSummary } from "@/lib/chaap-ads";
 import BarSeries from "@/components/charts/BarSeries";
 import ProgressBar from "@/components/charts/ProgressBar";
 
@@ -26,6 +27,7 @@ export default async function AdminAnalyticsPage() {
 
   const { events, revenueOrders, ticketTypes, tickets, vendors, revenueOrdersWithOrganizer, wallets, walletTxs } =
     await getPlatformAnalyticsData();
+  const adsSummary = await getAdminAdsSummary();
 
   const revenueByCurrency = bucketRevenueByDay(revenueOrders);
   const ticketsSoldTrend = bucketByDay(
@@ -226,6 +228,26 @@ export default async function AdminAnalyticsPage() {
           </div>
         </>
       )}
+
+      <h2 className="mb-3 mt-8 font-semibold">Chaap Ads</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Ad revenue (this month)</p>
+          <p className="mt-1 text-2xl font-bold">{formatCents(adsSummary.totalAdRevenueCentsThisMonth, adsSummary.currency)}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Active featured listings</p>
+          <p className="mt-1 text-2xl font-bold">{adsSummary.activeFeaturedListings}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Broadcasts sent (this month)</p>
+          <p className="mt-1 text-2xl font-bold">{adsSummary.broadcastsSentThisMonth}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Broadcast recipients (this month)</p>
+          <p className="mt-1 text-2xl font-bold">{adsSummary.totalBroadcastRecipientsThisMonth}</p>
+        </div>
+      </div>
     </div>
   );
 }

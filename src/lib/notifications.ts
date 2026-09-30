@@ -48,7 +48,12 @@ export type NotificationType =
   | "SEASON_PASS_PURCHASED"
   | "SEASON_PASS_RENEWAL_OFFERED"
   | "SEASON_PASS_RENEWED"
-  | "SEASON_PASS_RENEWAL_DECLINED";
+  | "SEASON_PASS_RENEWAL_DECLINED"
+  // Chaap Ads marketplace — an organiser's own freeform WhatsApp broadcast
+  // message to previous attendees (see sendBroadcast in chaap-ads.ts). One
+  // type for the whole product, unlike SEASON_PASS_*'s per-template split,
+  // since the body here is organiser-authored, not a fixed template.
+  | "AD_BROADCAST";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

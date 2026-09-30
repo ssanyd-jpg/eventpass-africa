@@ -152,6 +152,7 @@ export default function DashboardPage() {
           </Link>
           <a href="/api/dashboard/analytics/export" className="btn-secondary">Export data</a>
           <Link href="/dashboard/season-passes" className="btn-secondary">Season passes</Link>
+          <Link href="/dashboard/ads" className="btn-secondary">Ads ↗</Link>
         </div>
       )}
 

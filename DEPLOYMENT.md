@@ -387,6 +387,36 @@ waiting for the next cron run, via the "Send renewal offers now" button on
 (and every other sweep riding on this cron) could move to their own
 more-frequent schedule instead of sharing the once-daily reminders slot.
 
+## 11. Chaap Ads marketplace
+
+A second, between-events revenue stream on top of the `/events` public
+marketplace (`src/lib/chaap-ads.ts`) — two paid products, both charged to
+the organiser via the same Airpay/simulator checkout every other paid
+feature here uses:
+
+- **Featured listing** — paid placement on `/events`. FEATURED (TZS 50,000
+  / 7 days, up to 3 active platform-wide) and SPOTLIGHT (TZS 120,000 / 7
+  days, at most 1 active platform-wide). Bought from `/dashboard/ads`
+  ("Featured listings" tab); shown as an honestly-labelled "Featured"/
+  "Sponsored" placement, never blended in with organic listings.
+- **WhatsApp broadcast** — an organiser-authored message (160 characters)
+  sent to previous Chaap attendees platform-wide, matched by event type
+  (All / Marathon / Festival / Football). TZS 500 per estimated recipient,
+  minimum TZS 25,000. Bought and sent from `/dashboard/ads` ("Broadcast"
+  tab).
+
+**No cron wiring.** Unlike the season-pass renewal sweep, nothing here
+runs on a schedule. `expireListings()` runs inline whenever the
+marketplace or the slot-availability check reads FeaturedListing rows —
+no separate job needed. A broadcast scheduled for a future time sits as
+SCHEDULED until an organiser presses "Send now" on it from the broadcast
+history list; there's no job that fires it automatically at its
+`scheduledAt` time.
+
+**Admin visibility.** `/admin/analytics` has a "Chaap Ads" section: total
+ad revenue this month, active featured listings, broadcasts sent this
+month, and total broadcast recipients this month.
+
 ## Post-deploy checklist
 
 - [ ] Log in as the seeded admin (`admin@chaap.dev` if you ran
