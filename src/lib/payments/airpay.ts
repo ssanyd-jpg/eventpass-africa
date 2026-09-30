@@ -182,11 +182,45 @@ export const airpayProvider: PaymentProvider = {
   },
 };
 
+// Plausible field names Airpay's Order Verification response might use to
+// echo the order id back — never confirmed against a real response (the
+// merchant PDF this was built from doesn't show a worked example for this
+// call), so this is checked defensively, not assumed authoritative. See
+// verifyAirpayOrder's own comment on how an absent field is treated
+// differently from a present-but-mismatched one.
+const ORDER_ID_ECHO_KEYS = ["ORDERID", "orderid", "merchant_txnId", "MERCHANT_TXNID", "OrderId"] as const;
+
 /**
  * Resolves a PENDING charge to its final status by polling Order
  * Verification (there's no webhook to receive this — see the note above).
  * Not part of the generic PaymentProvider interface since it's specific to
  * Airpay's poll-based design.
+ *
+ * Hardened against three gaps found reviewing this function for
+ * reconciliation-readiness:
+ *   - Response substitution: if the response echoes an order id under any
+ *     of ORDER_ID_ECHO_KEYS and it doesn't match what was requested, that's
+ *     treated as a mismatched/untrustworthy response (FAILED), not silently
+ *     accepted. Since it isn't confirmed whether Airpay's real response
+ *     ever includes this field, an ABSENT field is not itself an error —
+ *     only a PRESENT-but-different one is.
+ *   - Unrecognized shape: previously a response with neither
+ *     TRANSACTIONSTATUS nor status silently fell through to PENDING with no
+ *     visibility. It still resolves to PENDING (the safe default — retried
+ *     next sweep, never wrongly marks something PAID/FAILED on no
+ *     evidence), but now logs a warning so a genuinely broken integration
+ *     doesn't look identical to "still waiting on the buyer" in the logs.
+ *   - No verification trail: every call now logs the order id and the
+ *     status it resolved to, for reconciliation against Airpay's own
+ *     records.
+ *
+ * One real behavior fix, not just added logging: the old ternary only
+ * checked `transactionStatus === undefined` to decide "no recognizable
+ * status" — a response with `status: "failed"` but no TRANSACTIONSTATUS
+ * field fell into that branch and was wrongly returned as PENDING (a
+ * declined payment would have silently stayed "pending" forever instead of
+ * failing). `hasStatusField` now also counts `data.status` being present,
+ * so that case correctly resolves to FAILED.
  */
 export async function verifyAirpayOrder(merchantOrderId: string): Promise<ChargeResult> {
   const creds = readAirpayCredentials();
@@ -199,8 +233,28 @@ export async function verifyAirpayOrder(merchantOrderId: string): Promise<Charge
     Privatekey: derivePrivateKey(creds.secret, creds.username, creds.password),
   });
 
+  for (const key of ORDER_ID_ECHO_KEYS) {
+    const echoed = data[key];
+    if (typeof echoed === "string" && echoed !== "" && echoed !== merchantOrderId) {
+      console.error(`[airpay] verifyAirpayOrder: response order id "${echoed}" (${key}) doesn't match requested "${merchantOrderId}" — rejecting as untrustworthy.`);
+      return { status: "FAILED", reference: merchantOrderId, message: "Airpay's verification response didn't match the requested order — treated as failed." };
+    }
+  }
+
   const transactionStatus = data.TRANSACTIONSTATUS as string | undefined;
-  const status = transactionStatus === "200" || data.status === "success" ? "PAID" : transactionStatus === undefined ? "PENDING" : "FAILED";
+  const hasStatusField = transactionStatus !== undefined || typeof data.status === "string";
+  const status =
+    transactionStatus === "200" || data.status === "success"
+      ? "PAID"
+      : !hasStatusField
+        ? "PENDING"
+        : "FAILED";
+
+  if (!hasStatusField) {
+    console.warn(`[airpay] verifyAirpayOrder: unrecognized response shape for order "${merchantOrderId}" — treating as still PENDING. Raw response: ${JSON.stringify(data)}`);
+  }
+  console.log(`[airpay] verifyAirpayOrder: order "${merchantOrderId}" resolved to ${status}`);
+
   return {
     status,
     reference: merchantOrderId,

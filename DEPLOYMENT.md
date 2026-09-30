@@ -181,6 +181,17 @@ asynchronous; checkout needs a "waiting for you to confirm on your phone"
 state and a network selector that don't exist yet), and treat that as a
 follow-up task once credentials are verified against the sandbox.
 
+**Poll-based verification, not webhooks.** Chaap uses poll-based Order
+Verification, not webhooks — Airpay's documented API has no callback
+mechanism (see `verifyAirpayOrder`'s own comment). `verifyAirpayOrder`
+should be called after every payment initiation to resolve its eventual
+PAID/FAILED outcome (`src/lib/pending-topups.ts`'s cron sweep is the one
+caller wired up today — see §9). **If Airpay adds webhook support in
+future, implement HMAC signature verification on that callback route
+before enabling it** — don't trust an unauthenticated callback just because
+it claims to be from Airpay. `AIRPAY_WEBHOOK_SECRET` in `.env.example` is
+reserved for that day; it does nothing today.
+
 **Bankcode availability, confirmed by Airpay support.** Only three of
 Tanzania's mobile money networks are live on Airpay's side today —
 `MPESA`, `AIRTEL`, and `TIGO` (Tigo Pesa / MIXX by Yas). **HaloPesa and
