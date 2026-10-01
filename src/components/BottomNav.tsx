@@ -122,6 +122,7 @@ function AccountSheet({ onClose }: { onClose: () => void }) {
         <SheetLink href="/account/loyalty" onClick={onClose}>{t("nav.myStatus")}</SheetLink>
         <SheetLink href="/account/rewards" onClick={onClose}>{t("nav.myRewards")}</SheetLink>
         <SheetLink href="/account/support" onClick={onClose}>{t("nav.support")}</SheetLink>
+        <SheetLink href="/account/settings" onClick={onClose}>{t("nav.settings")}</SheetLink>
         {user.organizationRole && (
           <>
             <div className="my-1.5 border-t border-border" />

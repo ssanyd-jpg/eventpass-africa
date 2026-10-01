@@ -16,6 +16,7 @@ const MORE_PREFIXES = [
   "/account/rewards",
   "/account/support",
   "/account/vendor-applications",
+  "/account/settings",
 ];
 
 function NavLink({
@@ -239,6 +240,7 @@ export default function Navbar() {
               <DropdownLink href="/account/loyalty">{t("nav.myStatus")}</DropdownLink>
               <DropdownLink href="/account/rewards">{t("nav.myRewards")}</DropdownLink>
               <DropdownLink href="/account/support">{t("nav.support")}</DropdownLink>
+              <DropdownLink href="/account/settings">{t("nav.settings")}</DropdownLink>
               <MenuDivider />
               <DropdownLink href="/account/vendor-applications">{t("nav.myVendorApps")}</DropdownLink>
             </DesktopDropdown>
@@ -310,6 +312,7 @@ export default function Navbar() {
                 <MobileMenuLink href="/account/loyalty" onClick={closeMenu}>{t("nav.myStatus")}</MobileMenuLink>
                 <MobileMenuLink href="/account/rewards" onClick={closeMenu}>{t("nav.myRewards")}</MobileMenuLink>
                 <MobileMenuLink href="/account/support" onClick={closeMenu}>{t("nav.support")}</MobileMenuLink>
+                <MobileMenuLink href="/account/settings" onClick={closeMenu}>{t("nav.settings")}</MobileMenuLink>
 
                 {user.organizationRole !== "GATE_CREW" && (
                   <>

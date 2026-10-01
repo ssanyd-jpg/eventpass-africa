@@ -69,7 +69,11 @@ export type AuditAction =
   // LOYALTY_REWARD_CREATED — not a buildSyncAuditEntry case, since neither
   // rides the offline sync queue.
   | "FEATURED_LISTING_PURCHASED"
-  | "AD_BROADCAST_SENT";
+  | "AD_BROADCAST_SENT"
+  // PDPA self-service deletion (src/lib/account-deletion.ts) — logged
+  // against the deleting user's own (personal) organization, the only one
+  // every user is guaranteed to have.
+  | "ACCOUNT_DELETED";
 
 interface LogAuditInput {
   organizationId: string;
