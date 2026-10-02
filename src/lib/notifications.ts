@@ -56,7 +56,11 @@ export type NotificationType =
   | "AD_BROADCAST"
   // Event WhatsApp group — see src/lib/whatsapp-group.ts.
   | "WHATSAPP_GROUP_INVITE_SENT"
-  | "WHATSAPP_GROUP_ARCHIVED";
+  | "WHATSAPP_GROUP_ARCHIVED"
+  // Compassionate close-out sent to any still-WAITING waitlist entry once
+  // its event ends or is cancelled — see sendWaitlistClosureNotifications
+  // in src/lib/waitlist.ts.
+  | "WAITLIST_CLOSURE";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

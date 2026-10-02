@@ -11,7 +11,7 @@ import { normalizeTanzaniaPhone } from "@/lib/sms";
 import { buildOrderConfirmationHtml } from "@/lib/email";
 import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timing";
 import { EVENT_TYPES } from "@/lib/event-modes";
-import { releaseWaitlistCapacity, convertWaitlistEntry } from "@/lib/waitlist";
+import { releaseWaitlistCapacity, convertWaitlistEntry, sendWaitlistClosureNotifications } from "@/lib/waitlist";
 import { currentPriceCents, validatePricingTiers } from "@/lib/pricing";
 import { sendGroupInvite } from "@/lib/whatsapp-group";
 
@@ -1608,6 +1608,12 @@ export async function handleCancelEvent(userId: string, organizationId: string, 
       body: `Hi ${o.user.name}, the organizer has cancelled ${event.title}. Please contact them about a refund.`,
     });
   }
+
+  // Anyone still WAITING on this now-cancelled event is never getting that
+  // spot — tell them right away rather than making them wait for the daily
+  // closure sweep (runWaitlistClosureSweep) to notice. No-op (notifiedCount
+  // 0) on an event nobody was ever waiting on.
+  await sendWaitlistClosureNotifications(event.id);
 
   return { ok: true, event: shapeEvent(updated, updated.organization.name, updated.organization.displayName) };
 }

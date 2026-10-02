@@ -79,7 +79,13 @@ export type AuditAction =
   // message"), not once per individual attendee invite, same
   // one-entry-per-organiser-action granularity as BROADCAST_SENT.
   | "WHATSAPP_GROUP_INVITE_SENT"
-  | "WHATSAPP_GROUP_ARCHIVED";
+  | "WHATSAPP_GROUP_ARCHIVED"
+  // Final waitlist closure notifications (src/lib/waitlist.ts) are sent by
+  // a cron sweep or straight from event cancellation, never from a real
+  // actorUserId — no buildSyncAuditEntry case, same documented exclusion as
+  // SEASON_PASS_PURCHASED/SEASON_PASS_RENEWED above. Listed here only so
+  // the type exists if a future organiser-triggered trigger needs it.
+  | "WAITLIST_CLOSURE";
 
 interface LogAuditInput {
   organizationId: string;

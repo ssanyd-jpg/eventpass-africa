@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
-import { setWaitlistEnabled, notifyNextInWaitlistAction } from "./actions";
+import { setWaitlistEnabled, setWaitlistCutoffHours, notifyNextInWaitlistAction } from "./actions";
 import { SkeletonPage } from "@/components/Skeleton";
 
 interface WaitlistCount {
@@ -13,10 +13,25 @@ interface WaitlistCount {
   waiting: number;
 }
 
+interface WaitlistAnalytics {
+  totalJoined: number;
+  currentWaiting: number;
+  peakSize: number;
+  offerSent: number;
+  offerAccepted: number;
+  offerExpired: number;
+  conversionRate: number;
+  avgResponseMinutes: number;
+  demandByTicketType: Array<{ ticketTypeName: string; count: number }>;
+}
+
 interface WaitlistPageData {
   eventTitle: string;
   waitlistEnabled: boolean;
+  waitlistCutoffHours: number;
+  cutoffActive: boolean;
   counts: WaitlistCount[];
+  analytics: WaitlistAnalytics;
 }
 
 export default function EventWaitlistPage() {
@@ -32,6 +47,8 @@ export default function EventWaitlistPage() {
   const [data, setData] = useState<WaitlistPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
+  const [cutoffInput, setCutoffInput] = useState("24");
+  const [savingCutoff, setSavingCutoff] = useState(false);
   const [notifyCounts, setNotifyCounts] = useState<Record<string, string>>({});
   const [notifyingId, setNotifyingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -44,7 +61,15 @@ export default function EventWaitlistPage() {
         setError(body.reason ?? "Failed to load");
         return;
       }
-      setData({ eventTitle: body.eventTitle, waitlistEnabled: body.waitlistEnabled, counts: body.counts });
+      setData({
+        eventTitle: body.eventTitle,
+        waitlistEnabled: body.waitlistEnabled,
+        waitlistCutoffHours: body.waitlistCutoffHours,
+        cutoffActive: body.cutoffActive,
+        counts: body.counts,
+        analytics: body.analytics,
+      });
+      setCutoffInput(String(body.waitlistCutoffHours));
     } catch {
       setError("Failed to load");
     }
@@ -58,6 +83,14 @@ export default function EventWaitlistPage() {
     setToggling(true);
     await setWaitlistEnabled(eventId, enabled);
     setToggling(false);
+    await load();
+  }
+
+  async function onSaveCutoff() {
+    const hours = Math.min(72, Math.max(0, Math.round(Number(cutoffInput) || 0)));
+    setSavingCutoff(true);
+    await setWaitlistCutoffHours(eventId, hours);
+    setSavingCutoff(false);
     await load();
   }
 
@@ -116,6 +149,103 @@ export default function EventWaitlistPage() {
           />
         </label>
       </div>
+
+      <div className="card mb-6 space-y-2 p-5">
+        <p className="font-medium">Stop notifying waitlisted attendees X hours before the event</p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={72}
+            className="input w-24"
+            value={cutoffInput}
+            onChange={(e) => setCutoffInput(e.target.value)}
+          />
+          <span className="text-sm text-muted">hours (0–72, default 24)</span>
+          <button className="btn-secondary" disabled={savingCutoff} onClick={onSaveCutoff}>
+            {savingCutoff ? "Saving…" : "Save"}
+          </button>
+        </div>
+        <p className="text-sm text-muted">
+          After this point, waitlisted attendees will receive a closure message when the event ends instead of being
+          offered a place.
+        </p>
+      </div>
+
+      {data.cutoffActive && (
+        <div className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
+          ⏰ Waitlist notifications have stopped — the event starts in less than {data.waitlistCutoffHours} hours.
+          Remaining waitlisted attendees will be notified when the event ends.
+        </div>
+      )}
+
+      {data.analytics.totalJoined > 0 && (
+        <div className="card mb-6 space-y-4 p-5">
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <p className="text-xs uppercase text-muted">Total joined</p>
+              <p className="text-lg font-semibold">{data.analytics.totalJoined}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-muted">Currently waiting</p>
+              <p className="text-lg font-semibold">{data.analytics.currentWaiting}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-muted">Offers sent</p>
+              <p className="text-lg font-semibold">{data.analytics.offerSent}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-muted">Conversion rate</p>
+              <p className="text-lg font-semibold">{data.analytics.conversionRate}%</p>
+            </div>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-muted">
+                <th className="py-1">Offers sent</th>
+                <th className="py-1">Accepted</th>
+                <th className="py-1">Expired</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="py-1">{data.analytics.offerSent}</td>
+                <td className="py-1">
+                  {data.analytics.offerAccepted}
+                  {data.analytics.offerSent > 0 &&
+                    ` (${Math.round((data.analytics.offerAccepted / data.analytics.offerSent) * 100)}%)`}
+                </td>
+                <td className="py-1">
+                  {data.analytics.offerExpired}
+                  {data.analytics.offerSent > 0 &&
+                    ` (${Math.round((data.analytics.offerExpired / data.analytics.offerSent) * 100)}%)`}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {data.analytics.demandByTicketType.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs uppercase text-muted">Demand by ticket type</p>
+              <ol className="space-y-1 text-sm">
+                {data.analytics.demandByTicketType.map((d) => (
+                  <li key={d.ticketTypeName} className="flex justify-between">
+                    <span>{d.ticketTypeName}</span>
+                    <span className="text-muted">{d.count}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {data.analytics.offerAccepted > 0 && (
+            <p className="text-sm text-muted">
+              Attendees claimed their spot in an average of {data.analytics.avgResponseMinutes} minutes.
+            </p>
+          )}
+        </div>
+      )}
 
       {notice && (
         <div className="mb-4 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-sm text-accent-hover">

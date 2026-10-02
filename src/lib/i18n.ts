@@ -427,6 +427,35 @@ export const dictionaries = {
     "memory.website": "🌍 chaap.africa",
     "memory.thankYou": "Thank you for being part of {event}.",
     "memory.seeYouNextTime": "See you next time! — The Chaap team",
+
+    // Waitlist closure WhatsApp (src/lib/waitlist.ts, sendWaitlistClosureNotifications)
+    // — built line-by-line via the same server-side translate() pattern as
+    // memory.* above, not useTranslation (this runs in a cron sweep /
+    // cancellation flow, never a component).
+    "waitlistClosure.greeting": "Hi {name} 👋",
+    "waitlistClosure.eventEnded":
+      "{event} has now taken place. Unfortunately we were unable to offer you a place this time.",
+    "waitlistClosure.browsePrompt": "We hope to see you at a future event — browse what's coming up:",
+    "waitlistClosure.website": "🌍 chaap.africa/events",
+    "waitlistClosure.thankYou": "Thank you for your interest — The Chaap team",
+
+    // Organiser waitlist dashboard — cutoff setting and banner (dictionary
+    // coverage only, same "not yet wired to useTranslation()" precedent as
+    // monitoring.*/vendorPortal.* above; the page itself still renders
+    // English directly today).
+    "waitlist.cutoffLabel": "Stop notifying waitlisted attendees X hours before the event",
+    "waitlist.cutoffHelp":
+      "After this point, waitlisted attendees will receive a closure message when the event ends instead of being offered a place.",
+    "waitlist.cutoffBanner":
+      "⏰ Waitlist notifications have stopped — the event starts in less than {hours} hours. Remaining waitlisted attendees will be notified when the event ends.",
+    "waitlist.analytics.totalJoined": "Total joined",
+    "waitlist.analytics.currentlyWaiting": "Currently waiting",
+    "waitlist.analytics.offersSent": "Offers sent",
+    "waitlist.analytics.conversionRate": "Conversion rate",
+    "waitlist.analytics.accepted": "Accepted",
+    "waitlist.analytics.expired": "Expired",
+    "waitlist.analytics.demandByTicketType": "Demand by ticket type",
+    "waitlist.analytics.avgResponseTime": "Attendees claimed their spot in an average of {minutes} minutes",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -853,6 +882,29 @@ export const dictionaries = {
     "memory.website": "🌍 Tembelea chaap.africa",
     "memory.thankYou": "Asante kwa kuwa sehemu ya {event}.",
     "memory.seeYouNextTime": "Tuonane tena! — Timu ya Chaap",
+
+    "waitlistClosure.greeting": "Habari {name} 👋",
+    "waitlistClosure.eventEnded":
+      "{event} limefanyika sasa. Kwa bahati mbaya hatukuweza kukupatia nafasi wakati huu.",
+    "waitlistClosure.browsePrompt": "Tunatarajia kukuona kwenye tukio lingine — vinjari yanayokuja:",
+    "waitlistClosure.website": "🌍 Tembelea chaap.africa/events",
+    "waitlistClosure.thankYou": "Asante kwa kupendezwa — Timu ya Chaap",
+
+    // TODO: native speaker review — "X" left untranslated as a literal
+    // placeholder word, same awkwardness as the English source string.
+    "waitlist.cutoffLabel": "Sitisha kujulisha walio kwenye orodha ya kusubiri X masaa kabla ya tukio",
+    "waitlist.cutoffHelp":
+      "Baada ya kikomo hiki, walio kwenye orodha ya kusubiri watapokea ujumbe wa kufungwa tukio litakapofika mwisho badala ya kutolewa nafasi.",
+    "waitlist.cutoffBanner":
+      "⏰ Arifa za orodha ya kusubiri zimesitishwa — tukio linaanza chini ya saa {hours}. Waliobaki kwenye orodha ya kusubiri watajulishwa tukio litakapofika mwisho.",
+    "waitlist.analytics.totalJoined": "Jumla waliojiunga",
+    "waitlist.analytics.currentlyWaiting": "Wanaosubiri sasa",
+    "waitlist.analytics.offersSent": "Nafasi zilizotolewa",
+    "waitlist.analytics.conversionRate": "Kiwango cha ubadilishaji",
+    "waitlist.analytics.accepted": "Walikubali",
+    "waitlist.analytics.expired": "Ziliisha muda",
+    "waitlist.analytics.demandByTicketType": "Mahitaji kwa aina ya tiketi",
+    "waitlist.analytics.avgResponseTime": "Wageni walidai nafasi yao kwa wastani wa dakika {minutes}",
   },
 } as const;
 

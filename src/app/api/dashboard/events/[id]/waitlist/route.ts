@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getWaitlistCounts } from "@/lib/waitlist";
+import { getWaitlistCounts, getWaitlistAnalytics, isWithinWaitlistCutoff } from "@/lib/waitlist";
 
 // Page data for /dashboard/events/[id]/waitlist. Same access rule as the
 // forecast/reconciliation data routes: any org member except GATE_CREW,
@@ -17,18 +17,24 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const event = await prisma.event.findUnique({
     where: { id: params.id },
-    select: { id: true, title: true, organizationId: true, waitlistEnabled: true },
+    select: { id: true, title: true, organizationId: true, waitlistEnabled: true, waitlistCutoffHours: true, startsAt: true },
   });
   if (!event || event.organizationId !== session.user.organizationId) {
     return NextResponse.json({ ok: false, reason: "NOT_FOUND" }, { status: 404 });
   }
 
-  const counts = await getWaitlistCounts(event.id);
+  const [counts, analytics] = await Promise.all([
+    getWaitlistCounts(event.id),
+    getWaitlistAnalytics(event.id),
+  ]);
 
   return NextResponse.json({
     ok: true,
     eventTitle: event.title,
     waitlistEnabled: event.waitlistEnabled,
+    waitlistCutoffHours: event.waitlistCutoffHours,
+    cutoffActive: isWithinWaitlistCutoff(event),
     counts,
+    analytics,
   });
 }

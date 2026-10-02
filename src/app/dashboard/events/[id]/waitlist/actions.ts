@@ -41,6 +41,32 @@ export async function setWaitlistEnabled(eventId: string, enabled: boolean) {
   });
 }
 
+// Same direct-write, bypass-the-sync-queue precedent as setWaitlistEnabled
+// above — waitlistCutoffHours only ever matters server-side (gating a
+// WhatsApp send), so it never needs to exist in the Dexie-synced Event shape
+// the way waitlistEnabled does.
+export async function setWaitlistCutoffHours(eventId: string, hours: number) {
+  const session = await requireViewer();
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { organizationId: true, title: true },
+  });
+  if (!event || event.organizationId !== session.user.organizationId) {
+    throw new Error("Forbidden");
+  }
+
+  const clamped = Math.min(72, Math.max(0, Math.round(hours)));
+  await prisma.event.update({ where: { id: eventId }, data: { waitlistCutoffHours: clamped } });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    actorUserId: session.user.id,
+    actorName: session.user.name ?? session.user.email ?? "Unknown",
+    action: "EVENT_EDITED",
+    summary: `Set the waitlist notification cutoff to ${clamped}h for "${event.title}"`,
+  });
+}
+
 export async function notifyNextInWaitlistAction(eventId: string, ticketTypeId: string, count: number) {
   const session = await requireViewer();
   const ticketType = await prisma.ticketType.findUnique({

@@ -28,21 +28,21 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  organizationMembership OrganizationMembership?
-  sentInvites            OrganizationInvite[]     @relation("InvitedBy")
-  orders                 Order[]
-  passwordResetTokens    PasswordResetToken[]
-  vendorApplications     Vendor[]
-  wallets                Wallet[]
-  userSessions           UserSession[]
-  ticketTransfersSent    TicketTransfer[]         @relation("TicketTransfersSent")
-  floatDeclarationsAsOperator FloatDeclaration[]  @relation("FloatDeclarationOperator")
-  floatDeclarationsMade       FloatDeclaration[]  @relation("FloatDeclarationDeclaredBy")
-  eventForecastsSaved         EventForecast[]     @relation("EventForecastSavedBy")
-  ticketGroupsLed             TicketGroup[]       @relation("TicketGroupLead")
+  organizationMembership      OrganizationMembership?
+  sentInvites                 OrganizationInvite[]    @relation("InvitedBy")
+  orders                      Order[]
+  passwordResetTokens         PasswordResetToken[]
+  vendorApplications          Vendor[]
+  wallets                     Wallet[]
+  userSessions                UserSession[]
+  ticketTransfersSent         TicketTransfer[]        @relation("TicketTransfersSent")
+  floatDeclarationsAsOperator FloatDeclaration[]      @relation("FloatDeclarationOperator")
+  floatDeclarationsMade       FloatDeclaration[]      @relation("FloatDeclarationDeclaredBy")
+  eventForecastsSaved         EventForecast[]         @relation("EventForecastSavedBy")
+  ticketGroupsLed             TicketGroup[]           @relation("TicketGroupLead")
   waitlistEntries             WaitlistEntry[]
-  ticketListingsSold          TicketListing[]     @relation("TicketListingSeller")
-  ticketListingsBought        TicketListing[]     @relation("TicketListingBuyer")
+  ticketListingsSold          TicketListing[]         @relation("TicketListingSeller")
+  ticketListingsBought        TicketListing[]         @relation("TicketListingBuyer")
   loyaltyRedemptions          LoyaltyRedemption[]
   directSaleTransactions      DirectSaleTransaction[]
 }
@@ -110,12 +110,12 @@ model Organization {
 // denormalized snapshot, same discipline as Order.currency/Vendor's fee
 // snapshot, so the list page never needs a join to render.
 model AuditLog {
-  id             String   @id @default(cuid())
-  action         String
-  summary        String
-  actorUserId    String
-  actorName      String
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  action      String
+  summary     String
+  actorUserId String
+  actorName   String
+  createdAt   DateTime @default(now())
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -152,9 +152,9 @@ model Device {
 // Device.lastSeenByUserId: User is a platform-wide account with no org
 // ownership of its own, so this must never cascade with the User row.
 model CustomerNote {
-  id             String   @id @default(cuid())
-  body           String
-  createdAt      DateTime @default(now())
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -316,7 +316,7 @@ model Credential {
   volunteerId String?
   volunteer   Volunteer? @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
 
-  chipTimes ChipTime[]
+  chipTimes          ChipTime[]
   sessionAttendances SessionAttendance[]
   exhibitorLeads     ExhibitorLead[]
 
@@ -339,8 +339,8 @@ model RegistrationQuestion {
   id        String   @id @default(cuid())
   clientId  String?  @unique
   label     String
-  type      String   // TEXT | SELECT | CHECKBOX
-  options   String?  // comma-joined, SELECT only, e.g. "Small,Medium,Large"
+  type      String // TEXT | SELECT | CHECKBOX
+  options   String? // comma-joined, SELECT only, e.g. "Small,Medium,Large"
   required  Boolean  @default(false)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -382,8 +382,8 @@ model SurveyQuestion {
   id        String   @id @default(cuid())
   clientId  String?  @unique
   label     String
-  type      String   // TEXT | SELECT | CHECKBOX
-  options   String?  // comma-joined, SELECT only
+  type      String // TEXT | SELECT | CHECKBOX
+  options   String? // comma-joined, SELECT only
   required  Boolean  @default(false)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -494,7 +494,7 @@ model DiscountCode {
   id              String    @id @default(cuid())
   clientId        String?   @unique
   code            String
-  type            String    // PERCENT_OFF | FIXED_AMOUNT_OFF
+  type            String // PERCENT_OFF | FIXED_AMOUNT_OFF
   percentOff      Int?
   amountOffCents  Int?
   maxRedemptions  Int?
@@ -519,8 +519,8 @@ model DiscountCode {
   // code an attendee already has is never yanked out from under them just
   // because the reward it came from is edited later (rewards are never hard-
   // deleted anyway, only deactivated — see LoyaltyReward.active).
-  loyaltyRewardId String?
-  loyaltyReward   LoyaltyReward? @relation(fields: [loyaltyRewardId], references: [id], onDelete: SetNull)
+  loyaltyRewardId    String?
+  loyaltyReward      LoyaltyReward?      @relation(fields: [loyaltyRewardId], references: [id], onDelete: SetNull)
   loyaltyRedemptions LoyaltyRedemption[]
 
   @@unique([eventId, code])
@@ -713,20 +713,20 @@ model MobileMoneyAccount {
 }
 
 model Settlement {
-  id                String   @id @default(cuid())
-  periodStart       DateTime
-  periodEnd         DateTime
+  id               String    @id @default(cuid())
+  periodStart      DateTime
+  periodEnd        DateTime
   // A settlement only ever covers orders in one currency — runSettlement
   // groups an organization's unsettled orders by currency and creates one
   // settlement per group, so this never mixes amounts across currencies.
-  currency          String   @default("TZS")
-  grossCents        Int
-  platformFeeCents  Int
-  netCents          Int
-  status            String   @default("PENDING")
-  payoutReference   String?
-  createdAt         DateTime @default(now())
-  paidAt            DateTime?
+  currency         String    @default("TZS")
+  grossCents       Int
+  platformFeeCents Int
+  netCents         Int
+  status           String    @default("PENDING")
+  payoutReference  String?
+  createdAt        DateTime  @default(now())
+  paidAt           DateTime?
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
@@ -752,126 +752,133 @@ model SettlementItem {
 // browse but stay visible (badged) to the organization and existing ticket
 // holders.
 model Event {
-  id          String   @id @default(cuid())
-  clientId    String?  @unique
-  slug        String   @unique
-  title       String
-  description String
-  category    String
-  venue       String
-  city        String
-  startsAt    DateTime
+  id                         String    @id @default(cuid())
+  clientId                   String?   @unique
+  slug                       String    @unique
+  title                      String
+  description                String
+  category                   String
+  venue                      String
+  city                       String
+  startsAt                   DateTime
   // Optional end datetime (Session 11). null = not set — carry-over
   // eligibility then falls back to treating startsAt as the end, so a
   // single-day event still works with no end date entered. Used to decide
   // whether a PREVIOUS event has "ended" for wristband balance carry-over.
-  endsAt      DateTime?
-  imageUrl    String
-  status      String   @default("LIVE")
+  endsAt                     DateTime?
+  imageUrl                   String
+  status                     String    @default("LIVE")
   // Session 12 — GENERAL | MARATHON | CONFERENCE. Session 14 added FOOTBALL
   // (display-only distinction, no dedicated tooling — unlike MARATHON, see
   // below). Plain-string convention, same as every other enum-shaped field
   // in this schema (see MobileMoneyAccount.provider). MARATHON unlocks the
   // timing setup section on the event dashboard, the timing scanner, and
   // the public leaderboard.
-  eventType   String   @default("GENERAL")
+  eventType                  String    @default("GENERAL")
   // When the race officially started — set once via the "Start gun" action
   // (irreversible; see startGun in src/app/dashboard/events/[id]/timing/
   // actions.ts) and never null again afterward. Every ChipTime's
   // gunTimeOffsetSeconds is computed from this.
-  gunStartAt  DateTime?
+  gunStartAt                 DateTime?
   // Session 11: organiser opt-in, per event. When true, an attendee
   // registering a wallet here can carry over a positive balance from a
   // wallet they hold at an already-ended event by the same organisation
   // (see handleCarryOverWallet in src/lib/sync-handlers.ts).
-  carryOverEnabled Boolean @default(false)
+  carryOverEnabled           Boolean   @default(false)
   // ISO 4217 code. All ticket types on an event share its currency — see
   // CURRENCIES in src/lib/currency.ts for the supported set.
-  currency    String   @default("TZS")
+  currency                   String    @default("TZS")
   // 0 means no fee — vendors can still apply/be added, just with feeStatus NONE.
-  vendorApplicationsOpen Boolean @default(false)
-  vendorStallFeeCents    Int     @default(0)
+  vendorApplicationsOpen     Boolean   @default(false)
+  vendorStallFeeCents        Int       @default(0)
   // null = no waiver required for this event. Live, organizer-editable copy —
   // Order.waiverText snapshots the exact text a given buyer saw/agreed to at
   // purchase time, same reasoning Order.currency snapshots Event.currency.
-  waiverText  String?
+  waiverText                 String?
   // Session 26 — organiser opt-in for the sold-out waitlist. When true, a
   // ticket type with quantitySold >= quantityTotal shows "Join waitlist"
   // instead of "Sold out" on the public event page (see
   // EventDetailClient.tsx) and freed/added capacity notifies the next
   // WaitlistEntry in queue (see releaseWaitlistCapacity in
   // src/lib/waitlist.ts).
-  waitlistEnabled Boolean @default(false)
+  waitlistEnabled            Boolean   @default(false)
+  // How many hours before startsAt the waitlist stops sending new "a spot
+  // opened up" notifications (see isWithinWaitlistCutoff in waitlist.ts) —
+  // an entry notified this close to the event might not have time to act
+  // on it. 0 disables the cutoff entirely. An entry this blocks stays
+  // WAITING (never expired) until sendWaitlistClosureNotifications tells it
+  // it's over once the event actually ends.
+  waitlistCutoffHours        Int       @default(24)
   // Session 32 — organiser opt-in for peer-to-peer ticket resale (see
   // TicketListing). Off by default. Resale is never above face value; when
   // maxResalePrice is set it lowers that ceiling further (a cap on the
   // asking price of any one ticket, in this event's currency's minor units).
   // null = the face value of the ticket is the only cap.
-  resaleEnabled   Boolean @default(false)
-  maxResalePrice  Int?
+  resaleEnabled              Boolean   @default(false)
+  maxResalePrice             Int?
   // Session 37 — organiser opt-in for peer-to-peer wallet transfers between
   // wristband holders at this event (see WalletTransfer). Off by default.
-  transferEnabled Boolean @default(false)
+  transferEnabled            Boolean   @default(false)
   // Chaap Ads marketplace — plain page-view counter for the public
   // /events/[slug] page (see EventDetailPage), incremented on every load.
   // Backs the "performance" figure on a FeaturedListing's history entry
   // (src/lib/chaap-ads.ts) — good enough for that at-a-glance number; not a
   // deduped/unique-visitor count.
-  viewCount   Int      @default(0)
+  viewCount                  Int       @default(0)
   // Event WhatsApp group — Africa's Talking's WhatsApp API has no group
   // creation endpoint (see src/lib/whatsapp.ts), so the organiser creates
   // the group manually on their own phone and pastes the invite link here;
   // Chaap's role is only ever relaying that link to opted-in attendees (see
   // src/lib/whatsapp-group.ts). whatsappGroupLink null = not set up yet,
   // even if whatsappGroupEnabled is true.
-  whatsappGroupEnabled    Boolean   @default(false)
-  whatsappGroupLink       String?
+  whatsappGroupEnabled       Boolean   @default(false)
+  whatsappGroupLink          String?
   // Set once the post-event archive message has gone out (idempotency gate
   // for sendGroupArchiveMessage) — never reset.
-  whatsappGroupArchivedAt DateTime?
+  whatsappGroupArchivedAt    DateTime?
   // Set when the organiser dismisses the "revoke your invite link" reminder
   // banner on the event dashboard (see shouldShowRevokeBanner) — purely a
   // UI acknowledgement, doesn't touch whatsappGroupLink itself.
   whatsappGroupLinkRevokedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  ticketListings        TicketListing[]
-  walletTransfers       WalletTransfer[]
-  ticketTypes           TicketType[]
-  orders                Order[]
-  tickets               Ticket[]
-  vendors               Vendor[]
-  sponsors              Sponsor[]
-  wallets               Wallet[]
-  broadcasts            Broadcast[]
-  registrationQuestions RegistrationQuestion[]
-  discountCodes         DiscountCode[]
-  supportTickets        SupportTicket[]
-  surveyQuestions       SurveyQuestion[]
-  floatDeclarations     FloatDeclaration[]
-  forecast              EventForecast?
-  timingPoints          TimingPoint[]
-  chipTimes             ChipTime[]
-  ticketGroups          TicketGroup[]
+  ticketListings         TicketListing[]
+  walletTransfers        WalletTransfer[]
+  ticketTypes            TicketType[]
+  orders                 Order[]
+  tickets                Ticket[]
+  vendors                Vendor[]
+  sponsors               Sponsor[]
+  wallets                Wallet[]
+  broadcasts             Broadcast[]
+  registrationQuestions  RegistrationQuestion[]
+  discountCodes          DiscountCode[]
+  supportTickets         SupportTicket[]
+  surveyQuestions        SurveyQuestion[]
+  floatDeclarations      FloatDeclaration[]
+  forecast               EventForecast?
+  timingPoints           TimingPoint[]
+  chipTimes              ChipTime[]
+  ticketGroups           TicketGroup[]
   // Session 19 — CONFERENCE-only, same "exists on every event, only
   // populated/used when eventType matches" convention as timingPoints above.
-  conferenceSessions    ConferenceSession[]
-  sessionAttendances    SessionAttendance[]
-  exhibitorLeads        ExhibitorLead[]
-  waitlistEntries       WaitlistEntry[]
-  densityAlerts         DensityAlert[]
-  volunteers            Volunteer[]
-  loyaltyRewards        LoyaltyReward[]
-  loyaltyRedemptions    LoyaltyRedemption[]
+  conferenceSessions     ConferenceSession[]
+  sessionAttendances     SessionAttendance[]
+  exhibitorLeads         ExhibitorLead[]
+  waitlistEntries        WaitlistEntry[]
+  densityAlerts          DensityAlert[]
+  volunteers             Volunteer[]
+  loyaltyRewards         LoyaltyReward[]
+  loyaltyRedemptions     LoyaltyRedemption[]
   // Session 28 — vendor terminal direct mobile money sales to a walk-up
   // customer with no wristband (see DirectSaleTransaction below).
   directSaleTransactions DirectSaleTransaction[]
-  seasonPassEvents      SeasonPassEvent[]
-  featuredListings      FeaturedListing[]
+  seasonPassEvents       SeasonPassEvent[]
+  featuredListings       FeaturedListing[]
 
   // Session 25 — the public marketplace's one query (getPublicEvents/
   // getFeaturedEvents in src/lib/marketplace.ts) filters every request by
@@ -954,17 +961,17 @@ model TimingPoint {
 // (gunTimeOffsetSeconds, splitTimeSeconds, leaderboard ranking) is based on
 // recordedAt, never syncedAt, so a delayed sync never skews a result.
 model ChipTime {
-  id                    String    @id @default(cuid())
-  clientId              String?   @unique
-  recordedAt            DateTime
+  id                   String    @id @default(cuid())
+  clientId             String?   @unique
+  recordedAt           DateTime
   // null only when the event has no gunStartAt yet (race hasn't started —
   // shouldn't normally happen, since taps before the start gun aren't
   // meaningful, but never crashes on it).
-  gunTimeOffsetSeconds  Int?
+  gunTimeOffsetSeconds Int?
   // null at the course's first timing point (nothing before it to split
   // from), or if this athlete has no recorded tap at the previous point.
-  splitTimeSeconds      Int?
-  syncedAt              DateTime?
+  splitTimeSeconds     Int?
+  syncedAt             DateTime?
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1043,24 +1050,24 @@ model SessionAttendance {
 }
 
 model TicketType {
-  id            String   @id @default(cuid())
-  clientId      String?  @unique
-  name          String
-  description   String   @default("")
-  priceCents    Int
-  quantityTotal Int
-  quantitySold  Int      @default(0)
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(cuid())
+  clientId         String?  @unique
+  name             String
+  description      String   @default("")
+  priceCents       Int
+  quantityTotal    Int
+  quantitySold     Int      @default(0)
+  updatedAt        DateTime @updatedAt
   // Session 14 — explicit fast-track opt-in for the gate scanner's VIP
   // signal, independent of naming. A ticket type is also treated as VIP if
   // its name contains "VIP" (case-insensitive) — see isFastTrackTicketType
   // in src/lib/ticket-types.ts, the single source of truth for that OR.
-  isFastTrack Boolean @default(false)
+  isFastTrack      Boolean  @default(false)
   // Session 27 — FIXED (use priceCents as-is) | TIERED (use the highest
   // PricingTier whose fromQuantity has been reached — see getCurrentPrice in
   // src/lib/pricing.ts). Plain-string convention, same as every other
   // enum-shaped field in this schema (see MobileMoneyAccount.provider).
-  pricingStrategy String @default("FIXED")
+  pricingStrategy  String   @default("FIXED")
   // Session 29 — the codebase has no separate zone/gate model, and a ticket
   // type is already the closest existing "zone" concept (General Admission,
   // VIP, Pitch-side, etc. each sell as their own ticket type and each
@@ -1143,17 +1150,17 @@ model DensityAlert {
 // table earns its keep over a plain delimited string, split/joined in
 // application code (see src/lib/volunteers.ts).
 model Volunteer {
-  id         String   @id @default(cuid())
-  name       String
-  phone      String
-  email      String?
-  role       String
-  shiftStart DateTime
-  shiftEnd   DateTime
-  zoneAccess String   @default("")
+  id                    String   @id @default(cuid())
+  name                  String
+  phone                 String
+  email                 String?
+  role                  String
+  shiftStart            DateTime
+  shiftEnd              DateTime
+  zoneAccess            String   @default("")
   // INVITED | CONFIRMED | CHECKED_IN | NO_SHOW — plain-string convention,
   // see MobileMoneyAccount.provider.
-  status     String   @default("INVITED")
+  status                String   @default("INVITED")
   // Denormalized pointer to the Credential created when this volunteer's
   // wristband was provisioned (set once, alongside creating that row — see
   // checkInVolunteer in src/lib/volunteers.ts). The actual scan-time lookup
@@ -1162,8 +1169,8 @@ model Volunteer {
   // field exists only for the spec's literal "links to Credential" display
   // need, same dual-field reasoning as DensityAlert.resolutionNote.
   wristbandCredentialId String?
-  notes      String?
-  createdAt  DateTime @default(now())
+  notes                 String?
+  createdAt             DateTime @default(now())
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1184,22 +1191,32 @@ model Volunteer {
 // (see the no-auth marketplace convention Session 25 established for the
 // public event pages this form lives on).
 model WaitlistEntry {
-  id    String  @id @default(cuid())
-  name  String
-  phone String
-  email String?
+  id            String    @id @default(cuid())
+  name          String
+  phone         String
+  email         String?
   // 1-based join order within (eventId, ticketTypeId) — assigned once at
   // creation from a running per-ticket-type count and never renumbered, so
   // it doubles as a stable "you are #N" display even after people ahead of
   // this entry convert or expire. See joinWaitlist in src/lib/waitlist.ts.
-  position Int
+  position      Int
   // WAITING (queued) -> NOTIFIED (a spot opened, 2h to buy — see
   // notifyWaitlistEntry) -> CONVERTED (bought before the window closed) or
   // EXPIRED (missed it, cascades to notify the next WAITING entry). Never
   // moves backward.
-  status     String    @default("WAITING")
-  notifiedAt DateTime?
-  createdAt  DateTime  @default(now())
+  status        String    @default("WAITING")
+  notifiedAt    DateTime?
+  // Set alongside status -> CONVERTED (see convertWaitlistEntry) — the
+  // purchase timestamp getWaitlistAnalytics needs to measure response time
+  // against notifiedAt.
+  convertedAt   DateTime?
+  // Set alongside status -> EXPIRED. "TIMEOUT" (missed the 2h purchase
+  // window — expireStaleWaitlistNotifications) or "EVENT_ENDED" (the event
+  // ended/was cancelled with this entry still WAITING —
+  // sendWaitlistClosureNotifications). getWaitlistAnalytics' offerExpired
+  // counts only the former — the latter never got an offer to miss.
+  expiredReason String?
+  createdAt     DateTime  @default(now())
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1218,19 +1235,19 @@ model WaitlistEntry {
 }
 
 model Order {
-  id         String   @id @default(cuid())
-  clientId   String?  @unique
-  status     String   @default("PAID")
-  totalCents Int
+  id                     String        @id @default(cuid())
+  clientId               String?       @unique
+  status                 String        @default("PAID")
+  totalCents             Int
   // Snapshot of the event's currency at purchase time (events can't change
   // currency once they have sales — see handleEditEvent).
-  currency   String   @default("TZS")
+  currency               String        @default("TZS")
   // Snapshot of Event.waiverText at purchase time — same "don't let a later
   // event edit change what a past buyer is shown as having agreed to"
   // discipline as currency/Vendor.stallFeeCents snapshotting Event fields.
   // null when the event had no waiver at purchase time.
-  waiverText       String?
-  waiverAcceptedAt DateTime?
+  waiverText             String?
+  waiverAcceptedAt       DateTime?
   // Snapshot discipline, same as currency/waiverText above: discountCodeText/
   // discountTicketTypeName record what was actually applied at purchase
   // time, so a later code edit/deactivation never changes a past receipt.
@@ -1238,10 +1255,10 @@ model Order {
   // never-delete convention DiscountCode rows are never actually removed,
   // so in practice this stays populated whenever a code was applied.
   discountCodeId         String?
-  discountCode            DiscountCode? @relation(fields: [discountCodeId], references: [id])
-  discountCodeText        String?
-  discountTicketTypeName  String?
-  discountCents            Int      @default(0)
+  discountCode           DiscountCode? @relation(fields: [discountCodeId], references: [id])
+  discountCodeText       String?
+  discountTicketTypeName String?
+  discountCents          Int           @default(0)
   // Airpay real-payment collection (status can also be "PENDING" awaiting
   // STK-push confirmation, "PAYMENT_FAILED" if declined/timed out, or
   // "CANCELLED" if the buyer gave up waiting (see handleCancelPendingOrder)
@@ -1249,11 +1266,11 @@ model Order {
   // paymentMethod is "AIRPAY_ONLINE" | "OFFLINE_DEFERRED" | null (legacy/
   // unspecified — an order created before this feature, or by a client
   // that didn't opt into either path).
-  providerReference String?
-  providerMessage   String?
-  paymentMethod     String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  providerReference      String?
+  providerMessage        String?
+  paymentMethod          String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -1275,8 +1292,8 @@ model Order {
 }
 
 model OrderItem {
-  id            String @id @default(cuid())
-  quantity      Int
+  id             String @id @default(cuid())
+  quantity       Int
   unitPriceCents Int
 
   orderId String
@@ -1308,22 +1325,22 @@ model NotificationLog {
 }
 
 model Ticket {
-  id          String    @id @default(cuid())
-  clientId    String?   @unique
-  code        String    @unique
-  checkedIn   Boolean   @default(false)
-  checkedInAt DateTime?
+  id                        String    @id @default(cuid())
+  clientId                  String?   @unique
+  code                      String    @unique
+  checkedIn                 Boolean   @default(false)
+  checkedInAt               DateTime?
   // null = holder is the original buyer (order.userId). Set only by an
   // ACCEPTED TicketTransfer. Does NOT gate check-in — handleCheckIn only
   // ever checks ticket.code + scanning org; this field is purely about
   // whose account the ticket shows up in, never an access-control change
   // (anyone holding the code could already check in today regardless of
   // transfer).
-  currentHolderUserId String?
+  currentHolderUserId       String?
   // Set once the pre-event reminder (src/lib/reminders.ts) has gone out for
   // this ticket's buyer, so a once-daily cron with a wide lookahead window
   // never reminds the same ticket twice. null = not reminded yet.
-  reminderSentAt DateTime?
+  reminderSentAt            DateTime?
   // Event WhatsApp group (see Event.whatsappGroupEnabled/whatsappGroupLink
   // and src/lib/whatsapp-group.ts). optedIn defaults false but is set true
   // at creation time in handleSellTickets when the event already has the
@@ -1333,8 +1350,8 @@ model Ticket {
   // reminderSentAt above.
   whatsappGroupOptedIn      Boolean   @default(false)
   whatsappGroupInviteSentAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   // Session 13 — set when this ticket was purchased as part of a group/
   // family checkout (see TicketGroup). groupMemberName is the individual
@@ -1354,9 +1371,9 @@ model Ticket {
   ticketTypeId String
   ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
 
-  credentials Credential[]
-  transfers   TicketTransfer[]
-  listing     TicketListing?
+  credentials        Credential[]
+  transfers          TicketTransfer[]
+  listing            TicketListing?
   loyaltyRedemptions LoyaltyRedemption[]
 
   // Session 22 — every analytics/live-monitoring fetcher (getLiveEventData,
@@ -1370,21 +1387,21 @@ model Ticket {
 // stallFeeCents/currency snapshot Event.vendorStallFeeCents/currency at
 // application time, same reasoning as Order.currency snapshotting Event.currency.
 model Vendor {
-  id            String    @id @default(cuid())
-  clientId      String?   @unique
-  name          String
-  category      String // Food | Merchandise | Services | Other
-  description   String    @default("")
-  contactEmail  String    @default("")
-  contactPhone  String    @default("")
-  status        String    @default("PENDING")
-  boothNumber   String?
-  stallFeeCents Int       @default(0)
-  currency      String    @default("TZS")
-  feeStatus     String    @default("NONE")
-  badgeCode     String?   @unique
-  checkedIn     Boolean   @default(false)
-  checkedInAt   DateTime?
+  id                    String    @id @default(cuid())
+  clientId              String?   @unique
+  name                  String
+  category              String // Food | Merchandise | Services | Other
+  description           String    @default("")
+  contactEmail          String    @default("")
+  contactPhone          String    @default("")
+  status                String    @default("PENDING")
+  boothNumber           String?
+  stallFeeCents         Int       @default(0)
+  currency              String    @default("TZS")
+  feeStatus             String    @default("NONE")
+  badgeCode             String?   @unique
+  checkedIn             Boolean   @default(false)
+  checkedInAt           DateTime?
   // Vendor-portal self-service settlement — PENDING | PROCESSING | SETTLED.
   // Entirely separate from Settlement/SettlementItem above: those settle the
   // ORGANIZER's ticket-order proceeds out to a mobile money account; this is
@@ -1398,8 +1415,8 @@ model Vendor {
   settlementStatus      String    @default("PENDING")
   settlementAmountCents Int       @default(0)
   settlementProcessedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1407,10 +1424,10 @@ model Vendor {
   ownerUserId String?
   owner       User?   @relation(fields: [ownerUserId], references: [id])
 
-  walletSales      WalletTransaction[]
-  credentials      Credential[]
-  magicLinkTokens  VendorMagicLinkToken[]
-  exhibitorLeads   ExhibitorLead[]
+  walletSales     WalletTransaction[]
+  credentials     Credential[]
+  magicLinkTokens VendorMagicLinkToken[]
+  exhibitorLeads  ExhibitorLead[]
 }
 
 // Same hashed-token + expiry shape as PasswordResetToken/OrganizationInvite
@@ -1602,9 +1619,9 @@ model WalletTransaction {
   clientId          String?  @unique
   type              String
   status            String   @default("COMPLETED")
-  amountCents       Int?     // null only for SPONSOR_TAP
+  amountCents       Int? // null only for SPONSOR_TAP
   currency          String   @default("TZS")
-  providerReference String?  // aggregator's merchant order id, for reconciliation
+  providerReference String? // aggregator's merchant order id, for reconciliation
   providerMessage   String?
   // Session 18 — set only once a TOPUP reaches COMPLETED (see
   // handleTopupWallet's instant-PAID branch and handleCheckTopupStatus's
@@ -1616,7 +1633,7 @@ model WalletTransaction {
   // this column existed — that's exactly the "exception" the AirPay
   // reconciliation report flags for manual review.
   airpayRef         String?
-  phoneNumber       String?  // TOPUP and WITHDRAWAL
+  phoneNumber       String? // TOPUP and WITHDRAWAL
   // WITHDRAWAL only — no real disbursement API exists, so the organizer
   // pays the buyer out manually (mobile money/cash) after approving the
   // request; they need to know which network to use. TOPUP's payload has
@@ -1631,7 +1648,7 @@ model WalletTransaction {
   // visible/exportable to the organizer, deliberately matching that same
   // posture rather than adding new linkage — a considered choice, not an
   // oversight (see the Sponsors lead-capture plan).
-  note              String?  // SPONSOR_TAP only
+  note              String? // SPONSOR_TAP only
   // SALE only — what was sold (staff-typed at the wallet charge terminal).
   // Nullable/optional so every pre-existing SALE row and every non-SALE type
   // parses fine with no value — see Session 8's vendor portal plan for why
@@ -1671,8 +1688,8 @@ model WalletTransaction {
 
   loyaltyRedemptions LoyaltyRedemption[]
 
-  @@index([sponsorId, type, createdAt])
   @@unique([campaignId, walletId])
+  @@index([sponsorId, type, createdAt])
   // Session 22 — the ONLY existing index touching walletId is the
   // campaignId-first composite above, which is useless for a plain
   // walletId lookup (campaignId is null on nearly every row). Every wallet's
@@ -1723,7 +1740,7 @@ model WalletTransfer {
   senderWallet   Wallet? @relation("WalletTransfersSent", fields: [senderWalletId], references: [id], onDelete: Cascade)
 
   recipientWalletId String
-  recipientWallet   Wallet  @relation("WalletTransfersReceived", fields: [recipientWalletId], references: [id], onDelete: Cascade)
+  recipientWallet   Wallet @relation("WalletTransfersReceived", fields: [recipientWalletId], references: [id], onDelete: Cascade)
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1754,22 +1771,22 @@ model WalletTransfer {
 // anywhere in this schema (see that field's own comment), so this
 // deliberately doesn't introduce the first one.
 model DirectSaleTransaction {
-  id            String    @id @default(cuid())
-  clientId      String?   @unique
-  amountCents   Int
-  currency      String    @default("TZS")
-  customerPhone String
-  mobileNetwork String
+  id                String    @id @default(cuid())
+  clientId          String?   @unique
+  amountCents       Int
+  currency          String    @default("TZS")
+  customerPhone     String
+  mobileNetwork     String
   // Set only once CONFIRMED (poll-resolved or instant), never at
   // initiation — same discipline as WalletTransaction.airpayRef.
-  airpayRef     String?
+  airpayRef         String?
   providerReference String? // Chaap's own merchant order id, set at initiation
   providerMessage   String?
-  status        String    @default("PENDING")
-  item          String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  resolvedAt    DateTime?
+  status            String    @default("PENDING")
+  item              String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  resolvedAt        DateTime?
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1795,7 +1812,7 @@ model DirectSaleTransaction {
 // system recorded). status is BALANCED | MINOR_VARIANCE | INVESTIGATE,
 // classified against a TZS 5,000 threshold (see classifyVariance).
 model FloatDeclaration {
-  id                 String   @id @default(cuid())
+  id                  String   @id @default(cuid())
   declaredAmountCents Int
   varianceCents       Int
   status              String
@@ -1830,8 +1847,8 @@ model EventForecast {
   id                   String   @id @default(cuid())
   expectedAttendance   Int
   cashlessAdoptionRate Float
-  avgSpendCents         Int
-  durationDays          Int      @default(1)
+  avgSpendCents        Int
+  durationDays         Int      @default(1)
   savedAt              DateTime @default(now())
 
   eventId String @unique
@@ -1885,7 +1902,7 @@ model SeasonPass {
 // renewalStatus is ACTIVE (current, not yet offered a renewal) |
 // RENEWAL_OFFERED | RENEWAL_CONFIRMED | RENEWAL_DECLINED | EXPIRED.
 model SeasonPassHolder {
-  id    String @id @default(cuid())
+  id    String  @id @default(cuid())
   name  String
   phone String
   email String?
@@ -1897,7 +1914,7 @@ model SeasonPassHolder {
   renewalConfirmedAt DateTime?
   // Unique, one-time-use link token for the /renew/[token] page — see
   // sendRenewalOffer/processRenewal in src/lib/season-renewal.ts.
-  renewalToken String? @unique
+  renewalToken       String?   @unique
 
   seasonPassId String
   seasonPass   SeasonPass @relation(fields: [seasonPassId], references: [id])
@@ -1964,7 +1981,7 @@ model FeaturedListing {
 model AdBroadcast {
   id               String    @id @default(cuid())
   message          String
-  targetEventTypes String[] @default([]) // empty = all event types
+  targetEventTypes String[]  @default([]) // empty = all event types
   scheduledAt      DateTime
   sentAt           DateTime?
   recipientCount   Int       @default(0)

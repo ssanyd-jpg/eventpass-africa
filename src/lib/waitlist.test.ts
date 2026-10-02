@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestEvent, createTestUser, createTestOrganization, addMembership } from "@/lib/test-fixtures";
-import { handleSellTickets, handleRefundOrder } from "@/lib/sync-handlers";
+import { handleSellTickets, handleRefundOrder, handleCancelEvent } from "@/lib/sync-handlers";
 import {
   joinWaitlist,
   leaveWaitlist,
@@ -12,6 +12,9 @@ import {
   releaseWaitlistCapacity,
   convertWaitlistEntry,
   expireStaleWaitlistNotifications,
+  sendWaitlistClosureNotifications,
+  getWaitlistAnalytics,
+  isWithinWaitlistCutoff,
   WAITLIST_NOTIFICATION_WINDOW_HOURS,
 } from "@/lib/waitlist";
 
@@ -24,10 +27,15 @@ async function newOrganizer() {
 
 // One ticket type, sold out from the start (quantityTotal 1, one PAID sale),
 // on an event with waitlistEnabled true — the state every test in this file
-// exercises the waitlist against.
+// exercises the waitlist against. waitlistCutoffHours is forced to 0 (no
+// cutoff) here: createTestEvent's own default startsAt (now + 1 day) sits
+// right at the schema's default 24h cutoff, so leaving the schema default
+// in place would non-deterministically swallow every notify in this file
+// depending on how many ms of test setup elapsed first. The cutoff-specific
+// tests below set their own startsAt/waitlistCutoffHours explicitly.
 async function soldOutEventWithWaitlist(organizationId: string) {
   const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1 }]);
-  await prisma.event.update({ where: { id: event.id }, data: { waitlistEnabled: true } });
+  await prisma.event.update({ where: { id: event.id }, data: { waitlistEnabled: true, waitlistCutoffHours: 0 } });
 
   const buyer = await createTestUser();
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -296,7 +304,7 @@ describe("getWaitlistCounts", () => {
       { priceCents: 1000, quantityTotal: 1, quantitySold: 1 },
       { priceCents: 2000, quantityTotal: 1, quantitySold: 1 },
     ]);
-    await prisma.event.update({ where: { id: event.id }, data: { waitlistEnabled: true } });
+    await prisma.event.update({ where: { id: event.id }, data: { waitlistEnabled: true, waitlistCutoffHours: 0 } });
     const [tierA, tierB] = event.ticketTypes;
 
     await joinWaitlist({ eventId: event.id, ticketTypeId: tierA.id, name: "A1", phone: uniquePhone() });
@@ -310,5 +318,190 @@ describe("getWaitlistCounts", () => {
     expect(countFor(tierA.id)).toBe(2);
     expect(countFor(tierB.id)).toBe(0);
     expect(await getWaitlistEntry(notifiedOne.id).then((e) => e?.status)).toBe("NOTIFIED");
+  });
+});
+
+describe("sendWaitlistClosureNotifications", () => {
+  it("sends the closure message to every WAITING entry once the event has ended", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    await prisma.event.update({ where: { id: event.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+    const a = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+    const b = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "B", phone: uniquePhone() });
+
+    const result = await sendWaitlistClosureNotifications(event.id);
+
+    expect(result.notifiedCount).toBe(2);
+    const aAfter = await getWaitlistEntry(a.id);
+    const bAfter = await getWaitlistEntry(b.id);
+    expect(aAfter?.status).toBe("EXPIRED");
+    expect(bAfter?.status).toBe("EXPIRED");
+    expect((aAfter as { expiredReason?: string })?.expiredReason).toBe("EVENT_ENDED");
+
+    const logs = await prisma.notificationLog.findMany({ where: { type: "WAITLIST_CLOSURE" } });
+    expect(logs.map((l) => l.recipient).sort()).toEqual([a.phone, b.phone].sort());
+  });
+
+  it("never sends the closure message twice", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    await prisma.event.update({ where: { id: event.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+    await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+
+    const first = await sendWaitlistClosureNotifications(event.id);
+    expect(first.notifiedCount).toBe(1);
+
+    const second = await sendWaitlistClosureNotifications(event.id);
+    expect(second.notifiedCount).toBe(0);
+  });
+
+  it("fires immediately when the organiser cancels the event", async () => {
+    const { organizationId, ownerId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    const entry = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "Waiting", phone: uniquePhone() });
+
+    const result = await handleCancelEvent(ownerId, organizationId, { eventId: event.id });
+    expect(result.ok).toBe(true);
+
+    const after = await getWaitlistEntry(entry.id);
+    expect(after?.status).toBe("EXPIRED");
+
+    const logs = await prisma.notificationLog.findMany({ where: { type: "WAITLIST_CLOSURE", recipient: entry.phone } });
+    expect(logs).toHaveLength(1);
+  });
+});
+
+describe("getWaitlistAnalytics", () => {
+  // Longer timeout than this file's other tests — this one chains more
+  // sequential DB round-trips (3 joins, 2 notifies, a convert, a direct
+  // update, an expiry+cascade, then the analytics read itself) than any
+  // other test here, so it's the first to feel it when the shared Neon
+  // test branch is under the latency this project's vitest.config.ts
+  // already documents, independent of whether the assertions are correct.
+  it("returns correct counts for totalJoined, offerSent, offerAccepted, offerExpired", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    const a = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+    const b = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "B", phone: uniquePhone() });
+    await joinWaitlist({ eventId: event.id, ticketTypeId, name: "C", phone: uniquePhone() });
+
+    await notifyNextWaiting(ticketTypeId); // notifies a
+    await convertWaitlistEntry(a.id);
+
+    await notifyNextWaiting(ticketTypeId); // notifies b
+    await prisma.waitlistEntry.update({
+      where: { id: b.id },
+      data: { notifiedAt: new Date(Date.now() - (WAITLIST_NOTIFICATION_WINDOW_HOURS * 60 * 60 * 1000 + 60_000)) },
+    });
+    await expireStaleWaitlistNotifications(); // expires b (TIMEOUT), cascades to notify c
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.totalJoined).toBe(3);
+    expect(analytics.offerSent).toBe(3);
+    expect(analytics.offerAccepted).toBe(1);
+    expect(analytics.offerExpired).toBe(1);
+    expect(analytics.currentWaiting).toBe(0);
+  }, 120000);
+
+  it("excludes EVENT_ENDED expiries from offerExpired", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+    await prisma.event.update({ where: { id: event.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+
+    await sendWaitlistClosureNotifications(event.id);
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.offerExpired).toBe(0);
+  });
+
+  it("calculates conversion rate as 0 with no offers sent", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.conversionRate).toBe(0);
+  });
+
+  it("calculates conversion rate correctly for partial conversion", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    const a = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+    await joinWaitlist({ eventId: event.id, ticketTypeId, name: "B", phone: uniquePhone() });
+
+    await notifyNextWaiting(ticketTypeId); // notifies a
+    await convertWaitlistEntry(a.id);
+    await notifyNextWaiting(ticketTypeId); // notifies b, left NOTIFIED (not converted)
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.conversionRate).toBe(50);
+  });
+
+  it("calculates conversion rate as 100 for full conversion", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    const a = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+
+    await notifyNextWaiting(ticketTypeId);
+    await convertWaitlistEntry(a.id);
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.conversionRate).toBe(100);
+  });
+
+  it("ranks demand by ticket type, highest first", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId, [
+      { priceCents: 1000, quantityTotal: 1, quantitySold: 1, name: "General" },
+      { priceCents: 2000, quantityTotal: 1, quantitySold: 1, name: "VIP" },
+    ]);
+    await prisma.event.update({ where: { id: event.id }, data: { waitlistEnabled: true } });
+    const [general, vip] = event.ticketTypes;
+
+    await joinWaitlist({ eventId: event.id, ticketTypeId: general.id, name: "A", phone: uniquePhone() });
+    await joinWaitlist({ eventId: event.id, ticketTypeId: general.id, name: "B", phone: uniquePhone() });
+    await joinWaitlist({ eventId: event.id, ticketTypeId: vip.id, name: "C", phone: uniquePhone() });
+
+    const analytics = await getWaitlistAnalytics(event.id);
+    expect(analytics.demandByTicketType).toEqual([
+      { ticketTypeName: "General", count: 2 },
+      { ticketTypeName: "VIP", count: 1 },
+    ]);
+  });
+});
+
+describe("isWithinWaitlistCutoff", () => {
+  it("blocks a notification within the cutoff window", () => {
+    const event = { startsAt: new Date(Date.now() + 2 * 3600000), waitlistCutoffHours: 24 };
+    expect(isWithinWaitlistCutoff(event)).toBe(true);
+  });
+
+  it("allows a notification outside the cutoff window", () => {
+    const event = { startsAt: new Date(Date.now() + 48 * 3600000), waitlistCutoffHours: 24 };
+    expect(isWithinWaitlistCutoff(event)).toBe(false);
+  });
+
+  it("disables the cutoff entirely when waitlistCutoffHours is 0, even after the event has started", () => {
+    const event = { startsAt: new Date(Date.now() - 1000), waitlistCutoffHours: 0 };
+    expect(isWithinWaitlistCutoff(event)).toBe(false);
+  });
+
+  it("skips sending (but keeps the entry WAITING) when notifyNextWaiting hits the cutoff", async () => {
+    const { organizationId } = await newOrganizer();
+    const { ticketTypeId, event } = await soldOutEventWithWaitlist(organizationId);
+    await prisma.event.update({
+      where: { id: event.id },
+      data: { startsAt: new Date(Date.now() + 2 * 3600000), waitlistCutoffHours: 24 },
+    });
+    const entry = await joinWaitlist({ eventId: event.id, ticketTypeId, name: "A", phone: uniquePhone() });
+
+    const result = await notifyNextWaiting(ticketTypeId);
+
+    expect(result).toBeNull();
+    const after = await getWaitlistEntry(entry.id);
+    expect(after?.status).toBe("WAITING");
+    const logs = await prisma.notificationLog.findMany({ where: { recipient: entry.phone } });
+    expect(logs).toHaveLength(0);
   });
 });

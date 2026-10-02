@@ -3,6 +3,7 @@ import { sendEventReminders } from "@/lib/reminders";
 import { runPendingTopupSweep } from "@/lib/pending-topups";
 import { runSeasonRenewalSweep } from "@/lib/season-renewal";
 import { runWhatsappGroupArchiveSweep } from "@/lib/whatsapp-group";
+import { runWaitlistClosureSweep } from "@/lib/waitlist";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
@@ -77,6 +78,18 @@ export async function GET(request: Request) {
     whatsappGroupArchive = { ok: false, reason: "SWEEP_FAILED" };
   }
 
+  // Waitlist closure sweep — same "rides along on this one daily slot"
+  // reasoning as the sweeps above. Immediate cancellations already get
+  // their closure message straight from handleCancelEvent; this only
+  // catches an event that simply ended with attendees still WAITING.
+  let waitlistClosure: Awaited<ReturnType<typeof runWaitlistClosureSweep>> | { ok: false; reason: string };
+  try {
+    waitlistClosure = await runWaitlistClosureSweep();
+  } catch (error) {
+    console.error("[cron/reminders] waitlist closure sweep failed", error);
+    waitlistClosure = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
   if (remindersError) throw remindersError;
-  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive });
+  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive, waitlistClosure });
 }
