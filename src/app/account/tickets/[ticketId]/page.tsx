@@ -3,7 +3,9 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { formatDateTime } from "@/lib/format";
 import { getTicketResaleState } from "@/lib/resale";
+import { getTicketGroupState } from "@/lib/whatsapp-group";
 import ResaleControl from "./ResaleControl";
+import WhatsappGroupControl from "./WhatsappGroupControl";
 
 // Reads live listing state for the signed-in holder — never cacheable.
 export const dynamic = "force-dynamic";
@@ -20,6 +22,7 @@ export default async function TicketDetailPage({ params }: { params: { ticketId:
   if (!ticket) {
     notFound();
   }
+  const group = await getTicketGroupState(session.user.id, params.ticketId);
 
   return (
     <div className="mx-auto max-w-2xl px-4 pb-20 pt-8 sm:px-6">
@@ -43,7 +46,14 @@ export default async function TicketDetailPage({ params }: { params: { ticketId:
         )}
       </div>
 
-      <h2 className="mb-3 font-semibold">Resell this ticket</h2>
+      {group?.groupEnabled && group.groupLink && (
+        <>
+          <h2 className="mb-3 font-semibold">WhatsApp group</h2>
+          <WhatsappGroupControl ticketId={params.ticketId} eventTitle={ticket.eventTitle} group={group} />
+        </>
+      )}
+
+      <h2 className="mb-3 mt-6 font-semibold">Resell this ticket</h2>
       <ResaleControl ticket={ticket} />
     </div>
   );

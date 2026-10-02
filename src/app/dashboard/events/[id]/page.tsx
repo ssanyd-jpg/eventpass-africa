@@ -17,6 +17,7 @@ import TimingSetupSection from "@/components/TimingSetupSection";
 import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
 import { hasFeature } from "@/lib/event-modes";
 import { sendPostEventMemories } from "./post-event-memory-actions";
+import { markWhatsappGroupLinkRevoked } from "./whatsapp-group/actions";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -75,6 +76,14 @@ export default function ManageEventPage() {
   const [sendingMemories, setSendingMemories] = useState(false);
   const [memoriesSentCount, setMemoriesSentCount] = useState<number | null>(null);
 
+  // WhatsApp group "revoke your invite link" reminder banner — same small
+  // live-DB fetch alongside the Dexie cache as the post-event memory status
+  // above, since whatsappGroupLinkRevokedAt/whatsappGroupEnabled aren't
+  // synced onto LocalEvent (see shapeEvent's own explicit field list).
+  const [showRevokeBanner, setShowRevokeBanner] = useState(false);
+  const [revokeBannerDismissed, setRevokeBannerDismissed] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+
   // Middleware already redirects GATE_CREW away from this route server-side
   // — this is defense-in-depth for a device offline with an already-cached
   // page shell (see src/middleware.ts).
@@ -88,6 +97,16 @@ export default function ManageEventPage() {
       .then((res) => res.json())
       .then((body) => {
         if (body.ok) setMemoryStatus(body);
+      })
+      .catch(() => {});
+  }, [id, user]);
+
+  useEffect(() => {
+    if (!id || user?.organizationRole === "GATE_CREW") return;
+    fetch(`/api/dashboard/events/${id}/whatsapp-group`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.ok) setShowRevokeBanner(body.showRevokeBanner);
       })
       .catch(() => {});
   }, [id, user]);
@@ -243,6 +262,16 @@ export default function ManageEventPage() {
     }
   }
 
+  async function onRevokeLink() {
+    setRevoking(true);
+    try {
+      await markWhatsappGroupLinkRevoked(event!.id);
+      setRevokeBannerDismissed(true);
+    } finally {
+      setRevoking(false);
+    }
+  }
+
   async function cancelEvent() {
     // Session 9: warn if cash operators still have unreconciled floats.
     // Best-effort — a failed/offline check never blocks cancellation, it
@@ -312,6 +341,9 @@ export default function ManageEventPage() {
           <Link href={`/dashboard/events/${event.id}/resale`} className="btn-secondary">
             Ticket resale ↗
           </Link>
+          <Link href={`/dashboard/events/${event.id}/whatsapp-group`} className="btn-secondary">
+            WhatsApp group ↗
+          </Link>
           <Link href={`/dashboard/events/${event.id}/volunteers`} className="btn-secondary">
             Volunteers ↗
           </Link>
@@ -352,6 +384,23 @@ export default function ManageEventPage() {
           )}
         </div>
       </div>
+
+      {showRevokeBanner && !revokeBannerDismissed && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
+          <span>
+            ⚠️ Remember to revoke your WhatsApp group invite link to prevent new people joining after the event. Open
+            WhatsApp → tap the group name → Invite via link → Revoke link.
+          </span>
+          <button
+            type="button"
+            className="shrink-0 font-medium underline disabled:opacity-50"
+            disabled={revoking}
+            onClick={onRevokeLink}
+          >
+            {revoking ? "Saving…" : "I've revoked it"}
+          </button>
+        </div>
+      )}
 
       {event.status !== "CANCELLED" && (
         <button onClick={cancelEvent} className="mt-3 text-xs font-medium text-danger hover:underline">

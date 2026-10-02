@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sendEventReminders } from "@/lib/reminders";
 import { runPendingTopupSweep } from "@/lib/pending-topups";
 import { runSeasonRenewalSweep } from "@/lib/season-renewal";
+import { runWhatsappGroupArchiveSweep } from "@/lib/whatsapp-group";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
@@ -65,6 +66,17 @@ export async function GET(request: Request) {
     seasonRenewal = { ok: false, reason: "SWEEP_FAILED" };
   }
 
+  // Event WhatsApp group archive sweep — same "rides along on this one
+  // daily slot" reasoning as the pending top-up/season renewal sweeps
+  // above (Vercel Hobby, both cron slots already taken).
+  let whatsappGroupArchive: Awaited<ReturnType<typeof runWhatsappGroupArchiveSweep>> | { ok: false; reason: string };
+  try {
+    whatsappGroupArchive = await runWhatsappGroupArchiveSweep();
+  } catch (error) {
+    console.error("[cron/reminders] whatsapp group archive sweep failed", error);
+    whatsappGroupArchive = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
   if (remindersError) throw remindersError;
-  return NextResponse.json({ ...result, pendingTopups, seasonRenewal });
+  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive });
 }

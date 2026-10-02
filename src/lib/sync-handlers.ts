@@ -13,6 +13,7 @@ import { computeGunTimeOffsetSeconds, computeSplitTimeSeconds } from "@/lib/timi
 import { EVENT_TYPES } from "@/lib/event-modes";
 import { releaseWaitlistCapacity, convertWaitlistEntry } from "@/lib/waitlist";
 import { currentPriceCents, validatePricingTiers } from "@/lib/pricing";
+import { sendGroupInvite } from "@/lib/whatsapp-group";
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -972,6 +973,11 @@ export async function handleSellTickets(userId: string, payload: any) {
           code: item.codes?.[i] ?? generateTicketCode(),
           eventId: event.id,
           ticketTypeId: tt.id,
+          // Default-opted-in whenever the event already has the WhatsApp
+          // group feature on at purchase time — see Event.whatsappGroupLink's
+          // own doc comment on why this doesn't also require a link to be
+          // set yet (the organiser may paste it in later).
+          whatsappGroupOptedIn: event.whatsappGroupEnabled,
         });
       }
     }
@@ -1172,6 +1178,11 @@ export async function handleSellTickets(userId: string, payload: any) {
         subject: "Order confirmed",
         body: `🎟 Your Chaap ticket is confirmed! Event: ${event.title}, Date: ${formatDate(event.startsAt)}, ${codePart}. Show this at the gate: ${orderLink}`,
       });
+    }
+    if (event.whatsappGroupEnabled && event.whatsappGroupLink) {
+      for (const ticket of order.tickets) {
+        await sendGroupInvite(ticket.id);
+      }
     }
   }
 

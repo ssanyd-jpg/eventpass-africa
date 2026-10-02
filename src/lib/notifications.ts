@@ -53,7 +53,10 @@ export type NotificationType =
   // message to previous attendees (see sendBroadcast in chaap-ads.ts). One
   // type for the whole product, unlike SEASON_PASS_*'s per-template split,
   // since the body here is organiser-authored, not a fixed template.
-  | "AD_BROADCAST";
+  | "AD_BROADCAST"
+  // Event WhatsApp group — see src/lib/whatsapp-group.ts.
+  | "WHATSAPP_GROUP_INVITE_SENT"
+  | "WHATSAPP_GROUP_ARCHIVED";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

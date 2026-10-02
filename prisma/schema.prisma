@@ -818,6 +818,21 @@ model Event {
   // (src/lib/chaap-ads.ts) — good enough for that at-a-glance number; not a
   // deduped/unique-visitor count.
   viewCount   Int      @default(0)
+  // Event WhatsApp group — Africa's Talking's WhatsApp API has no group
+  // creation endpoint (see src/lib/whatsapp.ts), so the organiser creates
+  // the group manually on their own phone and pastes the invite link here;
+  // Chaap's role is only ever relaying that link to opted-in attendees (see
+  // src/lib/whatsapp-group.ts). whatsappGroupLink null = not set up yet,
+  // even if whatsappGroupEnabled is true.
+  whatsappGroupEnabled    Boolean   @default(false)
+  whatsappGroupLink       String?
+  // Set once the post-event archive message has gone out (idempotency gate
+  // for sendGroupArchiveMessage) — never reset.
+  whatsappGroupArchivedAt DateTime?
+  // Set when the organiser dismisses the "revoke your invite link" reminder
+  // banner on the event dashboard (see shouldShowRevokeBanner) — purely a
+  // UI acknowledgement, doesn't touch whatsappGroupLink itself.
+  whatsappGroupLinkRevokedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1309,6 +1324,15 @@ model Ticket {
   // this ticket's buyer, so a once-daily cron with a wide lookahead window
   // never reminds the same ticket twice. null = not reminded yet.
   reminderSentAt DateTime?
+  // Event WhatsApp group (see Event.whatsappGroupEnabled/whatsappGroupLink
+  // and src/lib/whatsapp-group.ts). optedIn defaults false but is set true
+  // at creation time in handleSellTickets when the event already has the
+  // group feature on — "opted in" otherwise only changes via the
+  // attendee's own toggle (order confirmation page / account ticket page).
+  // inviteSentAt is the once-only send guard, same convention as
+  // reminderSentAt above.
+  whatsappGroupOptedIn      Boolean   @default(false)
+  whatsappGroupInviteSentAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

@@ -8,6 +8,63 @@ import { queueOp } from "@/lib/sync-engine";
 import { formatCents } from "@/lib/format";
 import { useAppSession } from "@/lib/use-app-session";
 import TicketQr from "@/components/TicketQr";
+import { setOrderTicketGroupOptIn } from "@/app/orders/[id]/actions";
+
+interface WhatsappGroupInfo {
+  eventTitle: string;
+  groupEnabled: boolean;
+  groupLink: string | null;
+  tickets: Array<{ id: string; code: string; optedIn: boolean; inviteSentAt: string | null }>;
+}
+
+// One toggle for the whole order ("Yes, add me to the group") rather than
+// per-ticket — the copy is about the buyer joining, not each named ticket
+// holder individually. Fetches its own data: whatsappGroupEnabled/Link and
+// per-ticket opt-in aren't synced onto LocalEvent/LocalTicket (see
+// shapeEvent/shapeTicket's own explicit field lists).
+function WhatsappGroupCard({ order }: { order: LocalOrder }) {
+  const [info, setInfo] = useState<WhatsappGroupInfo | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/orders/${order.id}/whatsapp-group`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.ok && body.groupEnabled && body.groupLink) setInfo(body);
+      })
+      .catch(() => {});
+  }, [order.id]);
+
+  if (!info) return null;
+
+  const optedIn = info.tickets.every((t) => t.optedIn);
+
+  async function onToggle(checked: boolean) {
+    setSaving(true);
+    try {
+      await Promise.all(info!.tickets.map((t) => setOrderTicketGroupOptIn(t.id, checked)));
+      setInfo((prev) => (prev ? { ...prev, tickets: prev.tickets.map((t) => ({ ...t, optedIn: checked })) } : prev));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card mt-6 flex items-center justify-between gap-4 p-4">
+      <div>
+        <p className="font-medium">Join the {info.eventTitle} WhatsApp group 💬</p>
+        <p className="text-sm text-muted">Connect with other attendees and get updates from the organiser.</p>
+      </div>
+      <input
+        type="checkbox"
+        checked={optedIn}
+        disabled={saving}
+        onChange={(e) => onToggle(e.target.checked)}
+        aria-label="Yes, add me to the group"
+      />
+    </div>
+  );
+}
 
 interface PendingTransfer {
   id: string;
@@ -459,6 +516,8 @@ export default function OrderConfirmation({ order }: { order: LocalOrder }) {
         })}
       </div>
       )}
+
+      {isConfirmed && <WhatsappGroupCard order={order} />}
 
       <div className="card mt-6 p-4">
         {(order.discountCents ?? 0) > 0 && (

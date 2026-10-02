@@ -73,7 +73,13 @@ export type AuditAction =
   // PDPA self-service deletion (src/lib/account-deletion.ts) — logged
   // against the deleting user's own (personal) organization, the only one
   // every user is guaranteed to have.
-  | "ACCOUNT_DELETED";
+  | "ACCOUNT_DELETED"
+  // Event WhatsApp group (src/lib/whatsapp-group.ts) — logged once per
+  // organiser-triggered batch action ("Send invites now" / "Send archive
+  // message"), not once per individual attendee invite, same
+  // one-entry-per-organiser-action granularity as BROADCAST_SENT.
+  | "WHATSAPP_GROUP_INVITE_SENT"
+  | "WHATSAPP_GROUP_ARCHIVED";
 
 interface LogAuditInput {
   organizationId: string;
