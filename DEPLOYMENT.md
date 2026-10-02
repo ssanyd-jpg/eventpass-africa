@@ -124,6 +124,7 @@ data are on the line.
    | `RESEND_API_KEY` | No | Enables real email delivery — see §4 |
    | `CHAAP_FROM_EMAIL` | No | Sender address for real email (default: `noreply@chaap-africa.com`) — see §4 |
    | `AT_API_KEY` / `AT_USERNAME` | No | Enables real SMS delivery via Africa's Talking — both required together, see §4 |
+   | `AT_SENDER_ID` | No | SMS "from" field — `CHAAP`, the registered Sender ID for Tanzania, see §4 |
    | `AT_WHATSAPP_USERNAME` / `AT_WHATSAPP_SHORTCODE` | No | Enables real WhatsApp delivery via Africa's Talking (with `AT_API_KEY`) — see §4 |
    | `AT_USSD_SECRET` | No | Enables the USSD endpoint (`/api/ussd`) for feature-phone attendees — without it every request is rejected. See §8 |
    | `CRON_SECRET` | No | Required to enable the 24h event-reminder Vercel Cron job — see §6 |
@@ -155,6 +156,9 @@ and `AT_WHATSAPP_SHORTCODE` (the WhatsApp Business number registered to the
 account — the SDK calls this `waNumber`) are all set; otherwise it falls
 back to `sendSMS()` (`src/lib/sms.ts`), which itself sends real SMS via
 Africa's Talking whenever both `AT_API_KEY` and `AT_USERNAME` are set.
+`AT_SENDER_ID` (optional) is passed as the SMS "from" field when set —
+`CHAAP` is the Sender ID registered with Africa's Talking for Tanzania;
+leave it unset to send with no sender ID (the prior default behaviour).
 Without any of those, the call still just lands in the `NotificationLog`
 table, visible to admins at `/admin/notifications` — see the README's
 "Simulated pieces" section — same dev-mode behavior as before, per channel.

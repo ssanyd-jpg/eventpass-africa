@@ -33,10 +33,14 @@ describe("normalizeTanzaniaPhone", () => {
 describe("sendSMS", () => {
   const originalKey = process.env.AT_API_KEY;
   const originalUsername = process.env.AT_USERNAME;
+  const originalSenderId = process.env.AT_SENDER_ID;
 
   beforeEach(() => {
     mockSmsSend.mockReset();
     mockSmsSend.mockResolvedValue({});
+    // .env sets a real AT_SENDER_ID for this project — tests that care about
+    // the from field being absent need to explicitly unset it.
+    delete process.env.AT_SENDER_ID;
   });
 
   afterEach(() => {
@@ -44,6 +48,8 @@ describe("sendSMS", () => {
     else process.env.AT_API_KEY = originalKey;
     if (originalUsername === undefined) delete process.env.AT_USERNAME;
     else process.env.AT_USERNAME = originalUsername;
+    if (originalSenderId === undefined) delete process.env.AT_SENDER_ID;
+    else process.env.AT_SENDER_ID = originalSenderId;
   });
 
   it("falls back to logging instead of sending when AT_API_KEY/AT_USERNAME are absent", async () => {
@@ -77,6 +83,21 @@ describe("sendSMS", () => {
 
     expect(result.ok).toBe(true);
     expect(mockSmsSend).toHaveBeenCalledWith({ to: ["+255712345678"], message: "Your balance is low" });
+  });
+
+  it("passes AT_SENDER_ID as the from field when set", async () => {
+    process.env.AT_API_KEY = "test-key";
+    process.env.AT_USERNAME = "test-user";
+    process.env.AT_SENDER_ID = "CHAAP";
+
+    const result = await sendSMS({ to: "0712345678", message: "Your balance is low" });
+
+    expect(result.ok).toBe(true);
+    expect(mockSmsSend).toHaveBeenCalledWith({
+      to: ["+255712345678"],
+      message: "Your balance is low",
+      from: "CHAAP",
+    });
   });
 
   it("returns ok:false (without throwing) when the provider call rejects", async () => {

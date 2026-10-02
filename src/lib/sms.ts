@@ -44,7 +44,12 @@ export async function sendSMS(input: SendSmsInput): Promise<SendSmsResult> {
 
   try {
     const client = AfricasTalking({ apiKey, username });
-    await client.SMS.send({ to: [to], message: input.message });
+    const senderId = process.env.AT_SENDER_ID;
+    await client.SMS.send({
+      to: [to],
+      message: input.message,
+      ...(senderId ? { from: senderId } : {}),
+    });
     return { ok: true };
   } catch (err) {
     console.error("[sms] Africa's Talking send failed", err);
