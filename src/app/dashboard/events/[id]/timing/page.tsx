@@ -14,12 +14,14 @@ interface LeaderRow {
   ticketTypeName: string;
   gunTimeFormatted: string;
   pace: string;
+  speed: string;
   lastPointName?: string;
 }
 
 interface TimingPayload {
   eventId: string;
   eventTitle: string;
+  eventType: string;
   gunStartAt: string | null;
   timingPoints: { id: string; name: string; sequenceOrder: number; isStart: boolean; isFinish: boolean }[];
   totalStarters: number;
@@ -80,6 +82,8 @@ export default function TimingDashboardPage() {
     return <SkeletonPage maxWidth="max-w-4xl" />;
   }
 
+  const isMountainBike = data.eventType === "MOUNTAIN_BIKE";
+
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-8 sm:px-6">
       <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
@@ -122,14 +126,14 @@ export default function TimingDashboardPage() {
       {data.leaders.inProgress.length === 0 ? (
         <div className="card p-6 text-center text-muted">No one on course yet.</div>
       ) : (
-        <LeaderTable rows={data.leaders.inProgress.slice(0, 10)} />
+        <LeaderTable rows={data.leaders.inProgress.slice(0, 10)} isMountainBike={isMountainBike} />
       )}
 
       <h2 className="mb-3 mt-8 font-semibold">Finishers</h2>
       {data.leaders.finishers.length === 0 ? (
         <div className="card p-6 text-center text-muted">No finishers recorded yet.</div>
       ) : (
-        <LeaderTable rows={data.leaders.finishers} />
+        <LeaderTable rows={data.leaders.finishers} isMountainBike={isMountainBike} />
       )}
     </div>
   );
@@ -144,18 +148,18 @@ function Stat({ label, value, flag }: { label: string; value: string | number; f
   );
 }
 
-function LeaderTable({ rows }: { rows: LeaderRow[] }) {
+function LeaderTable({ rows, isMountainBike }: { rows: LeaderRow[]; isMountainBike: boolean }) {
   return (
     <div className="card table-wrap overflow-x-auto p-0">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
             <th className="p-3">Rank</th>
-            <th className="p-3">Athlete</th>
+            <th className="p-3">{isMountainBike ? "Rider" : "Athlete"}</th>
             <th className="p-3">Bib</th>
             <th className="p-3">Ticket type</th>
             <th className="p-3 text-right">Gun time</th>
-            <th className="p-3 text-right">Pace</th>
+            <th className="p-3 text-right">{isMountainBike ? "Speed" : "Pace"}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -166,7 +170,7 @@ function LeaderTable({ rows }: { rows: LeaderRow[] }) {
               <td className="p-3 font-mono">{r.bib}</td>
               <td className="p-3">{r.ticketTypeName}</td>
               <td className="p-3 text-right font-mono">{r.gunTimeFormatted}</td>
-              <td className="p-3 text-right">{r.pace}</td>
+              <td className="p-3 text-right">{isMountainBike ? r.speed : r.pace}</td>
             </tr>
           ))}
         </tbody>

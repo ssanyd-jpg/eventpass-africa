@@ -50,8 +50,18 @@ export default function TimingScannerPage() {
   const [timingPointId, setTimingPointId] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [dnfReason, setDnfReason] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { highContrast, toggle: toggleHighContrast } = useHighContrast();
+
+  const selectedPoint = (timingPoints ?? []).find((p) => p.id === timingPointId);
+
+  // DNF only makes sense at the finish point, and resets the moment the
+  // operator switches to a different timing point so a reason never
+  // silently carries over onto an unrelated point's taps.
+  useEffect(() => {
+    setDnfReason(null);
+  }, [timingPointId]);
 
   useEffect(() => {
     if (!timingPointId && timingPoints && timingPoints.length > 0) {
@@ -75,6 +85,8 @@ export default function TimingScannerPage() {
   timingPointRef.current = timingPointId;
   const timingPointsRef = useRef(timingPoints);
   timingPointsRef.current = timingPoints;
+  const dnfReasonRef = useRef(dnfReason);
+  dnfReasonRef.current = dnfReason;
 
   const recordTap = useCallback(async (input: { nfcUid?: string; ticketCode?: string }) => {
     const event = eventRef.current;
@@ -85,6 +97,7 @@ export default function TimingScannerPage() {
       return;
     }
     setError(null);
+    const dnfReasonForTap = point.isFinish ? dnfReasonRef.current : null;
 
     const clientId = newLocalId();
     const recordedAt = new Date();
@@ -110,6 +123,7 @@ export default function TimingScannerPage() {
       recordedAt: recordedAt.toISOString(),
       gunTimeOffsetSeconds,
       splitTimeSeconds: null,
+      dnfReason: dnfReasonForTap,
       syncStatus: "pending",
     };
     await db.chipTimes.put(optimistic);
@@ -123,7 +137,10 @@ export default function TimingScannerPage() {
       nfcUid: input.nfcUid,
       ticketCode: input.ticketCode,
       recordedAt: recordedAt.toISOString(),
+      dnfReason: dnfReasonForTap ?? undefined,
     });
+
+    if (dnfReasonForTap) setDnfReason(null);
   }, [t]);
 
   const handleNfcDetect = useCallback((reading: NFCReading) => {
@@ -185,6 +202,42 @@ export default function TimingScannerPage() {
 
       {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
+      {/* DNF only applies at the finish point — withdrawing mid-course is
+          just "never tapped the next point", not a reason to record. */}
+      {selectedPoint?.isFinish && (
+        <div className="card mt-4 p-4">
+          {dnfReason ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
+              <span>{t("timing.recordingAsDnf", { reason: dnfReason })}</span>
+              <button type="button" className="font-medium underline" onClick={() => setDnfReason(null)}>
+                {t("timing.cancelDnf")}
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">{t("timing.markAsDnf")}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[
+                  ["Mechanical", t("timing.dnfReasonMechanical")],
+                  ["Crash/Injury", t("timing.dnfReasonCrashInjury")],
+                  ["Time cutoff", t("timing.dnfReasonTimeCutoff")],
+                  ["Withdrew", t("timing.dnfReasonWithdrew")],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="btn-secondary !h-9 text-xs"
+                    onClick={() => setDnfReason(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="mt-4">
         <CameraScanner onDetect={(scanned) => recordTap({ ticketCode: scanned.trim().toUpperCase() })} />
         <NFCScanner onDetect={handleNfcDetect} />
@@ -216,6 +269,9 @@ export default function TimingScannerPage() {
           <p className="mt-2 font-mono text-[clamp(2.5rem,14vw,4.5rem)] font-extrabold leading-none tabular-nums">
             {lastRecorded.gunTimeOffsetSeconds != null ? formatElapsed(lastRecorded.gunTimeOffsetSeconds) : "—"}
           </p>
+          {lastRecorded.dnfReason && (
+            <span className="pill mt-2 border-danger/40 bg-danger/10 text-danger">DNF — {lastRecorded.dnfReason}</span>
+          )}
           {lastRecorded.syncStatus === "pending" && (
             <span className="pill mt-2 border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>
           )}
@@ -235,6 +291,7 @@ export default function TimingScannerPage() {
               </div>
               <div className="text-right">
                 <p className="font-mono text-xl font-bold tabular-nums">{c.gunTimeOffsetSeconds != null ? formatElapsed(c.gunTimeOffsetSeconds) : "—"}</p>
+                {c.dnfReason && <span className="pill border-danger/40 bg-danger/10 text-danger">DNF — {c.dnfReason}</span>}
                 {c.syncStatus === "pending" && <span className="pill border-warn/40 bg-warn/10 text-warn">{t("common.pendingSync")}</span>}
               </div>
             </div>

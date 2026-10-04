@@ -500,6 +500,7 @@ export async function GET(request: Request) {
       isStart: p.isStart,
       isFinish: p.isFinish,
       distanceMeters: p.distanceMeters,
+      elevationGainMeters: p.elevationGainMeters,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
     }));

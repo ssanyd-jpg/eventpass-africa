@@ -2,7 +2,7 @@
 // timing dashboard — no Prisma, no fetch, fed the rows the caller already
 // queried (see leaderboard-data.ts / timing-data.ts). Same testability
 // convention as forecast.ts/analytics.ts.
-import { computePaceSecondsPerKm, formatElapsed, formatPace } from "@/lib/timing";
+import { computePaceSecondsPerKm, formatElapsed, formatPace, computeAverageSpeedKmh, formatSpeed } from "@/lib/timing";
 
 export interface AthletePointTime {
   timingPointId: string;
@@ -11,6 +11,9 @@ export interface AthletePointTime {
   isFinish: boolean;
   distanceMeters: number | null;
   gunTimeOffsetSeconds: number | null;
+  // Set when this tap at a finish point records a did-not-finish rather
+  // than an actual finish (see the timing scanner's "Mark as DNF" flow).
+  dnfReason?: string | null;
 }
 
 export interface AthleteProgress {
@@ -30,6 +33,10 @@ export interface LeaderboardRow {
   gunTimeOffsetSeconds: number;
   gunTimeFormatted: string;
   pace: string;
+  // Always computed alongside pace — MOUNTAIN_BIKE events display this
+  // instead (see the eventType-aware rendering in the leaderboard/
+  // dashboard pages).
+  speed: string;
   lastPointName?: string; // in-progress rows only
 }
 
@@ -60,6 +67,13 @@ export function buildLeaderboard(
   const onCourse: { athlete: AthleteProgress; time: AthletePointTime }[] = [];
 
   for (const athlete of scoped) {
+    // A finish-point tap recorded with a dnfReason is an explicit
+    // did-not-finish, not an actual finish (see countDNFs below, which
+    // counts it as a DNF instead) — and it means the athlete has withdrawn,
+    // not "currently on course" either, so they're skipped entirely rather
+    // than falling through to their last non-DNF tap.
+    if (athlete.times.some((t) => t.isFinish && t.dnfReason)) continue;
+
     const finish = athlete.times.find((t) => t.isFinish);
     if (finish && finish.gunTimeOffsetSeconds != null) {
       finished.push({ athlete, time: finish });
@@ -87,6 +101,7 @@ export function buildLeaderboard(
       gunTimeOffsetSeconds: gun,
       gunTimeFormatted: formatElapsed(gun),
       pace: formatPace(computePaceSecondsPerKm(gun, t.distanceMeters)),
+      speed: formatSpeed(computeAverageSpeedKmh(t.distanceMeters, gun)),
     };
   };
 
@@ -104,5 +119,7 @@ export function buildLeaderboard(
 // raceEnded themselves.
 export function countDNFs(athletes: AthleteProgress[], raceEnded: boolean): number {
   if (!raceEnded) return 0;
-  return athletes.filter((a) => a.times.some((t) => t.isStart) && !a.times.some((t) => t.isFinish)).length;
+  return athletes.filter(
+    (a) => a.times.some((t) => t.isStart) && !a.times.some((t) => t.isFinish && !t.dnfReason)
+  ).length;
 }

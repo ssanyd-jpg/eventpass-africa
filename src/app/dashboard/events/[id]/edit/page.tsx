@@ -734,7 +734,7 @@ export default function EditEventPage() {
             </div>
           </div>
           <p className="-mt-2 text-xs text-muted">
-            Marathon unlocks timing setup, a timing scanner, and a public live leaderboard.
+            Marathon and Mountain Bike Race unlock timing setup, a timing scanner, and a public live leaderboard.
             Conference unlocks session setup, a session scanner, and exhibitor lead capture.
           </p>
         </FormSection>

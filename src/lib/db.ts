@@ -402,6 +402,8 @@ export interface LocalTimingPoint {
   isStart: boolean;
   isFinish: boolean;
   distanceMeters: number | null;
+  // MOUNTAIN_BIKE-only today — see the TimingPoint schema comment.
+  elevationGainMeters: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -426,6 +428,7 @@ export interface LocalChipTime {
   recordedAt: string;
   gunTimeOffsetSeconds: number | null;
   splitTimeSeconds: number | null;
+  dnfReason: string | null;
   syncStatus: "synced" | "pending";
 }
 

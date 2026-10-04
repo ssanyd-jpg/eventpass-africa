@@ -15,6 +15,7 @@ import type { RankedMarathonFinisher, DNFAthlete } from "@/lib/marathon-results"
 
 export interface MarathonResultsPdfInput {
   eventTitle: string;
+  eventType?: string;
   venue: string;
   city: string;
   startsAt: Date;
@@ -71,6 +72,10 @@ function drawMedal(page: PDFPage, x: number, y: number, rank: 1 | 2 | 3, font: P
 }
 
 export async function buildMarathonResultsPdf(input: MarathonResultsPdfInput): Promise<Uint8Array> {
+  const isMountainBike = input.eventType === "MOUNTAIN_BIKE";
+  const athleteLabel = isMountainBike ? "Rider" : "Athlete";
+  const paceColLabel = isMountainBike ? "Speed" : "Pace";
+
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -94,11 +99,11 @@ export async function buildMarathonResultsPdf(input: MarathonResultsPdfInput): P
   function drawTableHeader() {
     drawTextSafe(page, "Rank", { x: COL.rank.x, y, size: 8, font: bold, color: GREY });
     drawTextSafe(page, "Cat.", { x: COL.cat.x, y, size: 8, font: bold, color: GREY });
-    drawTextSafe(page, "Athlete", { x: COL.name.x, y, size: 8, font: bold, color: GREY });
+    drawTextSafe(page, athleteLabel, { x: COL.name.x, y, size: 8, font: bold, color: GREY });
     drawTextSafe(page, "Category", { x: COL.category.x, y, size: 8, font: bold, color: GREY });
     drawTextSafe(page, "Gun time", { x: COL.gun.x, y, size: 8, font: bold, color: GREY });
     drawTextSafe(page, "Chip time", { x: COL.chip.x, y, size: 8, font: bold, color: GREY });
-    drawTextSafe(page, "Pace", { x: COL.pace.x, y, size: 8, font: bold, color: GREY });
+    drawTextSafe(page, paceColLabel, { x: COL.pace.x, y, size: 8, font: bold, color: GREY });
     y -= 6;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: TABLE_RIGHT, y }, thickness: 1, color: LINE });
     y -= ROW_HEIGHT - 4;
@@ -160,7 +165,7 @@ export async function buildMarathonResultsPdf(input: MarathonResultsPdfInput): P
     drawTextSafe(page, truncate(r.ticketTypeName, 16), { x: COL.category.x, y, size: 9, font, color: GREY });
     drawTextSafe(page, r.gunTimeFormatted, { x: COL.gun.x, y, size: 9, font: mono, color: INK });
     drawTextSafe(page, r.chipTimeFormatted ?? "—", { x: COL.chip.x, y, size: 9, font: mono, color: GREY });
-    drawTextSafe(page, r.pace, { x: COL.pace.x, y, size: 9, font: mono, color: INK });
+    drawTextSafe(page, isMountainBike ? r.speed : r.pace, { x: COL.pace.x, y, size: 9, font: mono, color: INK });
 
     y -= ROW_HEIGHT;
   });
@@ -185,6 +190,7 @@ export async function buildMarathonResultsPdf(input: MarathonResultsPdfInput): P
       drawTextSafe(page, d.bib, { x: COL.rank.x, y, size: 9, font: mono, color: INK });
       drawTextSafe(page, truncate(d.athleteName, 30), { x: COL.name.x, y, size: 9, font, color: INK });
       drawTextSafe(page, truncate(d.ticketTypeName, 20), { x: COL.category.x, y, size: 9, font, color: GREY });
+      if (d.reason) drawTextSafe(page, d.reason, { x: COL.gun.x, y, size: 9, font, color: GREY });
       y -= ROW_HEIGHT;
     });
   }

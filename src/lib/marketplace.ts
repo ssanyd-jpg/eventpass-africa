@@ -15,6 +15,7 @@ export const EVENT_TYPE_BADGE_COLORS: Record<EventType, string> = {
   GENERAL: "border-amber-400/40 bg-amber-400/10 text-amber-600 dark:text-amber-300",
   FESTIVAL: "border-purple-400/40 bg-purple-400/10 text-purple-600 dark:text-purple-300",
   CONCERT: "border-pink-400/40 bg-pink-400/10 text-pink-600 dark:text-pink-300",
+  MOUNTAIN_BIKE: "border-orange-400/40 bg-orange-400/10 text-orange-600 dark:text-orange-300",
 };
 
 // Sell-through ratio above which a still-available event counts as "selling

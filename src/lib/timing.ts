@@ -40,3 +40,17 @@ export function formatPace(paceSecondsPerKm: number | null): string {
   const s = paceSecondsPerKm % 60;
   return `${m}:${String(s).padStart(2, "0")} /km`;
 }
+
+// Average speed in km/h — the MOUNTAIN_BIKE equivalent of
+// computePaceSecondsPerKm above (same null-when-distance-unknown rule).
+export function computeAverageSpeedKmh(distanceMeters: number | null | undefined, elapsedSeconds: number): number | null {
+  if (!distanceMeters || distanceMeters <= 0 || elapsedSeconds <= 0) return null;
+  const km = distanceMeters / 1000;
+  const hours = elapsedSeconds / 3600;
+  return km / hours;
+}
+
+export function formatSpeed(speedKmh: number | null): string {
+  if (speedKmh == null) return "—";
+  return `${speedKmh.toFixed(1)} km/h`;
+}

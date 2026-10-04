@@ -8,6 +8,8 @@ import {
   formatElapsed,
   computePaceSecondsPerKm,
   formatPace,
+  computeAverageSpeedKmh,
+  formatSpeed,
 } from "@/lib/timing";
 import { buildLeaderboard, countDNFs, type AthleteProgress } from "@/lib/leaderboard";
 import { getTimingDashboardData, buildTimingResultsCsvSections } from "@/lib/timing-data";
@@ -127,6 +129,24 @@ describe("formatElapsed / computePaceSecondsPerKm / formatPace", () => {
   });
 });
 
+describe("computeAverageSpeedKmh / formatSpeed", () => {
+  it("computes average speed in km/h from elapsed time and distance", () => {
+    // 20km in exactly 1 hour → 20.0 km/h
+    expect(computeAverageSpeedKmh(20_000, 3600)).toBe(20);
+    expect(formatSpeed(computeAverageSpeedKmh(20_000, 3600))).toBe("20.0 km/h");
+  });
+
+  it("computes a non-round speed correctly", () => {
+    // 15km in 30 minutes → 30.0 km/h
+    expect(computeAverageSpeedKmh(15_000, 1800)).toBe(30);
+  });
+
+  it("is null when the distance isn't known", () => {
+    expect(computeAverageSpeedKmh(null, 3600)).toBeNull();
+    expect(formatSpeed(null)).toBe("—");
+  });
+});
+
 describe("handleRecordChipTime", () => {
   // Neon cold-start/latency headroom — setupMarathon alone chains ~8
   // sequential Prisma calls (org, event, ticket sale, credential, three
@@ -226,6 +246,49 @@ describe("handleRecordChipTime", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("CREDENTIAL_NOT_FOUND");
   });
+
+  it("saves dnfReason correctly on a Mark-as-DNF tap at the finish point", async () => {
+    const { organizationId, event, finish, credential } = await setupMarathon();
+    const result: any = await handleRecordChipTime(
+      organizationId,
+      tapPayload({ eventId: event.id, timingPointId: finish.id, nfcUid: credential.nfcUid, dnfReason: "Mechanical" })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.chipTime.dnfReason).toBe("Mechanical");
+
+    const stored = await prisma.chipTime.findUniqueOrThrow({ where: { id: result.chipTime.id } });
+    expect(stored.dnfReason).toBe("Mechanical");
+  });
+
+  it("leaves dnfReason null on a normal tap with no reason given", async () => {
+    const { organizationId, event, start, credential } = await setupMarathon();
+    const result: any = await handleRecordChipTime(organizationId, tapPayload({ eventId: event.id, timingPointId: start.id, nfcUid: credential.nfcUid }));
+    expect(result.chipTime.dnfReason).toBeNull();
+  });
+});
+
+describe("TimingPoint.elevationGainMeters", () => {
+  it("saves and round-trips correctly for a MOUNTAIN_BIKE course", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId, [{ priceCents: 500_000, quantityTotal: 50 }]);
+    await prisma.event.update({ where: { id: event.id }, data: { eventType: "MOUNTAIN_BIKE" } });
+
+    const point = await prisma.timingPoint.create({
+      data: { eventId: event.id, clientId: uid("tp"), name: "Summit checkpoint", sequenceOrder: 10, elevationGainMeters: 850 },
+    });
+    expect(point.elevationGainMeters).toBe(850);
+
+    const reloaded = await prisma.timingPoint.findUniqueOrThrow({ where: { id: point.id } });
+    expect(reloaded.elevationGainMeters).toBe(850);
+
+    const updated = await prisma.timingPoint.update({ where: { id: point.id }, data: { elevationGainMeters: 900 } });
+    expect(updated.elevationGainMeters).toBe(900);
+  });
+
+  it("defaults to null when not provided (e.g. non-MOUNTAIN_BIKE courses)", async () => {
+    const { start } = await setupMarathon();
+    expect(start.elevationGainMeters).toBeNull();
+  });
 });
 
 describe("buildLeaderboard", () => {
@@ -262,6 +325,35 @@ describe("buildLeaderboard", () => {
     const result = buildLeaderboard([full, half], "half");
     expect(result.finishers.map((r) => r.athleteName)).toEqual(["Half Runner"]);
   });
+
+  // Every row always carries both pace and speed — MOUNTAIN_BIKE vs
+  // MARATHON is purely a display-layer choice of which field to show (see
+  // the eventType-aware rendering in the leaderboard/dashboard pages), not
+  // something buildLeaderboard itself branches on.
+  it("always computes both pace and speed on every row", () => {
+    const result = buildLeaderboard([athlete("cred-fast", "Fast Faraja", 5400)]);
+    expect(result.finishers[0].pace).toMatch(/^\d:\d\d \/km$/);
+    expect(result.finishers[0].speed).toMatch(/^\d+\.\d km\/h$/);
+  });
+
+  // A finish-point tap with a dnfReason is a withdrawal, not a finish — it
+  // must not show up as a result (see leaderboard.ts's own filter).
+  it("excludes a dnfReason-tapped finish from both finishers and on-course", () => {
+    const withdrew: AthleteProgress = {
+      credentialId: "cred-dnf",
+      athleteName: "Withdrew Wendo",
+      bib: "dnf1",
+      ticketTypeId: "half",
+      ticketTypeName: "Half Marathon",
+      times: [
+        { timingPointId: "start", sequenceOrder: 0, isStart: true, isFinish: false, distanceMeters: null, gunTimeOffsetSeconds: 0 },
+        { timingPointId: "finish", sequenceOrder: 20, isStart: false, isFinish: true, distanceMeters: 21_097, gunTimeOffsetSeconds: 3600, dnfReason: "Crash/Injury" },
+      ],
+    };
+    const result = buildLeaderboard([withdrew]);
+    expect(result.finishers).toHaveLength(0);
+    expect(result.inProgress).toHaveLength(0);
+  });
 });
 
 describe("countDNFs", () => {
@@ -286,13 +378,26 @@ describe("countDNFs", () => {
     expect(countDNFs(athletes, false)).toBe(0); // race still running — no DNFs yet
     expect(countDNFs(athletes, true)).toBe(2);
   });
+
+  it("counts an explicit dnfReason finish-tap as a DNF too, not a finish", () => {
+    const withdrew: AthleteProgress = {
+      ...started("d"),
+      times: [
+        ...started("d").times,
+        { timingPointId: "finish", sequenceOrder: 20, isStart: false, isFinish: true, distanceMeters: null, gunTimeOffsetSeconds: 1200, dnfReason: "Withdrew" },
+      ],
+    };
+    expect(countDNFs([withdrew, finished("c")], true)).toBe(1);
+  });
 });
 
 describe("getTimingDashboardData", () => {
   // Neon latency headroom, same reasoning as the handleRecordChipTime tests
   // above — this one does setupMarathon plus a second full athlete setup
   // plus four handleRecordChipTime calls, the heaviest test in this file.
-  it("reports starters, finishers, DNF and per-point counts from real ChipTime rows", { timeout: 120000 }, async () => {
+  // Bumped from 120000 after it timed out under observed Neon latency even
+  // with the project's built-in retry.
+  it("reports starters, finishers, DNF and per-point counts from real ChipTime rows", { timeout: 180000 }, async () => {
     const gunStartAt = new Date(Date.now() - 2 * 3600 * 1000);
     const { organizationId, event, start, tenK, finish, credential } = await setupMarathon({ gunStartAt });
 
@@ -325,6 +430,30 @@ describe("getTimingDashboardData", () => {
     expect(data!.perPointCounts.find((p) => p.name === "10km")!.count).toBe(1);
     expect(data!.leaders.finishers).toHaveLength(1);
     expect(data!.leaders.finishers[0].athleteName).toBe("Amina Runner");
+  });
+
+  // "Leaderboard shows speed for MOUNTAIN_BIKE events and pace for MARATHON
+  // events" is a display-layer choice (see the eventType-aware rendering in
+  // dashboard/events/[id]/timing/page.tsx and events/[slug]/leaderboard/
+  // page.tsx) driven by this eventType field — both pace and speed are
+  // always present on every row regardless, confirmed here for each type.
+  it("carries eventType through so the dashboard can pick pace vs speed", { timeout: 120000 }, async () => {
+    const gunStartAt = new Date(Date.now() - 3600 * 1000);
+    const { organizationId, event, start, finish, credential } = await setupMarathon({ gunStartAt });
+    await handleRecordChipTime(organizationId, tapPayload({ eventId: event.id, timingPointId: start.id, nfcUid: credential.nfcUid, recordedAt: gunStartAt.toISOString() }));
+    await handleRecordChipTime(organizationId, tapPayload({ eventId: event.id, timingPointId: finish.id, nfcUid: credential.nfcUid, recordedAt: new Date(gunStartAt.getTime() + 3600_000).toISOString() }));
+
+    const marathonData = await getTimingDashboardData(event.id);
+    expect(marathonData!.eventType).toBe("MARATHON");
+    expect(marathonData!.leaders.finishers[0].pace).toMatch(/^\d:\d\d \/km$/);
+    expect(marathonData!.leaders.finishers[0].speed).toMatch(/^\d+\.\d km\/h$/);
+
+    await prisma.event.update({ where: { id: event.id }, data: { eventType: "MOUNTAIN_BIKE" } });
+    const bikeData = await getTimingDashboardData(event.id);
+    expect(bikeData!.eventType).toBe("MOUNTAIN_BIKE");
+    // Same underlying ChipTime rows — pace/speed values are unchanged by
+    // eventType, only which one the UI chooses to display.
+    expect(bikeData!.leaders.finishers[0].speed).toBe(marathonData!.leaders.finishers[0].speed);
   });
 });
 

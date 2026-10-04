@@ -14,6 +14,7 @@ interface ResultRow {
   gunTimeFormatted: string;
   chipTimeFormatted: string | null;
   pace: string;
+  speed: string;
   medal: 1 | 2 | 3 | null;
 }
 
@@ -21,11 +22,13 @@ interface DNFRow {
   athleteName: string;
   bib: string;
   ticketTypeName: string;
+  reason?: string;
 }
 
 interface ResultsPayload {
   eventId: string;
   eventTitle: string;
+  eventType: string;
   venue: string;
   city: string;
   startsAt: string;
@@ -84,6 +87,10 @@ export default function PublicResultsPage() {
     );
   }
 
+  const isMountainBike = data.eventType === "MOUNTAIN_BIKE";
+  const athleteLabel = isMountainBike ? "Rider" : "Athlete";
+  const paceLabel = isMountainBike ? "Speed" : "Pace";
+
   return (
     <div className="mx-auto max-w-4xl px-4 pb-20 pt-8 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -118,11 +125,11 @@ export default function PublicResultsPage() {
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
                 <th className="p-3">Rank</th>
                 <th className="p-3">Cat.</th>
-                <th className="p-3">Athlete</th>
+                <th className="p-3">{athleteLabel}</th>
                 <th className="p-3">Category</th>
                 <th className="p-3 text-right">Gun time</th>
                 <th className="p-3 text-right">Chip time</th>
-                <th className="p-3 text-right">Pace</th>
+                <th className="p-3 text-right">{paceLabel}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -134,7 +141,7 @@ export default function PublicResultsPage() {
                   <td className="p-3">{r.ticketTypeName}</td>
                   <td className="p-3 text-right font-mono">{r.gunTimeFormatted}</td>
                   <td className="p-3 text-right font-mono text-muted">{r.chipTimeFormatted ?? "—"}</td>
-                  <td className="p-3 text-right">{r.pace}</td>
+                  <td className="p-3 text-right">{isMountainBike ? r.speed : r.pace}</td>
                 </tr>
               ))}
             </tbody>
@@ -150,7 +157,7 @@ export default function PublicResultsPage() {
           {data.dnfs.map((d) => (
             <div key={d.bib} className="flex items-center justify-between p-3 text-sm">
               <span className="font-medium">{d.athleteName}</span>
-              <span className="text-muted">{d.ticketTypeName}</span>
+              <span className="text-muted">{d.reason ? `${d.ticketTypeName} · ${d.reason}` : d.ticketTypeName}</span>
             </div>
           ))}
         </div>

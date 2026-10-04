@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { EVENT_MODE_CONFIG, EVENT_TYPES, hasFeature } from "@/lib/event-modes";
 
 describe("hasFeature", () => {
-  it("is true for chipTiming/publicLeaderboard only on MARATHON", () => {
+  it("is true for chipTiming/publicLeaderboard on MARATHON and MOUNTAIN_BIKE", () => {
     expect(hasFeature("MARATHON", "chipTiming")).toBe(true);
     expect(hasFeature("MARATHON", "publicLeaderboard")).toBe(true);
+    expect(hasFeature("MOUNTAIN_BIKE", "chipTiming")).toBe(true);
+    expect(hasFeature("MOUNTAIN_BIKE", "publicLeaderboard")).toBe(true);
     expect(hasFeature("GENERAL", "chipTiming")).toBe(false);
     expect(hasFeature("CONFERENCE", "chipTiming")).toBe(false);
     expect(hasFeature("FOOTBALL", "chipTiming")).toBe(false);
@@ -48,5 +50,11 @@ describe("EVENT_MODE_CONFIG", () => {
   it("gives CONFERENCE a MULTI_ZONE default gate mode and MARATHON a SINGLE_ENTRY one", () => {
     expect(EVENT_MODE_CONFIG.CONFERENCE.defaultGateMode).toBe("MULTI_ZONE");
     expect(EVENT_MODE_CONFIG.MARATHON.defaultGateMode).toBe("SINGLE_ENTRY");
+  });
+
+  it("gives MOUNTAIN_BIKE the same chip-timing shape as MARATHON, SINGLE_ENTRY gate mode", () => {
+    expect(EVENT_MODE_CONFIG.MOUNTAIN_BIKE.defaultGateMode).toBe("SINGLE_ENTRY");
+    expect(EVENT_MODE_CONFIG.MOUNTAIN_BIKE.sessionCheckIn).toBe(false);
+    expect(EVENT_MODE_CONFIG.MOUNTAIN_BIKE.exhibitorLeads).toBe(false);
   });
 });

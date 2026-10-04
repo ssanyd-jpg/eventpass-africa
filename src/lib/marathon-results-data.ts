@@ -15,6 +15,7 @@ interface AthleteTap {
   isFinish: boolean;
   distanceMeters: number | null;
   gunTimeOffsetSeconds: number | null;
+  dnfReason: string | null;
 }
 
 interface AthleteRaceRecord {
@@ -30,6 +31,7 @@ async function getAthleteRaceRecords(eventId: string): Promise<AthleteRaceRecord
     where: { eventId },
     select: {
       gunTimeOffsetSeconds: true,
+      dnfReason: true,
       timingPointId: true,
       timingPoint: { select: { isStart: true, isFinish: true, distanceMeters: true } },
       credentialId: true,
@@ -69,6 +71,7 @@ async function getAthleteRaceRecords(eventId: string): Promise<AthleteRaceRecord
       isFinish: c.timingPoint.isFinish,
       distanceMeters: c.timingPoint.distanceMeters,
       gunTimeOffsetSeconds: c.gunTimeOffsetSeconds,
+      dnfReason: c.dnfReason,
     });
   }
   return Array.from(byCredential.values());
@@ -79,7 +82,9 @@ export async function getMarathonResults(eventId: string): Promise<RankedMaratho
 
   const raw: RawMarathonFinisher[] = [];
   for (const r of records) {
-    const finish = r.taps.find((t) => t.isFinish);
+    // A finish-point tap recorded with a dnfReason is an explicit
+    // did-not-finish, not an actual finish — see getDNFs below.
+    const finish = r.taps.find((t) => t.isFinish && !t.dnfReason);
     if (!finish || finish.gunTimeOffsetSeconds == null) continue;
 
     const start = r.taps.find((t) => t.isStart);
@@ -102,8 +107,16 @@ export async function getMarathonResults(eventId: string): Promise<RankedMaratho
 export async function getDNFs(eventId: string): Promise<DNFAthlete[]> {
   const records = await getAthleteRaceRecords(eventId);
   return records
-    .filter((r) => r.taps.some((t) => t.isStart) && !r.taps.some((t) => t.isFinish))
-    .map((r) => ({ athleteName: r.athleteName, bib: r.bib, ticketTypeName: r.ticketTypeName }));
+    .filter((r) => r.taps.some((t) => t.isStart) && !r.taps.some((t) => t.isFinish && !t.dnfReason))
+    .map((r) => {
+      const dnfTap = r.taps.find((t) => t.isFinish && t.dnfReason);
+      return {
+        athleteName: r.athleteName,
+        bib: r.bib,
+        ticketTypeName: r.ticketTypeName,
+        ...(dnfTap?.dnfReason ? { reason: dnfTap.dnfReason } : {}),
+      };
+    });
 }
 
 export interface MarathonRaceCounts {
@@ -116,14 +129,15 @@ export async function getMarathonRaceCounts(eventId: string): Promise<MarathonRa
   const records = await getAthleteRaceRecords(eventId);
   return {
     totalStarters: records.filter((r) => r.taps.some((t) => t.isStart)).length,
-    totalFinishers: records.filter((r) => r.taps.some((t) => t.isFinish)).length,
-    dnfCount: records.filter((r) => r.taps.some((t) => t.isStart) && !r.taps.some((t) => t.isFinish)).length,
+    totalFinishers: records.filter((r) => r.taps.some((t) => t.isFinish && !t.dnfReason)).length,
+    dnfCount: records.filter((r) => r.taps.some((t) => t.isStart) && !r.taps.some((t) => t.isFinish && !t.dnfReason)).length,
   };
 }
 
 export interface MarathonResultsBundle {
   eventId: string;
   eventTitle: string;
+  eventType: string;
   venue: string;
   city: string;
   startsAt: Date;
@@ -139,7 +153,7 @@ export interface MarathonResultsBundle {
 export async function getPublicMarathonResults(slug: string): Promise<MarathonResultsBundle | null> {
   const event = await prisma.event.findUnique({
     where: { slug },
-    select: { id: true, title: true, venue: true, city: true, startsAt: true },
+    select: { id: true, title: true, eventType: true, venue: true, city: true, startsAt: true },
   });
   if (!event) return null;
 
@@ -149,5 +163,15 @@ export async function getPublicMarathonResults(slug: string): Promise<MarathonRe
     getMarathonRaceCounts(event.id),
   ]);
 
-  return { eventId: event.id, eventTitle: event.title, venue: event.venue, city: event.city, startsAt: event.startsAt, results, dnfs, counts };
+  return {
+    eventId: event.id,
+    eventTitle: event.title,
+    eventType: event.eventType,
+    venue: event.venue,
+    city: event.city,
+    startsAt: event.startsAt,
+    results,
+    dnfs,
+    counts,
+  };
 }

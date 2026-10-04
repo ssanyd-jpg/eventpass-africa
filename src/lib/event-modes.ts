@@ -14,6 +14,7 @@ export const EVENT_TYPES = [
   "FOOTBALL",
   "CONCERT",
   "FESTIVAL",
+  "MOUNTAIN_BIKE",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -63,7 +64,9 @@ export interface EventModeConfig {
   stageSchedule: boolean;
 }
 
-function label(key: "general" | "marathon" | "conference" | "football" | "concert" | "festival") {
+function label(
+  key: "general" | "marathon" | "conference" | "football" | "concert" | "festival" | "mountain_bike"
+) {
   return {
     label: dictionaries.en[`eventType.${key}`],
     labelSw: dictionaries.sw[`eventType.${key}`],
@@ -144,6 +147,21 @@ export const EVENT_MODE_CONFIG: Record<EventType, EventModeConfig> = {
     sessionCheckIn: false,
     exhibitorLeads: false,
     vipFastTrack: false,
+    groupWallets: true,
+    multiDayPass: false,
+    stageSchedule: false,
+  },
+  MOUNTAIN_BIKE: {
+    ...label("mountain_bike"),
+    // Same chip-timing/leaderboard unlock as MARATHON — a mountain bike
+    // race uses the same TimingPoint/ChipTime machinery, just with
+    // speed-based results instead of pace (see marathon-results.ts).
+    defaultGateMode: "SINGLE_ENTRY",
+    chipTiming: true,
+    publicLeaderboard: true,
+    sessionCheckIn: false,
+    exhibitorLeads: false,
+    vipFastTrack: true,
     groupWallets: true,
     multiDayPass: false,
     stageSchedule: false,

@@ -272,6 +272,13 @@ export const dictionaries = {
     "timing.lastRecorded": "Last 5 recorded here",
     "timing.nothingRecorded": "Nothing recorded yet at this point.",
     "timing.bibLabel": "Bib {bib}",
+    "timing.markAsDnf": "Mark as DNF",
+    "timing.dnfReasonMechanical": "Mechanical",
+    "timing.dnfReasonCrashInjury": "Crash/Injury",
+    "timing.dnfReasonTimeCutoff": "Time cutoff",
+    "timing.dnfReasonWithdrew": "Withdrew",
+    "timing.recordingAsDnf": "Next scan records a DNF: {reason}",
+    "timing.cancelDnf": "Cancel",
 
     "session.title": "Session scanner",
     "session.selectSessionLabel": "This device is scanning for",
@@ -296,9 +303,11 @@ export const dictionaries = {
     "leaderboard.noFinishers": "No finishers yet.",
     "leaderboard.rank": "Rank",
     "leaderboard.athlete": "Athlete",
+    "leaderboard.rider": "Rider",
     "leaderboard.bib": "Bib",
     "leaderboard.gunTime": "Gun time",
     "leaderboard.pace": "Pace",
+    "leaderboard.speed": "Speed",
 
     "event.cancelledPill": "Cancelled",
     "event.organizedBy": "Organized by {name}",
@@ -414,6 +423,7 @@ export const dictionaries = {
     "eventType.football": "Football Match",
     "eventType.concert": "Concert",
     "eventType.festival": "Festival",
+    "eventType.mountain_bike": "Mountain Bike Race",
 
     // Post-event WhatsApp memory message (see src/lib/post-event-memory.ts) —
     // built line-by-line, not as one block, so individual lines can be
@@ -728,6 +738,13 @@ export const dictionaries = {
     // the chest) doesn't have a fixed Swahili loanword in this codebase yet;
     // using the generic "Nambari" (number) rather than guessing one.
     "timing.bibLabel": "Nambari {bib}",
+    "timing.markAsDnf": "Weka kama hajamaliza (DNF)",
+    "timing.dnfReasonMechanical": "Hitilafu ya mitambo",
+    "timing.dnfReasonCrashInjury": "Ajali/Jeraha",
+    "timing.dnfReasonTimeCutoff": "Muda umekwisha",
+    "timing.dnfReasonWithdrew": "Alijitoa",
+    "timing.recordingAsDnf": "Skani inayofuata itarekodi DNF: {reason}",
+    "timing.cancelDnf": "Ghairi",
 
     "session.title": "Kichunguzi cha kipindi",
     "session.selectSessionLabel": "Kifaa hiki kinachunguza kwa ajili ya",
@@ -752,9 +769,11 @@ export const dictionaries = {
     "leaderboard.noFinishers": "Hakuna aliyemaliza bado.",
     "leaderboard.rank": "Nafasi",
     "leaderboard.athlete": "Mwanariadha",
+    "leaderboard.rider": "Mpanda baiskeli",
     "leaderboard.bib": "Nambari",
     "leaderboard.gunTime": "Muda wa mbio",
     "leaderboard.pace": "Kasi",
+    "leaderboard.speed": "Mwendo (km/h)",
 
     "event.cancelledPill": "Imeghairiwa",
     "event.organizedBy": "Mratibu ni {name}",
@@ -872,6 +891,7 @@ export const dictionaries = {
     "eventType.football": "Mechi ya Mpira wa Miguu",
     "eventType.concert": "Tamasha la Muziki",
     "eventType.festival": "Sherehe",
+    "eventType.mountain_bike": "Mbio za Baiskeli Milimani",
 
     "memory.greeting": "Habari {name}! 🎉",
     "memory.recapIntro": "Huu ni muhtasari wako wa {event}:",

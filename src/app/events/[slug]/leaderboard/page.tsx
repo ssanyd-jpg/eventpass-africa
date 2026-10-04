@@ -13,10 +13,12 @@ interface LeaderRow {
   ticketTypeName: string;
   gunTimeFormatted: string;
   pace: string;
+  speed: string;
 }
 
 interface LeaderboardPayload {
   eventTitle: string;
+  eventType: string;
   ticketTypes: { id: string; name: string }[];
   finishers: LeaderRow[];
   inProgress: LeaderRow[];
@@ -122,7 +124,7 @@ export default function PublicLeaderboardPage() {
       {data.inProgress.length > 0 && (
         <>
           <h2 className="mb-3 mt-6 font-semibold">{t("leaderboard.onCourse")}</h2>
-          <LeaderTable rows={data.inProgress} t={t} />
+          <LeaderTable rows={data.inProgress} t={t} eventType={data.eventType} />
         </>
       )}
 
@@ -130,23 +132,32 @@ export default function PublicLeaderboardPage() {
       {data.finishers.length === 0 ? (
         <div className="card p-8 text-center text-muted">{t("leaderboard.noFinishers")}</div>
       ) : (
-        <LeaderTable rows={data.finishers} t={t} />
+        <LeaderTable rows={data.finishers} t={t} eventType={data.eventType} />
       )}
     </div>
   );
 }
 
-function LeaderTable({ rows, t }: { rows: LeaderRow[]; t: ReturnType<typeof useTranslation>["t"] }) {
+function LeaderTable({
+  rows,
+  t,
+  eventType,
+}: {
+  rows: LeaderRow[];
+  t: ReturnType<typeof useTranslation>["t"];
+  eventType: string;
+}) {
+  const isMountainBike = eventType === "MOUNTAIN_BIKE";
   return (
     <div className="card table-wrap overflow-x-auto p-0">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
             <th className="p-3">{t("leaderboard.rank")}</th>
-            <th className="p-3">{t("leaderboard.athlete")}</th>
+            <th className="p-3">{isMountainBike ? t("leaderboard.rider") : t("leaderboard.athlete")}</th>
             <th className="p-3">{t("leaderboard.bib")}</th>
             <th className="p-3 text-right">{t("leaderboard.gunTime")}</th>
-            <th className="p-3 text-right">{t("leaderboard.pace")}</th>
+            <th className="p-3 text-right">{isMountainBike ? t("leaderboard.speed") : t("leaderboard.pace")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -156,7 +167,7 @@ function LeaderTable({ rows, t }: { rows: LeaderRow[]; t: ReturnType<typeof useT
               <td className="p-3 font-medium">{r.athleteName}</td>
               <td className="p-3 font-mono">{r.bib}</td>
               <td className="p-3 text-right font-mono">{r.gunTimeFormatted}</td>
-              <td className="p-3 text-right">{r.pace}</td>
+              <td className="p-3 text-right">{isMountainBike ? r.speed : r.pace}</td>
             </tr>
           ))}
         </tbody>

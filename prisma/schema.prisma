@@ -941,6 +941,10 @@ model TimingPoint {
   isStart        Boolean  @default(false)
   isFinish       Boolean  @default(false)
   distanceMeters Int?
+  // MOUNTAIN_BIKE-only today (optional for every other event type): cumulative
+  // climb in meters up to this point on the course. Shown on the timing setup
+  // UI only for MOUNTAIN_BIKE events — see hasFeature/EVENT_MODE_CONFIG.
+  elevationGainMeters Int?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -972,6 +976,15 @@ model ChipTime {
   // from), or if this athlete has no recorded tap at the previous point.
   splitTimeSeconds     Int?
   syncedAt             DateTime?
+  // Set only when this tap at the FINISH timing point records a
+  // did-not-finish rather than an actual finish (see the timing scanner's
+  // "Mark as DNF" flow in handleRecordChipTime) — one of "Mechanical",
+  // "Crash/Injury", "Time cutoff", "Withdrew". null for every normal tap.
+  // DNF detection elsewhere (countDNFs/getDNFs) still works unchanged —
+  // those infer DNF from "started but never tapped finish", which this
+  // doesn't replace: a dnfReason tap is itself a finish-point row, letting
+  // staff record WHY a rider stopped instead of just leaving them untapped.
+  dnfReason            String?
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)

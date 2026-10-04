@@ -30,6 +30,7 @@ export interface TimingPointInput {
   isStart: boolean;
   isFinish: boolean;
   distanceMeters: number | null;
+  elevationGainMeters: number | null;
 }
 
 // Whole-list save, not per-point ops — race setup happens as one editing
@@ -59,6 +60,7 @@ export async function saveTimingPoints(eventId: string, points: TimingPointInput
           isStart: p.isStart,
           isFinish: p.isFinish,
           distanceMeters: p.distanceMeters,
+          elevationGainMeters: p.elevationGainMeters,
         },
         update: {
           name: p.name.trim(),
@@ -67,6 +69,7 @@ export async function saveTimingPoints(eventId: string, points: TimingPointInput
           isStart: p.isStart,
           isFinish: p.isFinish,
           distanceMeters: p.distanceMeters,
+          elevationGainMeters: p.elevationGainMeters,
         },
       })
     ),

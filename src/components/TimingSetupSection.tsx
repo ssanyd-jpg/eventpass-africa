@@ -20,12 +20,15 @@ interface DraftPoint extends TimingPointInput {
 export default function TimingSetupSection({
   eventId,
   eventTitle,
+  eventType,
   gunStartAt,
 }: {
   eventId: string;
   eventTitle: string;
+  eventType: string;
   gunStartAt: string | null;
 }) {
+  const showElevation = eventType === "MOUNTAIN_BIKE";
   const savedPoints = useLiveQuery(
     async () => db.timingPoints.where("eventId").equals(eventId).sortBy("sequenceOrder"),
     [eventId]
@@ -48,6 +51,7 @@ export default function TimingSetupSection({
           isStart: p.isStart,
           isFinish: p.isFinish,
           distanceMeters: p.distanceMeters,
+          elevationGainMeters: p.elevationGainMeters,
         }))
       );
     }
@@ -77,6 +81,7 @@ export default function TimingSetupSection({
         isStart: (d?.length ?? 0) === 0,
         isFinish: false,
         distanceMeters: null,
+        elevationGainMeters: null,
       },
     ]);
   }
@@ -123,6 +128,7 @@ export default function TimingSetupSection({
             isStart: p.isStart,
             isFinish: p.isFinish,
             distanceMeters: p.distanceMeters,
+            elevationGainMeters: p.elevationGainMeters,
             createdAt: p.createdAt.toISOString(),
             updatedAt: p.updatedAt.toISOString(),
           })
@@ -199,6 +205,16 @@ export default function TimingSetupSection({
               value={p.distanceMeters ?? ""}
               onChange={(e) => updatePoint(p.key, { distanceMeters: e.target.value ? Number(e.target.value) : null })}
             />
+            {showElevation && (
+              <input
+                className="input !h-9 w-32"
+                type="number"
+                min="0"
+                placeholder="Elevation gain (m)"
+                value={p.elevationGainMeters ?? ""}
+                onChange={(e) => updatePoint(p.key, { elevationGainMeters: e.target.value ? Number(e.target.value) : null })}
+              />
+            )}
             <label className="flex items-center gap-1 text-xs">
               <input type="checkbox" checked={p.isStart} onChange={(e) => updatePoint(p.key, { isStart: e.target.checked })} />
               Start

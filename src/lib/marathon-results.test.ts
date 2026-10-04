@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestUser, createTestOrganization, addMembership, createTestEvent } from "@/lib/test-fixtures";
 import { handleSellTickets } from "@/lib/sync-handlers";
-import { rankResults, formatFinishTime, calculatePace, type RawMarathonFinisher } from "@/lib/marathon-results";
+import { rankResults, formatFinishTime, calculatePace, calculateAverageSpeed, type RawMarathonFinisher } from "@/lib/marathon-results";
 import { getMarathonResults, getDNFs, getMarathonRaceCounts } from "@/lib/marathon-results-data";
 
 // Session — official marathon results PDF. DB-backed describes run against
@@ -64,9 +64,15 @@ async function athlete(eventId: string, ticketTypeId: string, name: string) {
   return { buyer, ticket, credential };
 }
 
-async function tap(eventId: string, timingPointId: string, credentialId: string, gunTimeOffsetSeconds: number) {
+async function tap(
+  eventId: string,
+  timingPointId: string,
+  credentialId: string,
+  gunTimeOffsetSeconds: number,
+  dnfReason?: string
+) {
   return prisma.chipTime.create({
-    data: { eventId, timingPointId, credentialId, recordedAt: new Date(), gunTimeOffsetSeconds },
+    data: { eventId, timingPointId, credentialId, recordedAt: new Date(), gunTimeOffsetSeconds, dnfReason },
   });
 }
 
@@ -88,6 +94,17 @@ describe("calculatePace", () => {
 
   it("returns an em dash when distance is unknown", () => {
     expect(calculatePace(3600, null)).toBe("—");
+  });
+});
+
+describe("calculateAverageSpeed", () => {
+  it("returns average speed in km/h", () => {
+    // 40km MOUNTAIN_BIKE course in exactly 2 hours → 20.0 km/h
+    expect(calculateAverageSpeed(40_000, 7200)).toBe("20.0 km/h");
+  });
+
+  it("returns an em dash when distance is unknown", () => {
+    expect(calculateAverageSpeed(null, 3600)).toBe("—");
   });
 });
 
@@ -149,6 +166,11 @@ describe("rankResults", () => {
   it("returns an empty array gracefully for no results", () => {
     expect(rankResults([])).toEqual([]);
   });
+
+  it("always computes a speed field alongside pace", () => {
+    const ranked = rankResults([finisher({ gunTimeOffsetSeconds: 7200, distanceMeters: 40_000 })]);
+    expect(ranked[0].speed).toBe("20.0 km/h");
+  });
 });
 
 describe("getMarathonResults / getDNFs / getMarathonRaceCounts", () => {
@@ -199,6 +221,35 @@ describe("getMarathonResults / getDNFs / getMarathonRaceCounts", () => {
 
       const counts = await getMarathonRaceCounts(event.id);
       expect(counts.totalStarters).toBe(2);
+      expect(counts.totalFinishers).toBe(1);
+      expect(counts.dnfCount).toBe(1);
+    }
+  );
+
+  it(
+    "saves dnfReason correctly and treats it as a DNF with the reason attached, not a finish",
+    { timeout: 120000 },
+    async () => {
+      const { event, start, finish } = await setupMarathon();
+      const full = event.ticketTypes.find((t) => t.name === "Full Marathon")!.id;
+
+      const finisher = await athlete(event.id, full, "Finisher Fatima");
+      await tap(event.id, start.id, finisher.credential.id, 0);
+      await tap(event.id, finish.id, finisher.credential.id, 10800);
+
+      const withdrew = await athlete(event.id, full, "Withdrew Wendo");
+      await tap(event.id, start.id, withdrew.credential.id, 0);
+      await tap(event.id, finish.id, withdrew.credential.id, 3600, "Crash/Injury");
+
+      const results = await getMarathonResults(event.id);
+      expect(results.map((r) => r.athleteName)).toEqual(["Finisher Fatima"]);
+
+      const dnfs = await getDNFs(event.id);
+      expect(dnfs).toHaveLength(1);
+      expect(dnfs[0].athleteName).toBe("Withdrew Wendo");
+      expect(dnfs[0].reason).toBe("Crash/Injury");
+
+      const counts = await getMarathonRaceCounts(event.id);
       expect(counts.totalFinishers).toBe(1);
       expect(counts.dnfCount).toBe(1);
     }

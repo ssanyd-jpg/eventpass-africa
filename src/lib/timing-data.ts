@@ -53,6 +53,7 @@ async function getAthleteProgress(eventId: string): Promise<AthleteProgress[]> {
       isFinish: c.timingPoint.isFinish,
       distanceMeters: c.timingPoint.distanceMeters,
       gunTimeOffsetSeconds: c.gunTimeOffsetSeconds,
+      dnfReason: c.dnfReason,
     });
   }
 
@@ -67,6 +68,7 @@ async function getAthleteProgress(eventId: string): Promise<AthleteProgress[]> {
 export interface TimingDashboardData {
   eventId: string;
   eventTitle: string;
+  eventType: string;
   currency: string;
   gunStartAt: string | null;
   timingPoints: { id: string; name: string; sequenceOrder: number; isStart: boolean; isFinish: boolean }[];
@@ -81,7 +83,7 @@ export interface TimingDashboardData {
 export async function getTimingDashboardData(eventId: string): Promise<TimingDashboardData | null> {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, currency: true, startsAt: true, endsAt: true, gunStartAt: true },
+    select: { id: true, title: true, eventType: true, currency: true, startsAt: true, endsAt: true, gunStartAt: true },
   });
   if (!event) return null;
 
@@ -106,6 +108,7 @@ export async function getTimingDashboardData(eventId: string): Promise<TimingDas
   return {
     eventId: event.id,
     eventTitle: event.title,
+    eventType: event.eventType,
     currency: event.currency,
     gunStartAt: event.gunStartAt ? event.gunStartAt.toISOString() : null,
     timingPoints,
@@ -120,6 +123,7 @@ export async function getTimingDashboardData(eventId: string): Promise<TimingDas
 
 export interface LeaderboardPageData {
   eventTitle: string;
+  eventType: string;
   ticketTypes: { id: string; name: string }[];
   finishers: ReturnType<typeof buildLeaderboard>["finishers"];
   inProgress: ReturnType<typeof buildLeaderboard>["inProgress"];
@@ -130,7 +134,7 @@ export interface LeaderboardPageData {
 // exposes anything beyond what a printed race-day results board already
 // would (name, bib, time, pace).
 export async function getLeaderboardData(slug: string, ticketTypeId?: string): Promise<LeaderboardPageData | null> {
-  const event = await prisma.event.findUnique({ where: { slug }, select: { id: true, title: true } });
+  const event = await prisma.event.findUnique({ where: { slug }, select: { id: true, title: true, eventType: true } });
   if (!event) return null;
 
   const ticketTypes = await prisma.ticketType.findMany({
@@ -144,6 +148,7 @@ export async function getLeaderboardData(slug: string, ticketTypeId?: string): P
 
   return {
     eventTitle: event.title,
+    eventType: event.eventType,
     ticketTypes,
     finishers,
     inProgress,

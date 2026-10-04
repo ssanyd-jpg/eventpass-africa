@@ -409,7 +409,7 @@ export default function ManageEventPage() {
       )}
 
       {hasFeature(event.eventType, "chipTiming") && (
-        <TimingSetupSection eventId={event.id} eventTitle={event.title} gunStartAt={event.gunStartAt} />
+        <TimingSetupSection eventId={event.id} eventTitle={event.title} eventType={event.eventType} gunStartAt={event.gunStartAt} />
       )}
 
       {hasFeature(event.eventType, "sessionCheckIn") && <ConferenceSessionsSection eventId={event.id} />}

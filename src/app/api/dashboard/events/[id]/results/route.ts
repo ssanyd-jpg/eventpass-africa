@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const event = await prisma.event.findUnique({
     where: { id: params.id },
-    select: { organizationId: true, title: true, venue: true, city: true, startsAt: true },
+    select: { organizationId: true, title: true, eventType: true, venue: true, city: true, startsAt: true },
   });
   if (!event || event.organizationId !== session.user.organizationId) {
     return NextResponse.json({ ok: false, reason: "NOT_FOUND" }, { status: 404 });
@@ -31,6 +31,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const pdfBytes = await buildMarathonResultsPdf({
     eventTitle: event.title,
+    eventType: event.eventType,
     venue: event.venue,
     city: event.city,
     startsAt: event.startsAt,

@@ -536,6 +536,11 @@ export const payloadSchemas = {
       nfcUid: z.string().min(1).optional(),
       ticketCode: z.string().min(1).max(40).optional(),
       recordedAt: z.string().min(1),
+      // Set only for a "Mark as DNF" tap at the finish timing point — see
+      // ChipTime.dnfReason's own schema comment for what this changes
+      // downstream (excluded from finish/leaderboard ranking, counted as a
+      // DNF with a reason instead).
+      dnfReason: z.string().min(1).max(40).optional(),
     })
     .superRefine((val, ctx) => {
       if (!val.nfcUid && !val.ticketCode) {
@@ -3938,6 +3943,7 @@ function shapeChipTime(c: any, extra: { athleteName: string; bib: string; ticket
     recordedAt: c.recordedAt.toISOString(),
     gunTimeOffsetSeconds: c.gunTimeOffsetSeconds,
     splitTimeSeconds: c.splitTimeSeconds,
+    dnfReason: c.dnfReason,
     syncedAt: c.syncedAt ? c.syncedAt.toISOString() : null,
     athleteName: extra.athleteName,
     bib: extra.bib,
@@ -4049,6 +4055,7 @@ export async function handleRecordChipTime(organizationId: string, payload: any)
       recordedAt,
       gunTimeOffsetSeconds,
       splitTimeSeconds,
+      dnfReason: payload.dnfReason ? String(payload.dnfReason) : null,
       syncedAt: new Date(),
     },
   });
