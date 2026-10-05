@@ -11,10 +11,22 @@ export function defaultOrganizationName(userName: string) {
 export async function createPersonalOrganization(
   tx: Prisma.TransactionClient,
   userId: string,
-  userName: string
+  userName: string,
+  options: {
+    // true for the "Buy tickets & attend events" signup path, false (the
+    // column default) for "Organise & manage events" — see
+    // Organization.isAttendeeOrg's own schema comment.
+    isAttendeeOrg?: boolean;
+    // Organiser signup collects a company/organisation name; attendee
+    // signup doesn't, so this falls back to defaultOrganizationName.
+    organizationName?: string;
+  } = {}
 ) {
   const organization = await tx.organization.create({
-    data: { name: defaultOrganizationName(userName) },
+    data: {
+      name: options.organizationName?.trim() || defaultOrganizationName(userName),
+      isAttendeeOrg: options.isAttendeeOrg ?? false,
+    },
   });
   await tx.organizationMembership.create({
     data: { userId, organizationId: organization.id, role: "OWNER" },

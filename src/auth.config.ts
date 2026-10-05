@@ -17,6 +17,7 @@ export const authConfig: NextAuthConfig = {
           organizationId?: string;
           organizationRole?: string;
           organizationName?: string;
+          isAttendeeOrg?: boolean;
           sessionId?: string;
           // VENDOR sessions only (see the vendor-magic-link provider in
           // auth.ts) — deliberately absent for every other session type,
@@ -33,6 +34,7 @@ export const authConfig: NextAuthConfig = {
         token.organizationId = u.organizationId;
         token.organizationRole = u.organizationRole;
         token.organizationName = u.organizationName;
+        token.isAttendeeOrg = u.isAttendeeOrg ?? false;
         token.sessionId = u.sessionId;
         token.vendorId = u.vendorId;
         token.eventId = u.eventId;
@@ -50,6 +52,7 @@ export const authConfig: NextAuthConfig = {
         session.user.organizationId = token.organizationId as string;
         session.user.organizationRole = token.organizationRole as string;
         session.user.organizationName = token.organizationName as string;
+        session.user.isAttendeeOrg = (token.isAttendeeOrg as boolean) ?? false;
         session.user.vendorId = token.vendorId as string | undefined;
         session.user.eventId = token.eventId as string | undefined;
         session.user.sponsorId = token.sponsorId as string | undefined;

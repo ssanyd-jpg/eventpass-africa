@@ -43,10 +43,12 @@ function generateCode() {
 // Every user needs exactly one Organization (see the model comment in
 // schema.prisma) — the seed's two demo organizers each get a personal one,
 // upserted by userId so re-running the seed doesn't create duplicates.
-async function ensureOrganization(user: { id: string; name: string }) {
+async function ensureOrganization(user: { id: string; name: string }, isAttendeeOrg = false) {
   const existing = await prisma.organizationMembership.findUnique({ where: { userId: user.id } });
   if (existing) return existing.organizationId;
-  const organization = await prisma.organization.create({ data: { name: `${user.name}'s Organization` } });
+  const organization = await prisma.organization.create({
+    data: { name: `${user.name}'s Organization`, isAttendeeOrg },
+  });
   await prisma.organizationMembership.create({
     data: { userId: user.id, organizationId: organization.id, role: "OWNER" },
   });
@@ -202,7 +204,7 @@ async function main() {
       passwordHash: demoPassword,
     },
   });
-  await ensureOrganization(fan);
+  await ensureOrganization(fan, true);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@chaap.dev" },

@@ -8,6 +8,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { slugify } from "@/lib/format";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { FormSection } from "@/components/FormSection";
+import WelcomeBanner from "@/components/WelcomeBanner";
 
 interface DraftTicketType {
   key: string;
@@ -201,6 +202,8 @@ export default function NewEventPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 pb-20 pt-8 sm:px-6">
+      <WelcomeBanner expected="organiser" />
+
       <h1 className="mb-1 text-2xl font-bold">Create an event</h1>
       <p className="mb-6 text-sm text-muted">
         Works offline — your event saves to this device immediately and syncs

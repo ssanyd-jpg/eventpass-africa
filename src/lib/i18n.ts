@@ -50,7 +50,14 @@ export const dictionaries = {
     "home.fromPrice": "From",
 
     "login.welcomeBack": "Welcome back",
-    "login.subtitle": "Log in to buy tickets or manage your events.",
+    // Default case — no callbackUrl, or one that isn't recognized below.
+    "login.subtitle": "Welcome back to Chaap",
+    // callbackUrl starts with /events/ — sent here from EventDetailClient's
+    // "log in to pay" step.
+    "login.subtitleTicketPurchase": "Log in to complete your ticket purchase",
+    // callbackUrl starts with /dashboard — every organiser-only page
+    // redirects here the same way when signed out.
+    "login.subtitleOrganiserDashboard": "Log in to your organiser dashboard",
     "login.email": "Email",
     "login.password": "Password",
     "login.logIn": "Log in",
@@ -61,6 +68,15 @@ export const dictionaries = {
     "login.signUp": "Sign up",
     "login.offlineNotice":
       "You're offline. Logging in for the first time needs a connection — once you've logged in on this device before, you'll stay signed in offline automatically.",
+
+    "register.choosePathHeading": "I want to…",
+    "register.pathAttendee": "🎟 Buy tickets & attend events",
+    "register.pathOrganiser": "🎪 Organise & manage events",
+    "register.changePath": "Change",
+    "register.organisationNameLabel": "Organisation name",
+    "register.organisationNamePlaceholder": "e.g. Nova Events Co.",
+    "register.welcomeAttendee": "Welcome to Chaap! Browse events and buy tickets.",
+    "register.welcomeOrganiser": "Welcome to Chaap! Start by creating your first event.",
 
     "scan.title": "Gate check-in",
     "scan.offlinePrefix": "Offline — ",
@@ -515,7 +531,9 @@ export const dictionaries = {
     "home.fromPrice": "Kuanzia",
 
     "login.welcomeBack": "Karibu tena",
-    "login.subtitle": "Ingia ili kununua tiketi au kusimamia matukio yako.",
+    "login.subtitle": "Karibu tena Chaap",
+    "login.subtitleTicketPurchase": "Ingia ili kukamilisha ununuzi wa tiketi yako",
+    "login.subtitleOrganiserDashboard": "Ingia kwenye dashibodi yako ya mratibu",
     "login.email": "Barua pepe",
     "login.password": "Nenosiri",
     "login.logIn": "Ingia",
@@ -526,6 +544,15 @@ export const dictionaries = {
     "login.signUp": "Jisajili",
     "login.offlineNotice":
       "Huna mtandao. Kuingia kwa mara ya kwanza kunahitaji mtandao — ukishaingia kwenye kifaa hiki mara moja, utabaki umeingia hata bila mtandao.",
+
+    "register.choosePathHeading": "Nataka…",
+    "register.pathAttendee": "🎟 Kununua tiketi na kuhudhuria matukio",
+    "register.pathOrganiser": "🎪 Kuratibu na kusimamia matukio",
+    "register.changePath": "Badilisha",
+    "register.organisationNameLabel": "Jina la shirika",
+    "register.organisationNamePlaceholder": "mfano Nova Events Co.",
+    "register.welcomeAttendee": "Karibu Chaap! Vinjari matukio na ununue tiketi.",
+    "register.welcomeOrganiser": "Karibu Chaap! Anza kwa kuunda tukio lako la kwanza.",
 
     "scan.title": "Uthibitisho wa Mlangoni",
     "scan.offlinePrefix": "Hakuna mtandao — ",

@@ -5,11 +5,25 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { createPersonalOrganization } from "@/lib/organizations";
 
-const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").max(80),
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
+const registerSchema = z
+  .object({
+    name: z.string().min(2, "Name must be at least 2 characters").max(80),
+    email: z.string().email("Enter a valid email"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    // Omitted/absent = ATTENDEE, matching the page's own default when a
+    // caller skips the path-choice step entirely (e.g. an older client).
+    accountType: z.enum(["ATTENDEE", "ORGANISER"]).optional().default("ATTENDEE"),
+    organizationName: z.string().min(1).max(120).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.accountType === "ORGANISER" && !val.organizationName?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["organizationName"],
+        message: "Organisation name is required.",
+      });
+    }
+  });
 
 export async function POST(request: Request) {
   const { allowed } = await checkRateLimit(`register:${clientIp(request)}`, {
@@ -31,7 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const { name, email, password } = parsed.data;
+  const { name, email, password, accountType, organizationName } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -47,7 +61,10 @@ export async function POST(request: Request) {
       data: { name, email, passwordHash },
       select: { id: true, name: true, email: true },
     });
-    await createPersonalOrganization(tx, created.id, created.name);
+    await createPersonalOrganization(tx, created.id, created.name, {
+      isAttendeeOrg: accountType === "ATTENDEE",
+      organizationName: accountType === "ORGANISER" ? organizationName : undefined,
+    });
     return created;
   });
 

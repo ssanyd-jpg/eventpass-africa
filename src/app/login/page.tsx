@@ -25,6 +25,17 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // callbackUrl is already how every protected page in this app sends a
+  // signed-out visitor here (see the many `/login?callbackUrl=...` redirects
+  // across src/app) — far more reliable than document.referrer for a client-
+  // rendered SPA, where an in-app route change never sets a real referrer.
+  const callbackUrl = params.get("callbackUrl") ?? "";
+  const subtitleKey = callbackUrl.startsWith("/events/")
+    ? "login.subtitleTicketPurchase"
+    : callbackUrl.startsWith("/dashboard")
+      ? "login.subtitleOrganiserDashboard"
+      : "login.subtitle";
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -48,7 +59,7 @@ function LoginForm() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/chaap-icon.webp" alt="" className="mb-4 h-12 w-12 rounded-xl" />
       <h1 className="mb-1 text-2xl font-bold">{t("login.welcomeBack")}</h1>
-      <p className="mb-6 text-sm text-muted">{t("login.subtitle")}</p>
+      <p className="mb-6 text-sm text-muted">{t(subtitleKey)}</p>
 
       {!online && (
         <p className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">

@@ -11,6 +11,10 @@ declare module "next-auth" {
       organizationId: string;
       organizationRole: string;
       organizationName: string;
+      // Set at registration — see Organization.isAttendeeOrg's schema
+      // comment and Navbar.tsx's isOrganiser check, which treats this as
+      // decisive regardless of the org's event count.
+      isAttendeeOrg: boolean;
       // VENDOR sessions only (see the vendor-magic-link provider in auth.ts
       // and src/lib/vendor-auth.ts) — undefined for every staff/buyer
       // session, and never set to anything else for a vendor session, so a

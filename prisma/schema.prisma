@@ -82,6 +82,15 @@ model Organization {
   // Hex string (e.g. "#FF6A00"), validated at the settings form, not here.
   // Same "stored but not yet rendered" status as logoUrl above.
   brandColor  String?
+  // Set at registration based on which path the user picked ("Buy tickets
+  // & attend events" vs "Organise & manage events" — see
+  // src/app/register/page.tsx and src/lib/organizations.ts's
+  // createPersonalOrganization). Every user still gets exactly one personal
+  // org either way (see that file's own comment), but this makes "is this
+  // actually an attendee, not an organiser" an explicit, permanent fact
+  // rather than something inferred solely from "has this org ever created
+  // an event" (see isOrganiser in Navbar.tsx, which checks both).
+  isAttendeeOrg Boolean @default(false)
 
   membership          OrganizationMembership[]
   invites             OrganizationInvite[]

@@ -164,25 +164,31 @@ export default function Navbar() {
   // they register (see createPersonalOrganization in src/lib/organizations.ts
   // — "every user belongs to exactly one organization, always") — so
   // organizationRole alone can never distinguish a plain attendee from a
-  // real organiser; both read as "OWNER". Whether that org has ever actually
-  // run an event is the only signal that does, hence this live count against
-  // the already-synced local events this device has for the org (same
-  // Dexie query dashboard/page.tsx already runs). While it's still resolving
-  // (undefined), default to "no events yet" — briefly under-showing the
-  // organiser nav for a real organiser self-corrects in a moment, whereas
-  // briefly over-showing it to a true attendee reintroduces the exact
-  // confusion this is meant to fix.
+  // real organiser; both read as "OWNER". isAttendeeOrg is the explicit,
+  // permanent signal set at registration (see the Organization model's own
+  // comment): a user who picked "Buy tickets & attend events" is never
+  // treated as an organiser, full stop, no matter how many events their org
+  // somehow accumulates later. For an isAttendeeOrg:false org (the
+  // organiser signup path, or a pre-existing/seeded account), whether it's
+  // ever actually run an event is the remaining signal — hence this live
+  // count against the already-synced local events this device has for the
+  // org (same Dexie query dashboard/page.tsx already runs). While it's
+  // still resolving (undefined), default to "no events yet" — briefly
+  // under-showing the organiser nav for a real organiser self-corrects in a
+  // moment, whereas briefly over-showing it to a true attendee reintroduces
+  // the exact confusion this is meant to fix.
   const eventCount = useLiveQuery(
     () => (user ? db.events.where("organizationId").equals(user.organizationId).count() : Promise.resolve(0)),
     [user?.organizationId]
   );
   const hasEvents = (eventCount ?? 0) > 0;
-  // A real organiser: not gate crew, and their org has at least one event.
-  // Everyone else logged in (true attendees, and a brand-new organiser who
-  // hasn't created their first event yet) gets the attendee-level nav below,
-  // plus — only for that brand-new-organiser case — a plain Dashboard link
-  // so they're never stranded without a way to create that first event.
-  const isOrganiser = !isGateCrew && hasEvents;
+  // A real organiser: not gate crew, not flagged as an attendee org, and
+  // their org has at least one event. Everyone else logged in (true
+  // attendees, and a brand-new organiser-path signup who hasn't created
+  // their first event yet) gets the attendee-level nav below, plus — only
+  // for that brand-new-organiser case — a plain Dashboard link so they're
+  // never stranded without a way to create that first event.
+  const isOrganiser = !isGateCrew && !user?.isAttendeeOrg && hasEvents;
 
   // Close the mobile "Account" menu whenever the route changes (a NavLink
   // click inside it navigates before this effect runs, so this is the

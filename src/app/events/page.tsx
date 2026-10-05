@@ -3,6 +3,7 @@ import Link from "next/link";
 import PublicEventCard from "@/components/PublicEventCard";
 import SpotlightEventCard from "@/components/SpotlightEventCard";
 import FeaturedEventCard from "@/components/FeaturedEventCard";
+import WelcomeBanner from "@/components/WelcomeBanner";
 import EventTypeSelect from "./EventTypeSelect";
 import { getPublicEvents, getPublicEventCities } from "@/lib/marketplace";
 import { getActiveFeaturedListings } from "@/lib/chaap-ads";
@@ -68,6 +69,8 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6">
+      <WelcomeBanner expected="attendee" />
+
       <div className="mb-8">
         <h1 className="text-2xl font-bold sm:text-3xl">Browse events</h1>
         <p className="mt-2 text-muted">

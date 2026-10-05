@@ -46,7 +46,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const membership = await prisma.organizationMembership.findUnique({
           where: { userId: user.id },
-          include: { organization: { select: { id: true, name: true } } },
+          include: { organization: { select: { id: true, name: true, isAttendeeOrg: true } } },
         });
 
         const label = deriveSessionLabel(request.headers.get("user-agent"));
@@ -62,6 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           organizationId: membership?.organizationId,
           organizationRole: membership?.role,
           organizationName: membership?.organization.name,
+          isAttendeeOrg: membership?.organization.isAttendeeOrg,
           sessionId: userSession.id,
         };
       },
@@ -143,12 +144,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (params.trigger === "update" && token.id) {
         const membership = await prisma.organizationMembership.findUnique({
           where: { userId: token.id as string },
-          include: { organization: { select: { id: true, name: true } } },
+          include: { organization: { select: { id: true, name: true, isAttendeeOrg: true } } },
         });
         if (membership) {
           token.organizationId = membership.organizationId;
           token.organizationRole = membership.role;
           token.organizationName = membership.organization.name;
+          token.isAttendeeOrg = membership.organization.isAttendeeOrg;
         }
       }
 

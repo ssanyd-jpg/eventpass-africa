@@ -14,6 +14,7 @@ interface CachedProfile {
   organizationId: string;
   organizationRole: string;
   organizationName: string;
+  isAttendeeOrg: boolean;
 }
 
 /**
@@ -49,6 +50,7 @@ export function useAppSession() {
         organizationId: data.user.organizationId,
         organizationRole: data.user.organizationRole,
         organizationName: data.user.organizationName,
+        isAttendeeOrg: data.user.isAttendeeOrg ?? false,
       };
       localStorage.setItem(CACHE_KEY, JSON.stringify(profile));
       setCached(profile);
@@ -69,6 +71,7 @@ export function useAppSession() {
         organizationId: data.user.organizationId,
         organizationRole: data.user.organizationRole,
         organizationName: data.user.organizationName,
+        isAttendeeOrg: data.user.isAttendeeOrg ?? false,
       },
       status: "authenticated" as const,
       offline: false,
