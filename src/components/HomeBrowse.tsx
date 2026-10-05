@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import EventCard from "@/components/EventCard";
 import { useOnlineStatus } from "@/lib/sync-engine";
 import { useTranslation } from "@/lib/use-translation";
+import { useAppSession } from "@/lib/use-app-session";
 
 const CATEGORIES = ["All", "Music", "Sports", "Comedy", "Conference", "Festival"];
 
@@ -21,9 +22,9 @@ const CATEGORIES = ["All", "Music", "Sports", "Comedy", "Conference", "Festival"
 export default function HomeBrowse() {
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
-  const [vendorsOnly, setVendorsOnly] = useState(false);
   const online = useOnlineStatus();
   const { t } = useTranslation();
+  const { user } = useAppSession();
 
   const events = useLiveQuery(() => db.events.orderBy("startsAt").toArray(), [], undefined);
 
@@ -49,11 +50,15 @@ export default function HomeBrowse() {
         e.title.toLowerCase().includes(q) ||
         e.city.toLowerCase().includes(q) ||
         e.venue.toLowerCase().includes(q);
-      const matchesVendors =
-        !vendorsOnly || (e.vendorApplicationsOpen && new Date(e.startsAt) > new Date());
-      return matchesCategory && matchesQuery && matchesVendors;
+      return matchesCategory && matchesQuery;
     });
-  }, [events, category, query, vendorsOnly]);
+  }, [events, category, query]);
+
+  // Dexie-backed, so there's nothing useful to show a signed-out visitor —
+  // it reflects events already synced to *this* buyer's own device
+  // (purchases, bookmarks), not a public catalog. Returned after every hook
+  // above has already run, so hook call order stays identical every render.
+  if (!user) return null;
 
   return (
     <div>
@@ -92,16 +97,6 @@ export default function HomeBrowse() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setVendorsOnly((v) => !v)}
-            className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-              vendorsOnly
-                ? "border-accent bg-accent text-background"
-                : "border-border bg-surface2 text-muted hover:text-foreground"
-            }`}
-          >
-            Vendors welcome
-          </button>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}

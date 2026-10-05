@@ -91,6 +91,19 @@ function shapePublicEvent(event: {
   return { ...rest, organizerName: organization.name };
 }
 
+// The marketplace's "upcoming" cutoff for events with no explicit dateFrom —
+// the start of today, not this exact instant. Without this, an event whose
+// configured start time has ticked a few minutes into the past (a same-day
+// event once doors are open, or an organiser's own just-created test event)
+// silently disappears from search/browse/featured, which reads as "my event
+// doesn't exist" rather than "it already started." Only events from a prior
+// calendar day are genuinely treated as past.
+function startOfToday(now: Date): Date {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export interface PublicEventsFilters {
   page?: number;
   eventType?: string;
@@ -119,7 +132,7 @@ export async function getPublicEvents(
   const page = Math.max(1, Math.floor(filters.page ?? 1));
 
   const startsAt: { gte: Date; lt?: Date } = {
-    gte: filters.dateFrom && new Date(filters.dateFrom) > now ? new Date(filters.dateFrom) : now,
+    gte: filters.dateFrom && new Date(filters.dateFrom) > now ? new Date(filters.dateFrom) : startOfToday(now),
   };
   if (filters.dateTo) {
     const end = new Date(filters.dateTo);
@@ -167,7 +180,7 @@ export async function getPublicEvents(
 // city filter's <select> without hardcoding a city list.
 export async function getPublicEventCities(now: Date = new Date()): Promise<string[]> {
   const rows = await prisma.event.findMany({
-    where: { status: "LIVE", startsAt: { gte: now } },
+    where: { status: "LIVE", startsAt: { gte: startOfToday(now) } },
     select: { city: true },
     distinct: ["city"],
     orderBy: { city: "asc" },
@@ -186,7 +199,7 @@ export interface FeaturedEvent extends PublicEventListItem {
 // LIVE events are ever candidates.
 export async function getFeaturedEvents(limit = 3, now: Date = new Date()): Promise<FeaturedEvent[]> {
   const events = await prisma.event.findMany({
-    where: { status: "LIVE", startsAt: { gte: now } },
+    where: { status: "LIVE", startsAt: { gte: startOfToday(now) } },
     select: publicEventSelect,
   });
 

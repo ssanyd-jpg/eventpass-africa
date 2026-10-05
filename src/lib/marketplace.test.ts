@@ -145,6 +145,37 @@ describe("getPublicEvents", () => {
     expect(ids).not.toContain(other.id);
   });
 
+  // Reported bug: an organiser creates an event (often for immediate
+  // same-day testing) and searches for it on /events moments later, only to
+  // get "no events found" because its configured start time had already
+  // ticked into the past by the time the query ran. "Upcoming" should mean
+  // "hasn't fully passed its day," not "hasn't passed this exact second" —
+  // anchored at local noon so a -1/-2 hour offset never ambiguously crosses
+  // a day boundary depending on real wall-clock time.
+  it("still finds a same-day LIVE event by search after its start time has passed", async () => {
+    const { organizationId } = await newOrganizer();
+    const anchor = nextAnchor();
+    anchor.setHours(12, 0, 0, 0);
+    const justStarted = await createEventAt(organizationId, anchor, -1, { title: "Founder Test Event" });
+
+    const result = await getPublicEvents({ search: "Founder Test" }, anchor);
+    expect(result.events.map((e) => e.id)).toContain(justStarted.id);
+  });
+
+  it("includes a LIVE event scheduled earlier today, but still excludes a genuinely past (prior day) event", async () => {
+    const { organizationId } = await newOrganizer();
+    const anchor = nextAnchor();
+    anchor.setHours(12, 0, 0, 0);
+    const startedEarlierToday = await createEventAt(organizationId, anchor, -2, { title: "Started Earlier Today" });
+    const yesterday = await createEventAt(organizationId, anchor, -26, { title: "Yesterday Event" });
+
+    const result = await getPublicEvents({}, anchor);
+    const ids = result.events.map((e) => e.id);
+
+    expect(ids).toContain(startedEarlierToday.id);
+    expect(ids).not.toContain(yesterday.id);
+  });
+
   it("filters by event type and by city", async () => {
     const { organizationId } = await newOrganizer();
     const anchor = nextAnchor();

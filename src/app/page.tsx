@@ -3,6 +3,8 @@ import { getFeaturedEvents, getPlatformStats } from "@/lib/marketplace";
 import { formatCents } from "@/lib/format";
 import PublicEventCard from "@/components/PublicEventCard";
 import HomeBrowse from "@/components/HomeBrowse";
+import HomeOrganiserBanner from "@/components/HomeOrganiserBanner";
+import ForOrganisersLink from "@/components/ForOrganisersLink";
 
 function TicketIcon() {
   return (
@@ -124,6 +126,8 @@ export default async function HomePage() {
 
   return (
     <div>
+      <HomeOrganiserBanner />
+
       {/* Hero — capped so the stats card below peeks into view on first
           load, hinting that there's more to scroll to. This deliberately
           isn't a flat "85vh" anymore: a height expressed as a pure viewport
@@ -169,9 +173,9 @@ export default async function HomePage() {
             <Link href="/events" className="btn-primary w-full sm:w-auto">
               Browse events
             </Link>
-            <Link href="/login" className="btn-secondary w-full sm:w-auto">
+            <ForOrganisersLink className="btn-secondary w-full sm:w-auto">
               For organisers
-            </Link>
+            </ForOrganisersLink>
           </div>
         </div>
       </section>
@@ -263,9 +267,9 @@ export default async function HomePage() {
               </div>
             ))}
           </div>
-          <Link href="/login" className="btn-primary mt-7 inline-flex">
+          <ForOrganisersLink className="btn-primary mt-7 inline-flex">
             For organisers
-          </Link>
+          </ForOrganisersLink>
         </section>
 
         <HomeBrowse />
@@ -289,9 +293,9 @@ export default async function HomePage() {
                 <Link href="/events" className="text-muted transition hover:text-foreground">
                   Browse events
                 </Link>
-                <Link href="/login" className="text-muted transition hover:text-foreground">
+                <ForOrganisersLink className="text-muted transition hover:text-foreground">
                   For organisers
-                </Link>
+                </ForOrganisersLink>
               </div>
             </div>
             <div>
