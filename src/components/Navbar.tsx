@@ -182,13 +182,17 @@ export default function Navbar() {
     [user?.organizationId]
   );
   const hasEvents = (eventCount ?? 0) > 0;
-  // A real organiser: not gate crew, not flagged as an attendee org, and
-  // their org has at least one event. Everyone else logged in (true
-  // attendees, and a brand-new organiser-path signup who hasn't created
-  // their first event yet) gets the attendee-level nav below, plus — only
-  // for that brand-new-organiser case — a plain Dashboard link so they're
-  // never stranded without a way to create that first event.
-  const isOrganiser = !isGateCrew && !user?.isAttendeeOrg && hasEvents;
+  // An organiser-flagged account: not gate crew, not flagged as an attendee
+  // org — regardless of whether they've created an event yet. This (not
+  // isOrganiser below) is what must gate every "Dashboard" appearance in
+  // this nav; a true attendee (isAttendeeOrg: true) must never match it.
+  const isOrganiserAccount = !isGateCrew && !user?.isAttendeeOrg;
+  // A real organiser: an organiser-flagged account whose org has at least
+  // one event. A brand-new organiser-path signup who hasn't created their
+  // first event yet is isOrganiserAccount but not yet isOrganiser — they
+  // still get a plain Dashboard link below (never stranded without a way to
+  // create that first event), just not the full dropdown.
+  const isOrganiser = isOrganiserAccount && hasEvents;
 
   // Close the mobile "Account" menu whenever the route changes (a NavLink
   // click inside it navigates before this effect runs, so this is the
@@ -272,12 +276,13 @@ export default function Navbar() {
                     </>
                   )}
                 </DesktopDropdown>
-              ) : (
-                // Not yet a real organiser (no events of their own) — still
-                // a plain Dashboard link, never a dead end on the day they
-                // decide to create their first event.
+              ) : isOrganiserAccount ? (
+                // An organiser-flagged account with no events of their own
+                // yet — still a plain Dashboard link, never a dead end on
+                // the day they decide to create their first event. A true
+                // attendee (isAttendeeOrg: true) never matches this branch.
                 <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>
-              )}
+              ) : null}
 
               <NavLink href="/account/tickets" chrome>{t("nav.myTickets")}</NavLink>
 
@@ -357,7 +362,7 @@ export default function Navbar() {
           </>
         )}
 
-        {user && !isGateCrew && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
+        {user && isOrganiserAccount && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
         {user && !isGateCrew && (
           <div ref={menuRef} className="relative ml-auto">
             <button
