@@ -13,7 +13,7 @@ vi.mock("resend", () => ({
   }),
 }));
 
-import { sendEmail } from "@/lib/email";
+import { sendEmail, buildOrderConfirmationHtml } from "@/lib/email";
 
 describe("sendEmail", () => {
   const originalKey = process.env.RESEND_API_KEY;
@@ -76,5 +76,23 @@ describe("sendEmail", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toBe("invalid domain");
+  });
+});
+
+describe("buildOrderConfirmationHtml", () => {
+  it("embeds a QR code image for every ticket code, including on a free (TZS 0) order", async () => {
+    const html = await buildOrderConfirmationHtml({
+      buyerName: "Asha Buyer",
+      eventTitle: "Community Fun Run",
+      totalFormatted: "TZS 0",
+      ticketCodes: ["FREE-00001", "FREE-00002"],
+    });
+
+    // One data-URI QR <img> per ticket code — this is the "QR code" the
+    // bug report expects in every order confirmation, free orders included.
+    expect(html.match(/<img src="data:image\/png;base64,/g)).toHaveLength(2);
+    expect(html).toContain("FREE-00001");
+    expect(html).toContain("FREE-00002");
+    expect(html).toContain("TZS 0");
   });
 });

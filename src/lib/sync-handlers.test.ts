@@ -38,6 +38,7 @@ import {
 } from "@/lib/sync-handlers";
 import { isOpAllowedForRole } from "@/lib/access-control";
 import { summarizeWalletActivity, spendByVendor } from "@/lib/analytics";
+import { POST as registerPOST } from "@/app/api/register/route";
 
 // No real Airpay credentials exist in the test environment, so
 // getActivePaymentProvider() always resolves to simulatedProvider (instant
@@ -723,6 +724,63 @@ describe("handleSellTickets — free tickets", () => {
     expect(result.ok).toBe(true);
     expect(result.order.status).toBe("PAID");
     expect(mockInitiateCharge).not.toHaveBeenCalled();
+  });
+
+  // Bug report: free ticket orders completed on screen but the buyer never
+  // got a confirmation email. The "sends a PAID order instantly" test above
+  // already pins notificationLog.count === 1 for that case; these two cover
+  // the other two things the report asked to confirm — an offline/cash
+  // ticket (paymentMethod OFFLINE_DEFERRED, no AirPay involved at all) gets
+  // the same confirmation, and the recipient resolves to the real email a
+  // buyer registered with through the new attendee/organiser signup split.
+  it("also sends the order confirmation for an offline/cash (OFFLINE_DEFERRED) ticket", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 0, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "cash-ticket-1",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["CASH-00001"] }],
+      paymentMethod: "OFFLINE_DEFERRED",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    expect(result.order.paymentMethod).toBe("OFFLINE_DEFERRED");
+    expect(mockInitiateCharge).not.toHaveBeenCalled();
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("resolves the confirmation recipient to the exact email a buyer registered with via the attendee signup flow", async () => {
+    const { organizationId } = await newOrganizer();
+    const event = await createTestEvent(organizationId, [{ priceCents: 0, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const email = `attendee-free-ticket-${Date.now()}@example.com`;
+    const registerRes = await registerPOST(
+      new Request("http://localhost/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": `10.0.2.${Date.now() % 250}` },
+        body: JSON.stringify({ name: "Asha Buyer", email, password: "password123", accountType: "ATTENDEE" }),
+      })
+    );
+    expect(registerRes.status).toBe(201);
+    const { user: registeredUser } = await registerRes.json();
+
+    const result = await handleSellTickets(registeredUser.id, {
+      clientId: "free-ticket-attendee-signup",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["FREE-ATTENDEE-0001"] }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    const log = await prisma.notificationLog.findFirst({
+      where: { type: "ORDER_CONFIRMATION", recipient: email },
+    });
+    expect(log).not.toBeNull();
   });
 });
 
