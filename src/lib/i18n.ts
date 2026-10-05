@@ -343,9 +343,11 @@ export const dictionaries = {
     "event.phonePlaceholder": "e.g. 0712345678",
     "event.onlinePaymentHint": "You will receive an M-Pesa prompt on your phone within 30 seconds. Enter your PIN to confirm — your tickets are held until payment is confirmed.",
     "event.offlinePaymentHint": "Purchases complete instantly, even offline, and sync automatically when connected — the organizer will reconcile payment with you directly.",
+    "event.freeTicketHint": "This ticket is free — no payment needed. Confirm below to get it instantly.",
     "event.loginRequiredHint": "You'll need to log in to complete this purchase.",
     "event.placing": "Placing…",
     "event.payAmount": "Pay {amount}",
+    "event.getFreeTicket": "Get free ticket",
     "event.loginToPay": "Log in to pay",
     "event.notFoundHint": "It may not have synced here yet. Connect once and try again.",
 
@@ -813,9 +815,11 @@ export const dictionaries = {
     "event.phonePlaceholder": "mfano 0712345678",
     "event.onlinePaymentHint": "Utapokea ujumbe wa M-Pesa kwenye simu yako ndani ya sekunde 30. Weka PIN yako kuthibitisha — tiketi zako zitahifadhiwa mpaka malipo yathibitishwe.",
     "event.offlinePaymentHint": "Ununuzi unakamilika papo hapo, hata bila mtandao, na unasawazishwa kiotomatiki mtandao unaporudi — mratibu atawasiliana nawe moja kwa moja kuhusu malipo.",
+    "event.freeTicketHint": "Tiketi hii ni bure — hauhitaji kulipa. Thibitisha hapa chini ili uipate papo hapo.",
     "event.loginRequiredHint": "Utahitaji kuingia ili kukamilisha ununuzi huu.",
     "event.placing": "Inaweka oda…",
     "event.payAmount": "Lipa {amount}",
+    "event.getFreeTicket": "Pata tiketi bure",
     "event.loginToPay": "Ingia ili kulipa",
     "event.notFoundHint": "Huenda halijasawazishwa hapa bado. Unganisha mtandao na ujaribu tena.",
 

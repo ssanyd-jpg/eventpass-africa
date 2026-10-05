@@ -867,73 +867,80 @@ export async function handleSellTickets(userId: string, payload: any) {
       if (tt) precheckTotalCents += currentPriceCents(tt, tt.pricingTiers) * item.quantity;
     }
 
-    // Opportunistic capture — this checkout phone number is the only
-    // source SMS notifications have to reach this buyer at all (see
-    // src/lib/sms.ts and User.phone's own doc comment in schema.prisma).
-    // Persisted regardless of how the charge below resolves, so even a
-    // FAILED attempt's retry SMS later in this same function has a number
-    // to send to.
-    const normalizedPhone = normalizeTanzaniaPhone(String(payload.phoneNumber));
-    await prisma.user.update({ where: { id: userId }, data: { phone: normalizedPhone } });
+    // Every selected ticket type is free (e.g. all priceCents 0) — nothing
+    // to charge, so skip AirPay entirely rather than initiating a
+    // zero-amount STK push (the provider isn't guaranteed to handle that
+    // sanely). charge stays null, same as the no-paymentMethod legacy path
+    // below, so the order falls straight through to instant PAID.
+    if (precheckTotalCents > 0) {
+      // Opportunistic capture — this checkout phone number is the only
+      // source SMS notifications have to reach this buyer at all (see
+      // src/lib/sms.ts and User.phone's own doc comment in schema.prisma).
+      // Persisted regardless of how the charge below resolves, so even a
+      // FAILED attempt's retry SMS later in this same function has a number
+      // to send to.
+      const normalizedPhone = normalizeTanzaniaPhone(String(payload.phoneNumber));
+      await prisma.user.update({ where: { id: userId }, data: { phone: normalizedPhone } });
 
-    const provider = getActivePaymentProvider();
-    charge = await provider.initiateCharge({
-      orderClientId: clientId,
-      amountCents: precheckTotalCents,
-      phoneNumber: String(payload.phoneNumber),
-      mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : undefined,
-      description: `Tickets — ${event.title}`,
-    });
-
-    if (charge.status === "FAILED") {
-      // No inventory was ever reserved — persist a terminal order anyway
-      // (rather than returning ok: false with nothing saved) so the
-      // buyer's optimistic local PENDING order has something real to
-      // reconcile to; see applySellTicketsResult in sync-engine.ts.
-      const failedOrder = await prisma.order.create({
-        data: {
-          clientId,
-          status: "PAYMENT_FAILED",
-          totalCents: precheckTotalCents,
-          currency: event.currency,
-          waiverText: event.waiverText ?? null,
-          waiverAcceptedAt: payload.waiverAccepted ? new Date() : null,
-          paymentMethod: "AIRPAY_ONLINE",
-          providerReference: charge.reference || null,
-          providerMessage: charge.message ?? null,
-          userId,
-          eventId: event.id,
-        },
-        include: fullOrderInclude,
+      const provider = getActivePaymentProvider();
+      charge = await provider.initiateCharge({
+        orderClientId: clientId,
+        amountCents: precheckTotalCents,
+        phoneNumber: String(payload.phoneNumber),
+        mobileNetwork: payload.mobileNetwork ? String(payload.mobileNetwork) : undefined,
+        description: `Tickets — ${event.title}`,
       });
 
-      const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
-      if (buyer) {
-        const retryUrl = `${process.env.NEXTAUTH_URL ?? ""}/events/${event.slug}`;
-        const declineReason = charge.message ? `: ${charge.message}` : ".";
-        await sendNotification({
-          type: "ORDER_PAYMENT_FAILED",
-          channel: "EMAIL",
-          recipient: buyer.email,
-          subject: `Payment failed for ${event.title}`,
-          body: `Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason} No tickets were issued and nothing was charged. Try again: ${retryUrl}`,
-          html: `<p>Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason}</p><p>No tickets were issued and nothing was charged.</p><p><a href="${retryUrl}">Try again</a></p>`,
+      if (charge.status === "FAILED") {
+        // No inventory was ever reserved — persist a terminal order anyway
+        // (rather than returning ok: false with nothing saved) so the
+        // buyer's optimistic local PENDING order has something real to
+        // reconcile to; see applySellTicketsResult in sync-engine.ts.
+        const failedOrder = await prisma.order.create({
+          data: {
+            clientId,
+            status: "PAYMENT_FAILED",
+            totalCents: precheckTotalCents,
+            currency: event.currency,
+            waiverText: event.waiverText ?? null,
+            waiverAcceptedAt: payload.waiverAccepted ? new Date() : null,
+            paymentMethod: "AIRPAY_ONLINE",
+            providerReference: charge.reference || null,
+            providerMessage: charge.message ?? null,
+            userId,
+            eventId: event.id,
+          },
+          include: fullOrderInclude,
         });
-        if (buyer.phone) {
+
+        const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
+        if (buyer) {
+          const retryUrl = `${process.env.NEXTAUTH_URL ?? ""}/events/${event.slug}`;
+          const declineReason = charge.message ? `: ${charge.message}` : ".";
           await sendNotification({
             type: "ORDER_PAYMENT_FAILED",
-            channel: "WHATSAPP",
-            recipient: buyer.phone,
-            subject: "Payment failed",
-            body: `❌ Payment failed for ${event.title}. Tap here to try again: ${retryUrl}`,
+            channel: "EMAIL",
+            recipient: buyer.email,
+            subject: `Payment failed for ${event.title}`,
+            body: `Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason} No tickets were issued and nothing was charged. Try again: ${retryUrl}`,
+            html: `<p>Hi ${buyer.name}, your mobile money payment for ${event.title} could not be completed${declineReason}</p><p>No tickets were issued and nothing was charged.</p><p><a href="${retryUrl}">Try again</a></p>`,
           });
+          if (buyer.phone) {
+            await sendNotification({
+              type: "ORDER_PAYMENT_FAILED",
+              channel: "WHATSAPP",
+              recipient: buyer.phone,
+              subject: "Payment failed",
+              body: `❌ Payment failed for ${event.title}. Tap here to try again: ${retryUrl}`,
+            });
+          }
         }
+        return { ok: true, order: shapeOrder(failedOrder), oversold: false, ticketTypeUpdates: [] };
       }
-      return { ok: true, order: shapeOrder(failedOrder), oversold: false, ticketTypeUpdates: [] };
+      // charge.status is PENDING (Airpay's real provider always returns this)
+      // or PAID (the simulator, or a rare synchronous-approve) — fall through
+      // into the normal inventory-reserving transaction either way.
     }
-    // charge.status is PENDING (Airpay's real provider always returns this)
-    // or PAID (the simulator, or a rare synchronous-approve) — fall through
-    // into the normal inventory-reserving transaction either way.
   }
 
   let oversold = false;

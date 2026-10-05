@@ -173,6 +173,12 @@ function EventDetailContent() {
 
   const totalCents = selection.reduce((sum, s) => sum + currentTierPriceCents(s.tt) * s.qty, 0);
   const totalQty = selection.reduce((sum, s) => sum + s.qty, 0);
+  // No mobile money to collect when every selected ticket type is free —
+  // skip the payment step's network/phone fields and AirPay entirely, and
+  // go straight to a PAID order (see placeOrder below and handleSellTickets
+  // in sync-handlers.ts, which treats an omitted paymentMethod the same
+  // way: no charge attempt, instant PAID).
+  const isFreeOrder = totalCents === 0;
 
   // Padded/truncated to the current totalQty for rendering and validation —
   // memberNames itself only grows via setMemberName, so a quantity change
@@ -261,8 +267,9 @@ function EventDetailContent() {
       // Online buyers hold in PENDING until the Airpay STK push confirms
       // (see handleSellTickets/handleCheckOrderPaymentStatus); offline
       // buyers keep the original instant-PAID flow, deferred to organizer
-      // reconciliation via paymentMethod below.
-      status: online ? "PENDING" : "PAID",
+      // reconciliation via paymentMethod below. A free order skips payment
+      // entirely regardless of connectivity, so it's always instant-PAID too.
+      status: isFreeOrder ? "PAID" : online ? "PENDING" : "PAID",
       totalCents,
       currency: event.currency,
       createdAt: new Date().toISOString(),
@@ -290,9 +297,13 @@ function EventDetailContent() {
       // whole order with the server-authoritative, correctly discounted one
       // once sync succeeds.
       syncStatus: "pending" as const,
-      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
+      paymentMethod: isFreeOrder ? null : online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
       providerReference: null,
-      providerMessage: online ? "Awaiting payment confirmation on your phone." : "Purchased offline — payment collection deferred.",
+      providerMessage: isFreeOrder
+        ? "Free ticket — confirmed instantly."
+        : online
+          ? "Awaiting payment confirmation on your phone."
+          : "Purchased offline — payment collection deferred.",
     };
 
     await db.orders.put(order);
@@ -322,9 +333,12 @@ function EventDetailContent() {
       answers: registrationQuestions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? "" })),
       waiverAccepted,
       discountCode: discountCode.trim() || undefined,
-      paymentMethod: online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
-      phoneNumber: online ? phone.trim() : undefined,
-      mobileNetwork: online ? network : undefined,
+      // Omitted entirely for a free order — handleSellTickets treats a
+      // missing paymentMethod as the legacy no-charge path (instant PAID),
+      // so there's nothing to initiate and no phone/network to collect.
+      paymentMethod: isFreeOrder ? undefined : online ? "AIRPAY_ONLINE" : "OFFLINE_DEFERRED",
+      phoneNumber: isFreeOrder ? undefined : online ? phone.trim() : undefined,
+      mobileNetwork: isFreeOrder ? undefined : online ? network : undefined,
       group: isGroup
         ? { name: groupName.trim(), memberNames: displayedMemberNames.map((n) => n.trim()) }
         : undefined,
@@ -673,7 +687,7 @@ function EventDetailContent() {
                 </p>
               </div>
 
-              {online && (
+              {online && !isFreeOrder && (
                 <div className="mt-4 space-y-3">
                   <div>
                     <label className="label" htmlFor="network">{t("event.mobileNetworkLabel")}</label>
@@ -698,11 +712,17 @@ function EventDetailContent() {
 
               <div
                 className={`mt-4 flex items-start gap-2.5 rounded-lg border p-3 text-xs ${
-                  online ? "border-accent/40 bg-accent-soft text-foreground" : "border-border bg-surface2 text-muted"
+                  isFreeOrder || online ? "border-accent/40 bg-accent-soft text-foreground" : "border-border bg-surface2 text-muted"
                 }`}
               >
-                {online && <span aria-hidden className="mt-0.5 text-base">📲</span>}
-                <span>{online ? t("event.onlinePaymentHint") : t("event.offlinePaymentHint")}</span>
+                {(isFreeOrder || online) && <span aria-hidden className="mt-0.5 text-base">{isFreeOrder ? "🎉" : "📲"}</span>}
+                <span>
+                  {isFreeOrder
+                    ? t("event.freeTicketHint")
+                    : online
+                      ? t("event.onlinePaymentHint")
+                      : t("event.offlinePaymentHint")}
+                </span>
               </div>
 
               {!user && (
@@ -721,10 +741,16 @@ function EventDetailContent() {
                 </button>
                 <button
                   className="btn-primary flex-1"
-                  disabled={placing || (online && phone.trim().length < 6)}
+                  disabled={placing || (online && !isFreeOrder && phone.trim().length < 6)}
                   onClick={placeOrder}
                 >
-                  {placing ? t("event.placing") : user ? t("event.payAmount", { amount: formatCents(totalCents, event.currency) }) : t("event.loginToPay")}
+                  {placing
+                    ? t("event.placing")
+                    : !user
+                      ? t("event.loginToPay")
+                      : isFreeOrder
+                        ? t("event.getFreeTicket")
+                        : t("event.payAmount", { amount: formatCents(totalCents, event.currency) })}
                 </button>
               </div>
             </>

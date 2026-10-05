@@ -648,6 +648,84 @@ describe("handleSellTickets — Airpay payment", () => {
   });
 });
 
+// Free ticket checkout (price = TZS 0) — the client omits paymentMethod
+// entirely for a free cart (see EventDetailClient.tsx's isFreeOrder), which
+// hits the same "no charge attempt" path this suite already covers for a
+// legacy/unspecified paymentMethod. These tests instead pin down the
+// behaviour explicitly for the free-ticket case, including the defensive
+// AIRPAY_ONLINE-with-nothing-to-charge guard in handleSellTickets itself.
+describe("handleSellTickets — free tickets", () => {
+  it("creates a PAID order instantly for a free ticket type, without ever calling the payment provider", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 0, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "free-ticket-1",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 2, codes: ["FREE-00001", "FREE-00002"] }],
+      // No paymentMethod/phoneNumber/mobileNetwork — exactly what the
+      // client sends for a free order.
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    expect(result.order.totalCents).toBe(0);
+    expect(result.order.paymentMethod).toBeNull();
+    expect(mockInitiateCharge).not.toHaveBeenCalled();
+
+    const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
+    expect(updatedTt.quantitySold).toBe(2);
+    expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  it("still goes through the real payment flow for a paid ticket (unaffected by the free-order path)", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: "AP-STILL-PAID-1" });
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 150000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "paid-ticket-still-pays",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["PAID-00001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+      mobileNetwork: "MPESA",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PENDING");
+    expect(result.order.paymentMethod).toBe("AIRPAY_ONLINE");
+    expect(result.order.providerReference).toBe("AP-STILL-PAID-1");
+    expect(mockInitiateCharge).toHaveBeenCalledTimes(1);
+    expect(mockInitiateCharge).toHaveBeenCalledWith(
+      expect.objectContaining({ amountCents: 150000, phoneNumber: "0712345678", mobileNetwork: "MPESA" })
+    );
+  });
+
+  it("defensively skips AirPay even if a stale client sends AIRPAY_ONLINE for an all-free cart", async () => {
+    const { organizationId } = await newOrganizer();
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 0, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "free-ticket-stale-client",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["FREE-STALE-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: "0712345678",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.order.status).toBe("PAID");
+    expect(mockInitiateCharge).not.toHaveBeenCalled();
+  });
+});
+
 describe("handleCheckOrderPaymentStatus", () => {
   async function pendingOrder() {
     mockInitiateCharge.mockResolvedValue({ status: "PENDING", reference: `AP-REF-${Date.now()}-${Math.random()}` });
