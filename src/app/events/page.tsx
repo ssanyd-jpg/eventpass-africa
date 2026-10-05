@@ -4,6 +4,7 @@ import PublicEventCard from "@/components/PublicEventCard";
 import SpotlightEventCard from "@/components/SpotlightEventCard";
 import FeaturedEventCard from "@/components/FeaturedEventCard";
 import WelcomeBanner from "@/components/WelcomeBanner";
+import OrganiserAreaNotice from "@/components/OrganiserAreaNotice";
 import EventTypeSelect from "./EventTypeSelect";
 import { getPublicEvents, getPublicEventCities } from "@/lib/marketplace";
 import { getActiveFeaturedListings } from "@/lib/chaap-ads";
@@ -23,6 +24,7 @@ interface EventsPageProps {
     dateFrom?: string;
     dateTo?: string;
     search?: string;
+    notice?: string;
   };
 }
 
@@ -70,6 +72,7 @@ export default async function EventsPage({ searchParams: params }: EventsPagePro
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6">
       <WelcomeBanner expected="attendee" />
+      <OrganiserAreaNotice show={params.notice === "organiser-only"} />
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold sm:text-3xl">Browse events</h1>

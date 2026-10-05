@@ -58,6 +58,14 @@ export const dictionaries = {
     // callbackUrl starts with /dashboard — every organiser-only page
     // redirects here the same way when signed out.
     "login.subtitleOrganiserDashboard": "Log in to your organiser dashboard",
+    // Cosmetic framing only, not a routing decision — the account's own
+    // isAttendeeOrg flag always decides the post-login redirect (see
+    // getPostLoginRedirect in auth-redirect.ts); these two just pick which
+    // subtitle shows when there's no callbackUrl to read instead.
+    "login.tabAttendee": "Attendee login",
+    "login.tabOrganiser": "Organiser login",
+    "login.subtitleAttendee": "Log in to browse events and buy tickets",
+    "login.subtitleOrganiser": "Log in to manage your events",
     "login.email": "Email",
     "login.password": "Password",
     "login.logIn": "Log in",
@@ -491,6 +499,12 @@ export const dictionaries = {
     "dashboard.soldOutCallout":
       "🎟 {ticketTypeName} tickets are sold out. Increase the quantity or add a new ticket type to keep selling.",
     "dashboard.editTicketsLink": "Edit tickets →",
+
+    // Shown on /events after middleware bounces an attendee-flagged account
+    // away from /dashboard/* or /scan/* (see resolveAttendeeRedirect in
+    // attendee-access.ts) — read from the ?notice=organiser-only query param
+    // by OrganiserAreaNotice.tsx.
+    "events.organiserAreaNotice": "This area is for event organisers. Browse events instead.",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -540,6 +554,10 @@ export const dictionaries = {
     "login.subtitle": "Karibu tena Chaap",
     "login.subtitleTicketPurchase": "Ingia ili kukamilisha ununuzi wa tiketi yako",
     "login.subtitleOrganiserDashboard": "Ingia kwenye dashibodi yako ya mratibu",
+    "login.tabAttendee": "Ingia kama mhudhuriaji",
+    "login.tabOrganiser": "Ingia kama mratibu",
+    "login.subtitleAttendee": "Ingia ili kuvinjari matukio na kununua tiketi",
+    "login.subtitleOrganiser": "Ingia ili kusimamia matukio yako",
     "login.email": "Barua pepe",
     "login.password": "Nenosiri",
     "login.logIn": "Ingia",
@@ -968,6 +986,8 @@ export const dictionaries = {
     "dashboard.soldOutCallout":
       "🎟 Tiketi za {ticketTypeName} zimeuzwa zote. Ongeza idadi au weka aina mpya ya tiketi ili kuendelea kuuza.",
     "dashboard.editTicketsLink": "Hariri tiketi →",
+
+    "events.organiserAreaNotice": "Eneo hili ni kwa ajili ya waratibu wa matukio. Vinjari matukio badala yake.",
   },
 } as const;
 

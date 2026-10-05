@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 import { resolveVendorRedirect } from "@/lib/vendor-access";
 import { resolveSponsorRedirect } from "@/lib/sponsor-access";
+import { resolveAttendeeRedirect } from "@/lib/attendee-access";
 
 // Separate, provider-free NextAuth instance for the Edge runtime — see
 // auth.config.ts for why this can't just import the full auth.ts.
@@ -75,6 +76,20 @@ export default auth((req) => {
   if (isGateCrewRestricted && req.auth?.user?.organizationRole === "GATE_CREW") {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
+    return NextResponse.redirect(url);
+  }
+
+  // An attendee-flagged account (isAttendeeOrg) straying into an
+  // organiser/staff tool — /dashboard/* (sub-pages only; bare /dashboard
+  // shows its own friendly message instead, see OrganiserOnlyMessage.tsx)
+  // or /scan/*. See resolveAttendeeRedirect's own header comment for why
+  // /vendor and /sponsor need no equivalent case here.
+  const attendeeRedirect = resolveAttendeeRedirect(req.auth?.user, path);
+  if (attendeeRedirect) {
+    const url = req.nextUrl.clone();
+    url.pathname = attendeeRedirect;
+    url.search = "";
+    url.searchParams.set("notice", "organiser-only");
     return NextResponse.redirect(url);
   }
 

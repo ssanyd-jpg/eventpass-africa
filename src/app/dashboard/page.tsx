@@ -9,6 +9,7 @@ import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDate } from "@/lib/format";
 import { eventHasEnded } from "@/lib/carry-over";
 import { SkeletonList } from "@/components/Skeleton";
+import OrganiserOnlyMessage from "@/components/OrganiserOnlyMessage";
 
 const STATUS_STYLE: Record<"LIVE" | "ENDED" | "CANCELLED", string> = {
   LIVE: "pill border-ok/40 bg-ok/10 text-ok",
@@ -125,6 +126,7 @@ export default function DashboardPage() {
   }, [wallets, walletTransactions]);
 
   if (!user) return null;
+  if (user.isAttendeeOrg) return <OrganiserOnlyMessage />;
 
   const isGateCrew = user.organizationRole === "GATE_CREW";
   const loading = events === undefined || orders === undefined;
