@@ -1,5 +1,4 @@
 import { Resend } from "resend";
-import QRCode from "qrcode";
 
 export interface SendEmailInput {
   to: string;
@@ -63,11 +62,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 }
 
-// Inline QR images as data URIs rather than real attachments — no
-// multipart/attachment plumbing needed, and every mainstream mail client
-// renders a data: <img> in an HTML email fine. Reuses the same `qrcode`
-// package (and the same "encode the raw code, not a URL" choice) as
-// TicketQr.tsx, the buyer-facing in-app equivalent of this same QR.
+// QR images are hosted at /api/tickets/[code]/qr.png rather than inlined as
+// data: URIs — Gmail blocks inline base64 images in HTML mail, rendering an
+// empty box instead of the QR. That route encodes the same raw ticket code
+// (not a URL) via the same `qrcode` package, matching TicketQr.tsx, the
+// buyer-facing in-app equivalent of this same QR.
 export async function buildOrderConfirmationHtml(input: {
   buyerName: string;
   eventTitle: string;
@@ -75,14 +74,12 @@ export async function buildOrderConfirmationHtml(input: {
   ticketCodes: string[];
   extraLines?: string[];
 }): Promise<string> {
-  const qrImages = await Promise.all(
-    input.ticketCodes.map((code) => QRCode.toDataURL(code, { margin: 1, width: 180 }))
-  );
+  const baseUrl = process.env.NEXTAUTH_URL ?? "";
   const ticketsHtml = input.ticketCodes
     .map(
-      (code, i) => `
+      (code) => `
         <div style="margin:20px 0;text-align:center;">
-          <img src="${qrImages[i]}" width="180" height="180" alt="QR code for ticket ${code}" style="display:block;margin:0 auto;border-radius:8px;" />
+          <img src="${baseUrl}/api/tickets/${encodeURIComponent(code)}/qr.png" width="180" height="180" alt="QR code for ticket ${code}" style="display:block;margin:0 auto;border-radius:8px;" />
           <p style="font-family:monospace,monospace;font-size:20px;font-weight:bold;letter-spacing:2px;margin:10px 0 0;">${code}</p>
         </div>
       `

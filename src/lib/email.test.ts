@@ -88,9 +88,12 @@ describe("buildOrderConfirmationHtml", () => {
       ticketCodes: ["FREE-00001", "FREE-00002"],
     });
 
-    // One data-URI QR <img> per ticket code — this is the "QR code" the
+    // One hosted QR <img> per ticket code — this is the "QR code" the
     // bug report expects in every order confirmation, free orders included.
-    expect(html.match(/<img src="data:image\/png;base64,/g)).toHaveLength(2);
+    // Hosted (not a data: URI) because Gmail blocks inline base64 images.
+    expect(html.match(/<img src="[^"]*\/api\/tickets\/FREE-00001\/qr\.png"/g)).toHaveLength(1);
+    expect(html.match(/<img src="[^"]*\/api\/tickets\/FREE-00002\/qr\.png"/g)).toHaveLength(1);
+    expect(html).not.toContain("data:image/png;base64,");
     expect(html).toContain("FREE-00001");
     expect(html).toContain("FREE-00002");
     expect(html).toContain("TZS 0");
