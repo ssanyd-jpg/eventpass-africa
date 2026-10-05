@@ -4,16 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
 import { useAppSession } from "@/lib/use-app-session";
 import { useTranslation } from "@/lib/use-translation";
 import SyncStatusBadge from "@/components/SyncStatusBadge";
 
+// Highlights the "Account" dropdown as active — wallet/groups/rewards moved
+// out to their own top-level links (or the organiser-only "More" dropdown,
+// which tracks its own active state separately), so this now covers just
+// the plain account-management pages left inside "Account".
 const MORE_PREFIXES = [
-  "/account/wallet",
-  "/account/groups",
   "/account/sessions",
   "/account/loyalty",
-  "/account/rewards",
   "/account/support",
   "/account/vendor-applications",
   "/account/settings",
@@ -157,6 +160,30 @@ export default function Navbar() {
   const isVendorPortal = pathname?.startsWith("/vendor");
   const isGateCrew = user?.organizationRole === "GATE_CREW";
 
+  // Every user is OWNER of at least their own personal org from the moment
+  // they register (see createPersonalOrganization in src/lib/organizations.ts
+  // — "every user belongs to exactly one organization, always") — so
+  // organizationRole alone can never distinguish a plain attendee from a
+  // real organiser; both read as "OWNER". Whether that org has ever actually
+  // run an event is the only signal that does, hence this live count against
+  // the already-synced local events this device has for the org (same
+  // Dexie query dashboard/page.tsx already runs). While it's still resolving
+  // (undefined), default to "no events yet" — briefly under-showing the
+  // organiser nav for a real organiser self-corrects in a moment, whereas
+  // briefly over-showing it to a true attendee reintroduces the exact
+  // confusion this is meant to fix.
+  const eventCount = useLiveQuery(
+    () => (user ? db.events.where("organizationId").equals(user.organizationId).count() : Promise.resolve(0)),
+    [user?.organizationId]
+  );
+  const hasEvents = (eventCount ?? 0) > 0;
+  // A real organiser: not gate crew, and their org has at least one event.
+  // Everyone else logged in (true attendees, and a brand-new organiser who
+  // hasn't created their first event yet) gets the attendee-level nav below,
+  // plus — only for that brand-new-organiser case — a plain Dashboard link
+  // so they're never stranded without a way to create that first event.
+  const isOrganiser = !isGateCrew && hasEvents;
+
   // Close the mobile "Account" menu whenever the route changes (a NavLink
   // click inside it navigates before this effect runs, so this is the
   // catch-all for browser back/forward too) and on outside click.
@@ -190,60 +217,87 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Desktop top level stays to 4 items max — Browse, Dashboard, My
-            Tickets, and a single "More" dropdown — so a logged-in OWNER
-            doesn't get a dozen links crammed into one row at 1280px. Dashboard
-            itself becomes a dropdown (rather than growing the top level) for
-            anyone who isn't GATE_CREW, since it's the only place the
-            organiser back-office pages (Analytics, Customers, Withdrawals,
-            Payments, Settlements, Team, Audit Log, Devices, Admin) were
-            reachable from — dropping them outright would strand those pages
-            with no nav path. */}
+        {/* Each user type sees only what's relevant to them — gate crew get
+            just the scanner and their own status; a true attendee (every
+            signed-up user is technically "OWNER" of their own personal org,
+            see isOrganiser above, so this is NOT an organizationRole check)
+            never sees organiser back-office tooling; a real organiser gets
+            Dashboard as its own dropdown (the only place Analytics,
+            Customers, Withdrawals, Payments, Settlements, Team, Audit Log,
+            Devices, Admin are reachable from) plus a "More" dropdown for
+            their own wallets/groups/rewards so the top row doesn't grow
+            past Browse / Dashboard / My Tickets / More. */}
         <nav className="hidden items-center gap-6 lg:flex">
           <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
-          {user &&
-            (isGateCrew ? (
-              <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>
-            ) : (
-              <DesktopDropdown label={t("nav.dashboard")} active={pathname?.startsWith("/dashboard") ?? false}>
-                <DropdownLink href="/dashboard">{t("nav.dashboard")}</DropdownLink>
-                <DropdownLink href="/dashboard/analytics">{t("nav.analytics")}</DropdownLink>
-                <DropdownLink href="/dashboard/customers">{t("nav.customers")}</DropdownLink>
-                <DropdownLink href="/dashboard/support">{t("nav.supportInbox")}</DropdownLink>
-                <DropdownLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</DropdownLink>
-                <DropdownLink href="/dashboard/payments">{t("nav.payments")}</DropdownLink>
-                <DropdownLink href="/dashboard/settlements">{t("nav.settlements")}</DropdownLink>
-                <DropdownLink href="/dashboard/season-passes">{t("nav.seasonPasses")}</DropdownLink>
-                <DropdownLink href="/dashboard/ads">{t("nav.ads")}</DropdownLink>
-                {user.organizationRole === "OWNER" && (
-                  <>
-                    <MenuDivider />
-                    <DropdownLink href="/dashboard/team">{t("nav.team")}</DropdownLink>
-                    <DropdownLink href="/dashboard/audit">{t("nav.auditLog")}</DropdownLink>
-                    <DropdownLink href="/dashboard/devices">{t("nav.devices")}</DropdownLink>
-                  </>
-                )}
-                {user.role === "ADMIN" && (
-                  <>
-                    <MenuDivider />
-                    <DropdownLink href="/admin">{t("nav.admin")}</DropdownLink>
-                  </>
-                )}
+
+          {isGateCrew && (
+            <>
+              <NavLink href="/dashboard" chrome>{t("nav.scan")}</NavLink>
+              <NavLink href="/account/loyalty" chrome>{t("nav.myStatus")}</NavLink>
+              <NavLink href="/account/settings" chrome>{t("nav.account")}</NavLink>
+            </>
+          )}
+
+          {user && !isGateCrew && (
+            <>
+              {isOrganiser ? (
+                <DesktopDropdown label={t("nav.dashboard")} active={pathname?.startsWith("/dashboard") ?? false}>
+                  <DropdownLink href="/dashboard">{t("nav.dashboard")}</DropdownLink>
+                  <DropdownLink href="/dashboard/analytics">{t("nav.analytics")}</DropdownLink>
+                  <DropdownLink href="/dashboard/customers">{t("nav.customers")}</DropdownLink>
+                  <DropdownLink href="/dashboard/support">{t("nav.supportInbox")}</DropdownLink>
+                  <DropdownLink href="/dashboard/withdrawals">{t("nav.withdrawals")}</DropdownLink>
+                  <DropdownLink href="/dashboard/payments">{t("nav.payments")}</DropdownLink>
+                  <DropdownLink href="/dashboard/settlements">{t("nav.settlements")}</DropdownLink>
+                  <DropdownLink href="/dashboard/season-passes">{t("nav.seasonPasses")}</DropdownLink>
+                  <DropdownLink href="/dashboard/ads">{t("nav.ads")}</DropdownLink>
+                  {user.organizationRole === "OWNER" && (
+                    <>
+                      <MenuDivider />
+                      <DropdownLink href="/dashboard/team">{t("nav.team")}</DropdownLink>
+                      <DropdownLink href="/dashboard/audit">{t("nav.auditLog")}</DropdownLink>
+                      <DropdownLink href="/dashboard/devices">{t("nav.devices")}</DropdownLink>
+                    </>
+                  )}
+                  {user.role === "ADMIN" && (
+                    <>
+                      <MenuDivider />
+                      <DropdownLink href="/admin">{t("nav.admin")}</DropdownLink>
+                    </>
+                  )}
+                </DesktopDropdown>
+              ) : (
+                // Not yet a real organiser (no events of their own) — still
+                // a plain Dashboard link, never a dead end on the day they
+                // decide to create their first event.
+                <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>
+              )}
+
+              <NavLink href="/account/tickets" chrome>{t("nav.myTickets")}</NavLink>
+
+              {isOrganiser ? (
+                <DesktopDropdown label={t("nav.more")} active={["/account/wallet", "/account/groups", "/account/rewards"].some((p) => pathname?.startsWith(p))}>
+                  <DropdownLink href="/account/wallet">{t("nav.myWallets")}</DropdownLink>
+                  <DropdownLink href="/account/groups">{t("nav.myGroups")}</DropdownLink>
+                  <DropdownLink href="/account/rewards">{t("nav.myRewards")}</DropdownLink>
+                </DesktopDropdown>
+              ) : (
+                <>
+                  <NavLink href="/account/wallet" chrome>{t("nav.myWallets")}</NavLink>
+                  <NavLink href="/account/groups" chrome>{t("nav.myGroups")}</NavLink>
+                  <NavLink href="/account/rewards" chrome>{t("nav.myRewards")}</NavLink>
+                </>
+              )}
+
+              <DesktopDropdown label={t("nav.account")} active={MORE_PREFIXES.some((p) => pathname?.startsWith(p))}>
+                <DropdownLink href="/account/sessions">{t("nav.sessions")}</DropdownLink>
+                <DropdownLink href="/account/loyalty">{t("nav.myStatus")}</DropdownLink>
+                <DropdownLink href="/account/support">{t("nav.support")}</DropdownLink>
+                <DropdownLink href="/account/settings">{t("nav.settings")}</DropdownLink>
+                <MenuDivider />
+                <DropdownLink href="/account/vendor-applications">{t("nav.myVendorApps")}</DropdownLink>
               </DesktopDropdown>
-            ))}
-          {user && <NavLink href="/account/tickets" chrome>{t("nav.myTickets")}</NavLink>}
-          {user && (
-            <DesktopDropdown label={t("nav.more")} active={MORE_PREFIXES.some((p) => pathname?.startsWith(p))}>
-              <DropdownLink href="/account/wallet">{t("nav.myWallets")}</DropdownLink>
-              <DropdownLink href="/account/groups">{t("nav.myGroups")}</DropdownLink>
-              <DropdownLink href="/account/sessions">{t("nav.sessions")}</DropdownLink>
-              <DropdownLink href="/account/loyalty">{t("nav.myStatus")}</DropdownLink>
-              <DropdownLink href="/account/rewards">{t("nav.myRewards")}</DropdownLink>
-              <DropdownLink href="/account/support">{t("nav.support")}</DropdownLink>
-              <DropdownLink href="/account/settings">{t("nav.settings")}</DropdownLink>
-              <MenuDivider />
-              <DropdownLink href="/account/vendor-applications">{t("nav.myVendorApps")}</DropdownLink>
-            </DesktopDropdown>
+            </>
           )}
         </nav>
 
@@ -278,16 +332,27 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile top-level row — only Browse / Dashboard / Account stay
-          visible here; everything else (My Tickets, My Wallets, Team,
-          Withdrawals, ...) moves into the "Account" dropdown below so a
-          logged-in OWNER (every seeded demo account included, via
-          seed.ts's auto-created personal org) doesn't get a dozen links
-          crammed into one row on a phone screen. */}
+      {/* Mobile top-level row. Gate crew get exactly Scan / My Status /
+          Account and nothing else — no hamburger, nothing to tuck away.
+          Everyone else keeps Browse / Dashboard visible, with the rest
+          (My Tickets, My Wallets, organiser back-office pages, ...) inside
+          the "Account" dropdown below, gated the same way the desktop nav
+          is — isOrganiser (not organizationRole) is what decides whether
+          the organiser-only sections appear, since every user is
+          technically "OWNER" of their own personal org by default. */}
       <div className="flex items-center gap-5 border-t border-chrome-border px-4 py-2 sm:px-6 lg:hidden">
         <NavLink href="/events" chrome>{t("nav.browse")}</NavLink>
-        {user && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
-        {user && (
+
+        {isGateCrew && (
+          <>
+            <NavLink href="/dashboard" chrome>{t("nav.scan")}</NavLink>
+            <NavLink href="/account/loyalty" chrome>{t("nav.myStatus")}</NavLink>
+            <NavLink href="/account/settings" chrome className="ml-auto">{t("nav.account")}</NavLink>
+          </>
+        )}
+
+        {user && !isGateCrew && <NavLink href="/dashboard" chrome>{t("nav.dashboard")}</NavLink>}
+        {user && !isGateCrew && (
           <div ref={menuRef} className="relative ml-auto">
             <button
               onClick={() => setMenuOpen((v) => !v)}
@@ -300,21 +365,21 @@ export default function Navbar() {
                 <span className="block h-0.5 w-4 rounded-full bg-current" />
                 <span className="block h-0.5 w-4 rounded-full bg-current" />
               </span>
-              Account
+              {t("nav.account")}
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-2 shadow-lg shadow-black/30">
                 <MobileMenuLink href="/account/tickets" onClick={closeMenu}>{t("nav.myTickets")}</MobileMenuLink>
-                <MobileMenuLink href="/account/vendor-applications" onClick={closeMenu}>{t("nav.myVendorApps")}</MobileMenuLink>
                 <MobileMenuLink href="/account/wallet" onClick={closeMenu}>{t("nav.myWallets")}</MobileMenuLink>
                 <MobileMenuLink href="/account/groups" onClick={closeMenu}>{t("nav.myGroups")}</MobileMenuLink>
+                <MobileMenuLink href="/account/rewards" onClick={closeMenu}>{t("nav.myRewards")}</MobileMenuLink>
                 <MobileMenuLink href="/account/sessions" onClick={closeMenu}>{t("nav.sessions")}</MobileMenuLink>
                 <MobileMenuLink href="/account/loyalty" onClick={closeMenu}>{t("nav.myStatus")}</MobileMenuLink>
-                <MobileMenuLink href="/account/rewards" onClick={closeMenu}>{t("nav.myRewards")}</MobileMenuLink>
                 <MobileMenuLink href="/account/support" onClick={closeMenu}>{t("nav.support")}</MobileMenuLink>
                 <MobileMenuLink href="/account/settings" onClick={closeMenu}>{t("nav.settings")}</MobileMenuLink>
+                <MobileMenuLink href="/account/vendor-applications" onClick={closeMenu}>{t("nav.myVendorApps")}</MobileMenuLink>
 
-                {user.organizationRole !== "GATE_CREW" && (
+                {isOrganiser && (
                   <>
                     <MenuDivider />
                     <MobileMenuLink href="/dashboard/analytics" onClick={closeMenu}>{t("nav.analytics")}</MobileMenuLink>
@@ -327,7 +392,7 @@ export default function Navbar() {
                     <MobileMenuLink href="/dashboard/ads" onClick={closeMenu}>{t("nav.ads")}</MobileMenuLink>
                   </>
                 )}
-                {user.organizationRole === "OWNER" && (
+                {isOrganiser && user.organizationRole === "OWNER" && (
                   <>
                     <MenuDivider />
                     <MobileMenuLink href="/dashboard/team" onClick={closeMenu}>{t("nav.team")}</MobileMenuLink>
