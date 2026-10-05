@@ -60,7 +60,12 @@ export type NotificationType =
   // Compassionate close-out sent to any still-WAITING waitlist entry once
   // its event ends or is cancelled — see sendWaitlistClosureNotifications
   // in src/lib/waitlist.ts.
-  | "WAITLIST_CLOSURE";
+  | "WAITLIST_CLOSURE"
+  // Fired once per ticket type, the moment it first reaches capacity (see
+  // handleSellTickets) — tells the org OWNER to raise quantity or add a new
+  // ticket type before the organiser's own dashboard callout (see
+  // SoldOutCallout.tsx) would otherwise be their only signal.
+  | "TICKET_TYPE_SOLD_OUT";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

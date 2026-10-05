@@ -18,6 +18,7 @@ import ConferenceSessionsSection from "@/components/ConferenceSessionsSection";
 import { hasFeature } from "@/lib/event-modes";
 import { sendPostEventMemories } from "./post-event-memory-actions";
 import { markWhatsappGroupLinkRevoked } from "./whatsapp-group/actions";
+import SoldOutCallout from "@/components/SoldOutCallout";
 
 // Deterministic, not Claude-backed — see forecast.ts's header comment.
 const SELL_OUT_PILL: Record<SellOutStatus, string> = {
@@ -466,6 +467,15 @@ export default function ManageEventPage() {
           );
         })}
       </div>
+
+      {/* Page already returns null for GATE_CREW above (plus the
+          middleware redirect) — anything rendered past that point,
+          including this, is already OWNER/STAFF-only. */}
+      {event.ticketTypes
+        .filter((tt) => tt.quantitySold >= tt.quantityTotal)
+        .map((tt) => (
+          <SoldOutCallout key={tt.id} eventId={event.id} ticketTypeId={tt.id} ticketTypeName={tt.name} />
+        ))}
 
       {revenueForecast.length > 0 && (
         <>

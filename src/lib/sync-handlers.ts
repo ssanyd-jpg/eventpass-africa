@@ -946,6 +946,11 @@ export async function handleSellTickets(userId: string, payload: any) {
   let oversold = false;
   let totalCents = 0;
   const ticketTypeUpdates: Array<{ id: string; quantitySold: number }> = [];
+  // Ticket types that crossed from "capacity remaining" to "sold out" in
+  // this exact sale — collected inside the transaction (where the
+  // before/after quantitySold values are both at hand) and notified after
+  // it commits, same split as the buyer confirmation below.
+  const soldOutTicketTypeIds: string[] = [];
 
   const { order, discountRejectReason, sharedWallet } = await prisma.$transaction(async (tx) => {
     const orderItemsData: any[] = [];
@@ -957,6 +962,9 @@ export async function handleSellTickets(userId: string, payload: any) {
 
       if (tt.quantitySold + item.quantity > tt.quantityTotal) {
         oversold = true;
+      }
+      if (tt.quantitySold < tt.quantityTotal && tt.quantitySold + item.quantity >= tt.quantityTotal) {
+        soldOutTicketTypeIds.push(tt.id);
       }
 
       // Priced against quantitySold as of this read, before the increment
@@ -1143,6 +1151,39 @@ export async function handleSellTickets(userId: string, payload: any) {
     // needs more than the 5s default when each statement is a real network
     // round-trip rather than a local one.
   }, { timeout: 15000, maxWait: 10000 });
+
+  // A ticket type that just crossed into sold-out territory — tell the org
+  // OWNER via WhatsApp so they notice before a buyer complains, mirroring
+  // the dashboard's own SoldOutCallout. Idempotent the same way
+  // sendRenewalOffer (season-renewal.ts) is: the ticket type's id rides
+  // inside `subject`, so a NotificationLog row for it already existing is
+  // proof this was sent before — never resent, even on a retried/replayed
+  // call with the same clientId (which wouldn't reach this far a second
+  // time anyway) or a later sale that pushes the same ticket type further
+  // past capacity (oversold).
+  for (const ticketTypeId of soldOutTicketTypeIds) {
+    const subject = `Ticket type sold out — ${ticketTypeId}`;
+    const alreadySent = await prisma.notificationLog.findFirst({
+      where: { type: "TICKET_TYPE_SOLD_OUT", subject },
+    });
+    if (alreadySent) continue;
+
+    const soldOutTt = await prisma.ticketType.findUnique({ where: { id: ticketTypeId }, select: { name: true } });
+    const owner = await prisma.organizationMembership.findFirst({
+      where: { organizationId: event.organizationId, role: "OWNER" },
+      include: { user: { select: { phone: true } } },
+    });
+    if (!soldOutTt || !owner?.user.phone) continue;
+
+    const dashboardLink = `${process.env.NEXTAUTH_URL ?? ""}/dashboard/events/${event.id}`;
+    await sendNotification({
+      type: "TICKET_TYPE_SOLD_OUT",
+      channel: "WHATSAPP",
+      recipient: owner.user.phone,
+      subject,
+      body: `🎟 Your ${soldOutTt.name} tickets for ${event.title} just sold out! Tap here to add more capacity: ${dashboardLink}`,
+    });
+  }
 
   // Session 26 — a buyer who followed their "Join waitlist" notification's
   // purchase link (EventDetailClient passes the entryId straight through)

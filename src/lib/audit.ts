@@ -85,7 +85,14 @@ export type AuditAction =
   // actorUserId — no buildSyncAuditEntry case, same documented exclusion as
   // SEASON_PASS_PURCHASED/SEASON_PASS_RENEWED above. Listed here only so
   // the type exists if a future organiser-triggered trigger needs it.
-  | "WAITLIST_CLOSURE";
+  | "WAITLIST_CLOSURE"
+  // A ticket type selling out (see handleSellTickets' TICKET_TYPE_SOLD_OUT
+  // WhatsApp) is a side effect of the buyer's own purchase, not an organiser
+  // action — same "self-action, not audited via buildSyncAuditEntry"
+  // exclusion SELL_TICKETS already has (its own doc comment on
+  // payloadSchemas.SELL_TICKETS). Listed here only so the type exists, same
+  // as WAITLIST_CLOSURE above.
+  | "TICKET_TYPE_SOLD_OUT";
 
 interface LogAuditInput {
   organizationId: string;

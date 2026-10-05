@@ -485,6 +485,12 @@ export const dictionaries = {
     "waitlist.analytics.expired": "Expired",
     "waitlist.analytics.demandByTicketType": "Demand by ticket type",
     "waitlist.analytics.avgResponseTime": "Attendees claimed their spot in an average of {minutes} minutes",
+
+    // Sold-out ticket type callout on the organiser's event dashboard (see
+    // ManageEventPage) and its WhatsApp counterpart in handleSellTickets.
+    "dashboard.soldOutCallout":
+      "🎟 {ticketTypeName} tickets are sold out. Increase the quantity or add a new ticket type to keep selling.",
+    "dashboard.editTicketsLink": "Edit tickets →",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -958,6 +964,10 @@ export const dictionaries = {
     "waitlist.analytics.expired": "Ziliisha muda",
     "waitlist.analytics.demandByTicketType": "Mahitaji kwa aina ya tiketi",
     "waitlist.analytics.avgResponseTime": "Wageni walidai nafasi yao kwa wastani wa dakika {minutes}",
+
+    "dashboard.soldOutCallout":
+      "🎟 Tiketi za {ticketTypeName} zimeuzwa zote. Ongeza idadi au weka aina mpya ya tiketi ili kuendelea kuuza.",
+    "dashboard.editTicketsLink": "Hariri tiketi →",
   },
 } as const;
 

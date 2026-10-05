@@ -87,9 +87,13 @@ afterEach(async () => {
 
 // Every "organizer" in these tests needs a real Organization + OWNER
 // membership behind them now that Event/Vendor ownership checks compare
-// organizationId, not a User id directly.
-async function newOrganizer() {
+// organizationId, not a User id directly. Optional phone — same opt-in
+// pattern as crowd-density.test.ts's own newOrganizer helper — since most
+// existing callers don't need one and createTestUser itself has no phone
+// field to set it through.
+async function newOrganizer(phone?: string) {
   const user = await createTestUser();
+  if (phone) await prisma.user.update({ where: { id: user.id }, data: { phone } });
   const organization = await createTestOrganization();
   await addMembership(organization.id, user.id, "OWNER");
   return { user, organizationId: organization.id };
@@ -781,6 +785,100 @@ describe("handleSellTickets — free tickets", () => {
       where: { type: "ORDER_CONFIRMATION", recipient: email },
     });
     expect(log).not.toBeNull();
+  });
+});
+
+describe("handleSellTickets — ticket type sold out WhatsApp", () => {
+  it("sends the organiser a WhatsApp when the last ticket of a type sells", async () => {
+    const phone = "0712300001";
+    const { organizationId } = await newOrganizer(phone);
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "sold-out-last-ticket",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["SOLDOUT-00001"] }],
+    });
+
+    expect(result.ok).toBe(true);
+    const logs = await prisma.notificationLog.findMany({ where: { type: "TICKET_TYPE_SOLD_OUT", recipient: phone } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].body).toContain(tt.name);
+    expect(logs[0].body).toContain(event.title);
+  });
+
+  it("does not send twice for the same ticket type, even across a second genuine sell-out (idempotent)", async () => {
+    const phone = "0712300002";
+    const { user: organizer, organizationId } = await newOrganizer(phone);
+    const buyerA = await createTestUser();
+    const buyerB = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1 }]);
+    const tt = event.ticketTypes[0];
+
+    const first = await handleSellTickets(buyerA.id, {
+      clientId: "sold-out-idempotent-1",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["SOLDOUT-IDEM-0001"] }],
+    });
+    expect(first.ok).toBe(true);
+    expect(await prisma.notificationLog.count({ where: { type: "TICKET_TYPE_SOLD_OUT", recipient: phone } })).toBe(1);
+
+    // Organiser raises capacity — exactly the fix the first WhatsApp
+    // suggested — and it genuinely sells out a second time. "Only send once
+    // per ticket type per event" means this must still not re-fire, not
+    // merely that overselling an already-exhausted type doesn't.
+    await handleEditEvent(organizer.id, organizationId, {
+      eventId: event.id,
+      ticketTypes: [{ id: tt.id, name: tt.name, priceCents: tt.priceCents, quantityTotal: 2 }],
+    });
+    const second = await handleSellTickets(buyerB.id, {
+      clientId: "sold-out-idempotent-2",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["SOLDOUT-IDEM-0002"] }],
+    });
+    expect(second.ok).toBe(true);
+    expect(second.oversold).toBe(false);
+    expect(await prisma.notificationLog.count({ where: { type: "TICKET_TYPE_SOLD_OUT", recipient: phone } })).toBe(1);
+  });
+
+  it("does not send while the ticket type still has capacity remaining", async () => {
+    const phone = "0712300003";
+    const { organizationId } = await newOrganizer(phone);
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 5 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "sold-out-not-yet",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 2, codes: ["NOTYET-00001", "NOTYET-00002"] }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await prisma.notificationLog.count({ where: { type: "TICKET_TYPE_SOLD_OUT", recipient: phone } })).toBe(0);
+  });
+
+  it("skips the WhatsApp silently when the org owner has no phone on file", async () => {
+    const { organizationId } = await newOrganizer(); // no phone
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 1 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "sold-out-no-phone",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["NOPHONE-00001"] }],
+    });
+
+    expect(result.ok).toBe(true);
+    // Scoped by this ticket type's own id (embedded in `subject`), not just
+    // `type` alone — other tests in this file create their own
+    // TICKET_TYPE_SOLD_OUT rows against the same shared test database.
+    expect(
+      await prisma.notificationLog.count({ where: { type: "TICKET_TYPE_SOLD_OUT", subject: `Ticket type sold out — ${tt.id}` } })
+    ).toBe(0);
   });
 });
 
