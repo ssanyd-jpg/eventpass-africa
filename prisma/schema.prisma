@@ -1331,6 +1331,32 @@ model OrderItem {
   ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
 }
 
+// Marketing-site lead capture — POST /api/leads (public, unauthenticated;
+// that route's own CORS allow-list gates which origins may call it — see
+// its header comment). Platform-level, not organization-scoped: this is
+// chaap.africa's own marketing form, not an organiser's event. Plain-string
+// status, same no-native-enums convention as every other status-like field
+// in this schema (e.g. SupportTicket.status above) — triaged manually for
+// now, no dedicated admin UI yet.
+model MarketingLead {
+  id                 String   @id @default(cuid())
+  name               String
+  phone              String
+  email              String?
+  eventName          String?
+  // Free-text bucket label from the marketing site's own form. That form
+  // isn't part of this repo (yet), so its exact bucket values aren't known
+  // here — stored as whatever string the form sends, not constrained to a
+  // guessed closed set.
+  expectedAttendance String?
+  source             String   @default("website")
+  // NEW | CONTACTED | CONVERTED | DISMISSED.
+  status             String   @default("NEW")
+  createdAt          DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
 model RateLimitHit {
   id        String   @id @default(cuid())
   bucketKey String

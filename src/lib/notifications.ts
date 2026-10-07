@@ -77,7 +77,12 @@ export type NotificationType =
   | "PAYMENT_REVERSED"
   // Pre-event nudge for a ticket holder who hasn't topped up their wallet
   // yet — see runWalletTopupReminderSweep in src/lib/wallet-topup-reminder.ts.
-  | "WALLET_TOPUP_REMINDER";
+  | "WALLET_TOPUP_REMINDER"
+  // chaap.africa marketing site's contact form — see POST /api/leads. One
+  // type covers both the hello@chaap.africa email and the owner's own
+  // WhatsApp, same as TICKET_TYPE_SOLD_OUT/PAYMENT_REVERSED don't split by
+  // recipient either.
+  | "MARKETING_LEAD_RECEIVED";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 
