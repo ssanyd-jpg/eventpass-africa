@@ -92,7 +92,17 @@ export type AuditAction =
   // exclusion SELL_TICKETS already has (its own doc comment on
   // payloadSchemas.SELL_TICKETS). Listed here only so the type exists, same
   // as WAITLIST_CLOSURE above.
-  | "TICKET_TYPE_SOLD_OUT";
+  | "TICKET_TYPE_SOLD_OUT"
+  // Same "no real actorUserId, no buildSyncAuditEntry case" exclusion as
+  // WAITLIST_CLOSURE/TICKET_TYPE_SOLD_OUT above — PAYMENT_DELAYED and
+  // WALLET_TOPUP_REMINDER are cron-sweep/poll side effects (sync-handlers.ts'
+  // handleCheckOrderPaymentStatus and wallet-topup-reminder.ts), and
+  // PAYMENT_REVERSED is triggered by AirPay's own webhook (see
+  // payment-reversal.ts), not by any Chaap user. Listed here only so the
+  // type exists, same as WAITLIST_CLOSURE/TICKET_TYPE_SOLD_OUT.
+  | "PAYMENT_DELAYED"
+  | "PAYMENT_REVERSED"
+  | "WALLET_TOPUP_REMINDER";
 
 interface LogAuditInput {
   organizationId: string;

@@ -955,29 +955,35 @@ describe("handleCheckOrderPaymentStatus", () => {
 
   it("does not send a delay notice for an order still PENDING under 60s", async () => {
     const { buyer, orderId } = await pendingOrder();
-    await prisma.user.update({ where: { id: buyer.id }, data: { phone: "0712345678" } });
+    // A phone unique to this test, not a shared literal: NotificationLog has
+    // no orderId column, so a count scoped by `recipient` alone would also
+    // match rows a different test (or an earlier suite run against this
+    // same persistent test database) left behind for the same number.
+    const phone = `0713${Date.now().toString().slice(-6)}`;
+    await prisma.user.update({ where: { id: buyer.id }, data: { phone } });
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING", reference: "irrelevant" });
 
     await handleCheckOrderPaymentStatus({ orderId });
 
-    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } })).toBe(0);
+    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: phone } })).toBe(0);
   });
 
   it("sends a one-time WhatsApp delay notice once a PENDING order has been waiting over 60s", async () => {
     const { buyer, orderId } = await pendingOrder();
-    await prisma.user.update({ where: { id: buyer.id }, data: { phone: "0712345678" } });
+    const phone = `0714${Date.now().toString().slice(-6)}`;
+    await prisma.user.update({ where: { id: buyer.id }, data: { phone } });
     await prisma.order.update({ where: { id: orderId }, data: { createdAt: new Date(Date.now() - 70_000) } });
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING", reference: "irrelevant" });
 
     const result = await handleCheckOrderPaymentStatus({ orderId });
     expect(result.order.status).toBe("PENDING");
-    const logs = await prisma.notificationLog.findMany({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } });
+    const logs = await prisma.notificationLog.findMany({ where: { type: "PAYMENT_DELAYED", recipient: phone } });
     expect(logs).toHaveLength(1);
-    expect(logs[0].body).toContain("do not pay again");
+    expect(logs[0].body).toContain("do NOT pay again");
 
     // A second poll on the still-PENDING order must not resend it.
     await handleCheckOrderPaymentStatus({ orderId });
-    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } })).toBe(1);
+    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: phone } })).toBe(1);
   });
 });
 

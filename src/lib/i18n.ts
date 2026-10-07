@@ -505,6 +505,22 @@ export const dictionaries = {
     // attendee-access.ts) — read from the ?notice=organiser-only query param
     // by OrganiserAreaNotice.tsx.
     "events.organiserAreaNotice": "This area is for event organisers. Browse events instead.",
+
+    // Payment delayed/reversed/wallet-reminder WhatsApp and USSD-triggered
+    // SMS — same server-side translate() pattern as waitlistClosure.*/
+    // memory.* above (see sync-handlers.ts, payment-reversal.ts,
+    // wallet-topup-reminder.ts, ussd.ts). No per-user locale exists today,
+    // so every call site defaults to "en", same as those.
+    "paymentDelayed.message":
+      "⏳ Your Chaap payment is being processed. Please wait and do NOT pay again — you will receive confirmation shortly. chaap.africa",
+    "paymentReversal.attendeeMessage":
+      "⚠️ Your payment for {event} was reversed by your mobile money provider. Your ticket has been suspended. Please contact the event organiser or try paying again at chaap.africa",
+    "paymentReversal.organiserMessage":
+      "⚠️ Payment reversal: Order {orderId} for {attendeeName} has been reversed by the payment provider. Ticket suspended — attendee may need to repay.",
+    "walletTopupReminder.message":
+      "👋 {event} is tomorrow! Top up your Chaap wallet now to skip queues at the vendors. Visit: {link} — it takes 30 seconds with M-Pesa.",
+    "ussd.balanceConfirmation": "Chaap: Your wallet balance is {balance}. Dial {shortcode} anytime to check. chaap.africa",
+    "ussd.topupConfirmation": "Chaap: Your top-up of {amount} is being processed. You will receive confirmation when complete. chaap.africa",
   },
   sw: {
     "nav.browse": "Vinjari",
@@ -988,6 +1004,17 @@ export const dictionaries = {
     "dashboard.editTicketsLink": "Hariri tiketi →",
 
     "events.organiserAreaNotice": "Eneo hili ni kwa ajili ya waratibu wa matukio. Vinjari matukio badala yake.",
+
+    "paymentDelayed.message":
+      "⏳ Malipo yako ya Chaap yanashughulikiwa. Tafadhali subiri na USILIPE tena — utapokea uthibitisho hivi karibuni. chaap.africa",
+    "paymentReversal.attendeeMessage":
+      "⚠️ Malipo yako kwa {event} yamerudishwa na mtoa huduma wako wa pesa za simu. Tiketi yako imesimamishwa. Tafadhali wasiliana na mratibu wa tukio au ulipe tena kwenye chaap.africa",
+    "paymentReversal.organiserMessage":
+      "⚠️ Malipo yamerudishwa: Oda {orderId} ya {attendeeName} imerudishwa na mtoa huduma wa malipo. Tiketi imesimamishwa — mhudhuriaji anaweza kuhitaji kulipa tena.",
+    "walletTopupReminder.message":
+      "👋 {event} ni kesho! Jaza pochi yako ya Chaap sasa ili kuepuka foleni kwenye wachuuzi. Tembelea: {link} — inachukua sekunde 30 na M-Pesa.",
+    "ussd.balanceConfirmation": "Chaap: Salio lako la pochi ni {balance}. Piga {shortcode} wakati wowote kuangalia. chaap.africa",
+    "ussd.topupConfirmation": "Chaap: Kuongeza pesa kwako kwa {amount} kunashughulikiwa. Utapokea uthibitisho baada ya kukamilika. chaap.africa",
   },
 } as const;
 

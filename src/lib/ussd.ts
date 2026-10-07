@@ -1,7 +1,16 @@
 import { createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { normalizeTanzaniaPhone } from "@/lib/sms";
+import { normalizeTanzaniaPhone, sendSMS } from "@/lib/sms";
 import { handleTopupWallet } from "@/lib/sync-handlers";
+import { dictionaries, type Locale, type TranslationKey } from "@/lib/i18n";
+
+// Same server-side translate() pattern as waitlist.ts/post-event-memory.ts —
+// no per-user locale exists today, so this always defaults to "en".
+function translate(locale: Locale, key: TranslationKey, vars?: Record<string, string | number>): string {
+  const template = dictionaries[locale][key] ?? dictionaries.en[key] ?? key;
+  if (!vars) return template;
+  return Object.entries(vars).reduce((acc, [name, value]) => acc.replaceAll(`{${name}}`, String(value)), template as string);
+}
 
 // Session 31 — USSD for feature-phone attendees, via Africa's Talking's USSD
 // product. Unlike SMS/WhatsApp (sendSMS/sendWhatsApp) this is inbound only:
@@ -88,9 +97,27 @@ async function findWalletsForPhone(phoneNumber: string) {
   return wallets.sort((a, b) => Number(b.event.status === "LIVE") - Number(a.event.status === "LIVE"));
 }
 
-async function checkBalance(phoneNumber: string): Promise<string> {
+async function checkBalance(phoneNumber: string, serviceCode: string): Promise<string> {
   const [wallet] = await findWalletsForPhone(phoneNumber);
   if (!wallet) return "END No Chaap wallet found for this number";
+
+  // Immediate SMS confirmation, separate from (and in addition to) the
+  // CON/END screen text above — a feature-phone caller may have already
+  // hung up by the time they'd otherwise see this, and SMS persists in
+  // their inbox. A failed send must never turn a successful balance check
+  // into an error response.
+  try {
+    await sendSMS({
+      to: phoneNumber,
+      message: translate("en", "ussd.balanceConfirmation", {
+        balance: formatTzs(wallet.balanceCents),
+        shortcode: serviceCode,
+      }),
+    });
+  } catch (err) {
+    console.error("[ussd] balance confirmation SMS failed", err);
+  }
+
   return `END Your Chaap balance is ${formatTzs(wallet.balanceCents)}`;
 }
 
@@ -150,15 +177,28 @@ async function topUp(input: UssdCallback, amountTzs: number): Promise<string> {
   }
 
   const status = result.transaction?.status;
+  if (status === "FAILED") {
+    return `END Your top-up of ${formatTzs(amountCents)} could not be started. Please try again`;
+  }
+
+  // Immediate SMS confirmation for a genuinely accepted request (COMPLETED
+  // or still-PENDING, not FAILED) — same "never let a notification failure
+  // break the response" guard as checkBalance above.
+  try {
+    await sendSMS({
+      to: input.phoneNumber,
+      message: translate("en", "ussd.topupConfirmation", { amount: formatTzs(amountCents) }),
+    });
+  } catch (err) {
+    console.error("[ussd] top-up confirmation SMS failed", err);
+  }
+
   if (status === "COMPLETED") {
     // Only happens on the simulated provider (real Airpay always answers
     // PENDING first) — the balance really has changed, so say that instead
     // of promising a prompt that will never come.
     const balance = result.wallet ? ` New balance: ${formatTzs(result.wallet.balanceCents)}` : "";
     return `END Your top-up of ${formatTzs(amountCents)} is complete.${balance}`;
-  }
-  if (status === "FAILED") {
-    return `END Your top-up of ${formatTzs(amountCents)} could not be started. Please try again`;
   }
   return `END Processing your top-up of ${formatTzs(amountCents)}. You will receive an M-Pesa prompt shortly.`;
 }
@@ -179,7 +219,7 @@ export async function handleUssd(input: UssdCallback): Promise<string> {
 
   switch (steps[0]) {
     case "1":
-      return steps.length === 1 ? checkBalance(input.phoneNumber) : "END Invalid choice";
+      return steps.length === 1 ? checkBalance(input.phoneNumber, input.serviceCode) : "END Invalid choice";
     case "3":
       return steps.length === 1 ? lastTransaction(input.phoneNumber) : "END Invalid choice";
     case "2": {

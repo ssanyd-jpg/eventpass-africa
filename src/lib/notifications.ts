@@ -69,7 +69,15 @@ export type NotificationType =
   // handleSellTickets) — tells the org OWNER to raise quantity or add a new
   // ticket type before the organiser's own dashboard callout (see
   // SoldOutCallout.tsx) would otherwise be their only signal.
-  | "TICKET_TYPE_SOLD_OUT";
+  | "TICKET_TYPE_SOLD_OUT"
+  // AirPay chargeback/reversal — see handlePaymentReversal in
+  // src/lib/payment-reversal.ts. One type covers both the attendee's and
+  // the org OWNER's WhatsApp, same as TICKET_TYPE_SOLD_OUT doesn't split by
+  // recipient either.
+  | "PAYMENT_REVERSED"
+  // Pre-event nudge for a ticket holder who hasn't topped up their wallet
+  // yet — see runWalletTopupReminderSweep in src/lib/wallet-topup-reminder.ts.
+  | "WALLET_TOPUP_REMINDER";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

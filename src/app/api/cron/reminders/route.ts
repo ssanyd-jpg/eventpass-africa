@@ -4,6 +4,7 @@ import { runPendingTopupSweep } from "@/lib/pending-topups";
 import { runSeasonRenewalSweep } from "@/lib/season-renewal";
 import { runWhatsappGroupArchiveSweep } from "@/lib/whatsapp-group";
 import { runWaitlistClosureSweep } from "@/lib/waitlist";
+import { runWalletTopupReminderSweep } from "@/lib/wallet-topup-reminder";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
@@ -90,6 +91,16 @@ export async function GET(request: Request) {
     waitlistClosure = { ok: false, reason: "SWEEP_FAILED" };
   }
 
+  // Pre-event wallet top-up reminder sweep — same "rides along on this one
+  // daily slot" reasoning as the sweeps above.
+  let walletTopupReminder: Awaited<ReturnType<typeof runWalletTopupReminderSweep>> | { ok: false; reason: string };
+  try {
+    walletTopupReminder = await runWalletTopupReminderSweep();
+  } catch (error) {
+    console.error("[cron/reminders] wallet top-up reminder sweep failed", error);
+    walletTopupReminder = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
   if (remindersError) throw remindersError;
-  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive, waitlistClosure });
+  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive, waitlistClosure, walletTopupReminder });
 }

@@ -14,6 +14,16 @@ import { EVENT_TYPES } from "@/lib/event-modes";
 import { releaseWaitlistCapacity, convertWaitlistEntry, sendWaitlistClosureNotifications } from "@/lib/waitlist";
 import { currentPriceCents, validatePricingTiers } from "@/lib/pricing";
 import { sendGroupInvite } from "@/lib/whatsapp-group";
+import { dictionaries, type Locale, type TranslationKey } from "@/lib/i18n";
+
+// Pure server-side template lookup, same pattern as waitlist.ts/
+// post-event-memory.ts's own local translate() — no per-user locale exists
+// on User today, so every call site here defaults to "en".
+function translate(locale: Locale, key: TranslationKey, vars?: Record<string, string | number>): string {
+  const template = dictionaries[locale][key] ?? dictionaries.en[key] ?? key;
+  if (!vars) return template;
+  return Object.entries(vars).reduce((acc, [name, value]) => acc.replaceAll(`{${name}}`, String(value)), template as string);
+}
 
 // Core business logic behind POST /api/sync/push, extracted out of the
 // route file so it can be exercised directly in tests without going
@@ -1302,6 +1312,14 @@ export async function handleCheckIn(userId: string, organizationId: string, payl
   if (ticket.order.status === "REFUNDED") {
     return { ok: false, reason: "ORDER_REFUNDED" };
   }
+  // AirPay chargeback/reversal (see handlePaymentReversal in
+  // src/lib/payment-reversal.ts) — the order-level status gate already used
+  // for PENDING/PAYMENT_FAILED/REFUNDED above is what "suspends" every
+  // ticket on a reversed order: there's no separate per-ticket status to
+  // keep in sync, and a reversal always covers the whole order anyway.
+  if (ticket.order.status === "REVERSED") {
+    return { ok: false, reason: "ORDER_REVERSED" };
+  }
   if (ticket.checkedIn) {
     return { ok: true, ticket: shapeTicket(ticket), alreadyCheckedIn: true };
   }
@@ -1775,23 +1793,29 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
     // reassure them so they don't panic and pay a second time. Idempotent
     // the same way TICKET_TYPE_SOLD_OUT is above: the order id rides inside
     // `subject`, so a NotificationLog row for it already existing is proof
-    // this was sent before, even across repeated poll calls.
+    // this was sent before, even across repeated poll calls. Wrapped in its
+    // own try/catch — a notification failure here is never allowed to turn
+    // a successful poll into an error for the caller.
     if (Date.now() - order.createdAt.getTime() > 60_000) {
-      const buyer = await prisma.user.findUnique({ where: { id: order.userId }, select: { phone: true } });
-      if (buyer?.phone) {
-        const subject = `Payment delayed — ${order.id}`;
-        const alreadySent = await prisma.notificationLog.findFirst({
-          where: { type: "PAYMENT_DELAYED", subject },
-        });
-        if (!alreadySent) {
-          await sendNotification({
-            type: "PAYMENT_DELAYED",
-            channel: "WHATSAPP",
-            recipient: buyer.phone,
-            subject,
-            body: "Your Chaap payment is being processed. Please wait — do not pay again. You will receive confirmation shortly.",
+      try {
+        const buyer = await prisma.user.findUnique({ where: { id: order.userId }, select: { phone: true } });
+        if (buyer?.phone) {
+          const subject = `Payment delayed — ${order.id}`;
+          const alreadySent = await prisma.notificationLog.findFirst({
+            where: { type: "PAYMENT_DELAYED", subject },
           });
+          if (!alreadySent) {
+            await sendNotification({
+              type: "PAYMENT_DELAYED",
+              channel: "WHATSAPP",
+              recipient: buyer.phone,
+              subject,
+              body: translate("en", "paymentDelayed.message"),
+            });
+          }
         }
+      } catch (err) {
+        console.error(`[sync-handlers] PAYMENT_DELAYED notification failed for order ${order.id}`, err);
       }
     }
     return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };

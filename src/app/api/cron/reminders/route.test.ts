@@ -10,12 +10,14 @@ const {
   mockRunSeasonRenewalSweep,
   mockRunWhatsappGroupArchiveSweep,
   mockRunWaitlistClosureSweep,
+  mockRunWalletTopupReminderSweep,
 } = vi.hoisted(() => ({
   mockSendEventReminders: vi.fn(),
   mockRunPendingTopupSweep: vi.fn(),
   mockRunSeasonRenewalSweep: vi.fn(),
   mockRunWhatsappGroupArchiveSweep: vi.fn(),
   mockRunWaitlistClosureSweep: vi.fn(),
+  mockRunWalletTopupReminderSweep: vi.fn(),
 }));
 vi.mock("@/lib/reminders", () => ({
   sendEventReminders: mockSendEventReminders,
@@ -40,6 +42,11 @@ vi.mock("@/lib/whatsapp-group", () => ({
 vi.mock("@/lib/waitlist", () => ({
   runWaitlistClosureSweep: mockRunWaitlistClosureSweep,
 }));
+// Wallet top-up reminder sweep — same reasoning, its own behavior is covered
+// by src/lib/wallet-topup-reminder.test.ts.
+vi.mock("@/lib/wallet-topup-reminder", () => ({
+  runWalletTopupReminderSweep: mockRunWalletTopupReminderSweep,
+}));
 
 import { GET } from "@/app/api/cron/reminders/route";
 
@@ -54,6 +61,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockReset();
     mockRunWhatsappGroupArchiveSweep.mockReset();
     mockRunWaitlistClosureSweep.mockReset();
+    mockRunWalletTopupReminderSweep.mockReset();
   });
 
   it("rejects a request with no Authorization header", async () => {
@@ -65,6 +73,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunSeasonRenewalSweep).not.toHaveBeenCalled();
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
+    expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
   });
 
   it("rejects a request with the wrong bearer token", async () => {
@@ -78,6 +87,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunSeasonRenewalSweep).not.toHaveBeenCalled();
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
+    expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
   });
 
   it("rejects every request when CRON_SECRET isn't configured, even with a header present", async () => {
@@ -91,6 +101,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunSeasonRenewalSweep).not.toHaveBeenCalled();
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
+    expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
   });
 
   it("runs the reminder job, the pending top-up sweep, the season renewal sweep, the whatsapp group archive sweep, and the waitlist closure sweep when the bearer token matches CRON_SECRET", async () => {
@@ -104,6 +115,8 @@ describe("GET /api/cron/reminders", () => {
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue(whatsappGroupArchive);
     const waitlistClosure = { ok: true, eventsChecked: 1, notifiedCount: 2 };
     mockRunWaitlistClosureSweep.mockResolvedValue(waitlistClosure);
+    const walletTopupReminder = { ok: true, eventsChecked: 1, remindersSent: 1, skipped: 0 };
+    mockRunWalletTopupReminderSweep.mockResolvedValue(walletTopupReminder);
 
     const response = await GET(
       new Request("http://localhost/api/cron/reminders", { headers: { authorization: "Bearer test-secret" } })
@@ -118,12 +131,14 @@ describe("GET /api/cron/reminders", () => {
       seasonRenewal,
       whatsappGroupArchive,
       waitlistClosure,
+      walletTopupReminder,
     });
     expect(mockSendEventReminders).toHaveBeenCalledTimes(1);
     expect(mockRunPendingTopupSweep).toHaveBeenCalledTimes(1);
     expect(mockRunSeasonRenewalSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWhatsappGroupArchiveSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWaitlistClosureSweep).toHaveBeenCalledTimes(1);
+    expect(mockRunWalletTopupReminderSweep).toHaveBeenCalledTimes(1);
   });
 
   it("still returns the reminders result when the top-up sweep throws", async () => {
@@ -133,6 +148,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockResolvedValue({ offersSent: 0, skipped: 0 });
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
+    mockRunWalletTopupReminderSweep.mockResolvedValue({ ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -148,6 +164,7 @@ describe("GET /api/cron/reminders", () => {
       seasonRenewal: { offersSent: 0, skipped: 0 },
       whatsappGroupArchive: { ok: true, eventsChecked: 0, archivedCount: 0 },
       waitlistClosure: { ok: true, eventsChecked: 0, notifiedCount: 0 },
+      walletTopupReminder: { ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 },
     });
     errorSpy.mockRestore();
   });
@@ -209,7 +226,27 @@ describe("GET /api/cron/reminders", () => {
     errorSpy.mockRestore();
   });
 
-  it("still runs the top-up sweep, the season renewal sweep, the whatsapp group archive sweep, and the waitlist closure sweep when the reminders job throws", async () => {
+  it("still returns the reminders result when the wallet top-up reminder sweep throws", async () => {
+    process.env.CRON_SECRET = "test-secret";
+    mockSendEventReminders.mockResolvedValue({ ok: true, eventsChecked: 1, remindersSent: 1 });
+    mockRunPendingTopupSweep.mockResolvedValue({ ok: true, processed: 0, confirmed: 0, failed: 0, stillPending: 0, alreadyResolved: 0 });
+    mockRunSeasonRenewalSweep.mockResolvedValue({ offersSent: 0, skipped: 0 });
+    mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
+    mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
+    mockRunWalletTopupReminderSweep.mockRejectedValue(new Error("neon down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const response = await GET(
+      new Request("http://localhost/api/cron/reminders", { headers: { authorization: "Bearer test-secret" } })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.walletTopupReminder).toEqual({ ok: false, reason: "SWEEP_FAILED" });
+    errorSpy.mockRestore();
+  });
+
+  it("still runs the top-up sweep, the season renewal sweep, the whatsapp group archive sweep, the waitlist closure sweep, and the wallet top-up reminder sweep when the reminders job throws", async () => {
     process.env.CRON_SECRET = "test-secret";
     mockSendEventReminders.mockRejectedValue(new Error("whatsapp down"));
     mockRunPendingTopupSweep.mockResolvedValue({
@@ -223,6 +260,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockResolvedValue({ offersSent: 0, skipped: 0 });
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
+    mockRunWalletTopupReminderSweep.mockResolvedValue({ ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 });
 
     await expect(
       GET(new Request("http://localhost/api/cron/reminders", { headers: { authorization: "Bearer test-secret" } }))
@@ -231,5 +269,6 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunSeasonRenewalSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWhatsappGroupArchiveSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWaitlistClosureSweep).toHaveBeenCalledTimes(1);
+    expect(mockRunWalletTopupReminderSweep).toHaveBeenCalledTimes(1);
   });
 });

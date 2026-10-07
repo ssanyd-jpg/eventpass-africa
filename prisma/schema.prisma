@@ -1285,6 +1285,12 @@ model Order {
   // STK-push confirmation, "PAYMENT_FAILED" if declined/timed out, or
   // "CANCELLED" if the buyer gave up waiting (see handleCancelPendingOrder)
   // — mirrors WalletTransaction.providerReference/providerMessage below).
+  // "REVERSED" is a further-distinct terminal state from "REFUNDED": a
+  // chargeback AirPay itself reverses after the fact (see
+  // handlePaymentReversal in src/lib/payment-reversal.ts), not an
+  // organiser-initiated refund. handleCheckIn blocks on it exactly like
+  // REFUNDED — see its own comment for why no separate Ticket-level status
+  // exists for this.
   // paymentMethod is "AIRPAY_ONLINE" | "OFFLINE_DEFERRED" | null (legacy/
   // unspecified — an order created before this feature, or by a client
   // that didn't opt into either path).
