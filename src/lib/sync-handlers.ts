@@ -1771,6 +1771,29 @@ export async function handleCheckOrderPaymentStatus(payload: any) {
 
   const result = await verifyAirpayOrder(order.providerReference);
   if (result.status === "PENDING") {
+    // Still waiting on the buyer's STK-push confirmation after a while —
+    // reassure them so they don't panic and pay a second time. Idempotent
+    // the same way TICKET_TYPE_SOLD_OUT is above: the order id rides inside
+    // `subject`, so a NotificationLog row for it already existing is proof
+    // this was sent before, even across repeated poll calls.
+    if (Date.now() - order.createdAt.getTime() > 60_000) {
+      const buyer = await prisma.user.findUnique({ where: { id: order.userId }, select: { phone: true } });
+      if (buyer?.phone) {
+        const subject = `Payment delayed — ${order.id}`;
+        const alreadySent = await prisma.notificationLog.findFirst({
+          where: { type: "PAYMENT_DELAYED", subject },
+        });
+        if (!alreadySent) {
+          await sendNotification({
+            type: "PAYMENT_DELAYED",
+            channel: "WHATSAPP",
+            recipient: buyer.phone,
+            subject,
+            body: "Your Chaap payment is being processed. Please wait — do not pay again. You will receive confirmation shortly.",
+          });
+        }
+      }
+    }
     return { ok: true, order: shapeOrder(order), ticketTypeUpdates: [] };
   }
 

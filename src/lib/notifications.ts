@@ -15,6 +15,10 @@ export type NotificationType =
   | "WITHDRAWAL_REQUESTED"
   | "WITHDRAWAL_DECIDED"
   | "ORDER_PAYMENT_FAILED"
+  // Reassurance ping sent once a still-PENDING Airpay order has been
+  // waiting on the buyer's STK-push confirmation for over 60s — see
+  // handleCheckOrderPaymentStatus in sync-handlers.ts.
+  | "PAYMENT_DELAYED"
   | "WRISTBAND_PROVISIONED"
   | "LOW_WALLET_BALANCE"
   | "VENDOR_MAGIC_LINK"

@@ -952,6 +952,33 @@ describe("handleCheckOrderPaymentStatus", () => {
     expect(result.order.status).toBe("PAID");
     expect(mockVerifyAirpayOrder).not.toHaveBeenCalled();
   });
+
+  it("does not send a delay notice for an order still PENDING under 60s", async () => {
+    const { buyer, orderId } = await pendingOrder();
+    await prisma.user.update({ where: { id: buyer.id }, data: { phone: "0712345678" } });
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING", reference: "irrelevant" });
+
+    await handleCheckOrderPaymentStatus({ orderId });
+
+    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } })).toBe(0);
+  });
+
+  it("sends a one-time WhatsApp delay notice once a PENDING order has been waiting over 60s", async () => {
+    const { buyer, orderId } = await pendingOrder();
+    await prisma.user.update({ where: { id: buyer.id }, data: { phone: "0712345678" } });
+    await prisma.order.update({ where: { id: orderId }, data: { createdAt: new Date(Date.now() - 70_000) } });
+    mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING", reference: "irrelevant" });
+
+    const result = await handleCheckOrderPaymentStatus({ orderId });
+    expect(result.order.status).toBe("PENDING");
+    const logs = await prisma.notificationLog.findMany({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].body).toContain("do not pay again");
+
+    // A second poll on the still-PENDING order must not resend it.
+    await handleCheckOrderPaymentStatus({ orderId });
+    expect(await prisma.notificationLog.count({ where: { type: "PAYMENT_DELAYED", recipient: "0712345678" } })).toBe(1);
+  });
 });
 
 describe("handleCancelPendingOrder", () => {
