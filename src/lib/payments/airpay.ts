@@ -38,7 +38,7 @@ import {
  * PENDING charge.
  */
 
-const OAUTH_URL = "https://kraken.airpay.tz/airpay/pay/v1/api/oauth2";
+const OAUTH_URL = "https://kraken.airpay.tz/airpay/pay/v1/api/oauth2/";
 const SEAMLESS_URL = "https://kraken.airpay.tz/airpay/pay/v1/api/seamless/index.php";
 const VERIFY_URL = "https://payments.airpay.tz/order/verify.php";
 
@@ -57,11 +57,14 @@ async function postForm(url: string, fields: Record<string, string>): Promise<Re
 }
 
 async function getAccessToken(creds: AirpayCredentials): Promise<string> {
+  // Exactly these four fields, keyed "mercid" (not "merchant_id") — confirmed
+  // against Airpay's reference PHP. A stray extra "merchant_id" key here
+  // previously polluted both the checksum (wrong concatenated value order)
+  // and encdata (an extra field the server doesn't expect).
   const payload = {
     client_id: creds.clientId,
     client_secret: creds.clientSecret,
     grant_type: "client_credentials",
-    merchant_id: creds.merchantId,
     mercid: creds.merchantId,
   };
   const encryptionKey = deriveEncryptionKey(creds.username, creds.password);

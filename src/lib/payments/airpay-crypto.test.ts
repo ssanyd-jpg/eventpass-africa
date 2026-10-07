@@ -47,14 +47,23 @@ describe("encryptPayload", () => {
     const payload = { orderid: "ORD123", amount: "1000.00", bankcode: "TIGO" };
     const encdata = encryptPayload(payload, key);
 
-    // encdata = <32 hex chars of IV> + <base64 ciphertext>, per airpay-crypto.ts.
-    const ivHex = encdata.slice(0, 32);
-    const ciphertextB64 = encdata.slice(32);
-    const iv = Buffer.from(ivHex, "hex");
+    // encdata = <16-character IV string> + <base64 ciphertext>, matching
+    // Airpay's reference PHP exactly — the IV is 16 raw characters (not
+    // hex-re-encoded, not base64), only the ciphertext is base64'd.
+    const ivString = encdata.slice(0, 16);
+    const ciphertextB64 = encdata.slice(16);
+    const iv = Buffer.from(ivString, "utf8");
     const decipher = createDecipheriv("aes-256-cbc", key, iv);
     const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertextB64, "base64")), decipher.final()]);
 
     expect(JSON.parse(decrypted.toString("utf8"))).toEqual(payload);
+  });
+
+  it("encdata's leading 16 characters are the raw IV, not hex-encoded", () => {
+    const encdata = encryptPayload({ orderid: "ORD123" }, key);
+    const ivString = encdata.slice(0, 16);
+    expect(ivString).toHaveLength(16);
+    expect(ivString).toMatch(/^[a-f0-9]{16}$/);
   });
 
   it("uses a fresh random IV each call, so encdata differs even for identical payloads", () => {

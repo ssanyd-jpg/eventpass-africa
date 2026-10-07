@@ -59,20 +59,27 @@ export function derivePrivateKey(secret: string, username: string, password: str
 }
 
 /**
- * encdata = iv16 + base64(aes-256-cbc(json_payload, encryption_key, iv16))
+ * encdata = iv + base64(aes-256-cbc(json_payload, encryption_key, iv))
  *
- * Assumption: "iv16" here means the 16-byte IV rendered as a 32-character
- * hex string and concatenated in front of the base64 ciphertext (not
- * base64'd itself, and not folded into the same base64 blob as the
- * ciphertext). Needs confirming against a real Airpay response before
- * relying on it — if decryption fails on their end, this is the first
- * place to check.
+ * Confirmed against Airpay's reference PHP:
+ *   $iv = substr(hash('sha256', uniqid()), 0, 16);
+ *   $encrypted = openssl_encrypt($data, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+ *   return $iv . base64_encode($encrypted);
+ *
+ * The IV is the first 16 *characters* of a sha256 hex digest — a 16-byte
+ * ASCII string, used directly as the raw CBC IV (not re-encoded as hex, not
+ * a cryptographically random 16-byte buffer). The output concatenates that
+ * same 16-character string in front of the base64 ciphertext — the IV
+ * itself is never base64'd. randomBytes(16).toString("hex") stands in for
+ * PHP's uniqid() as the per-call random seed fed into sha256; only the
+ * sha256 output is used as the IV, same as the PHP.
  */
 export function encryptPayload(payload: Record<string, unknown>, encryptionKey: Buffer): string {
-  const iv = randomBytes(16);
-  const cipher = createCipheriv("aes-256-cbc", encryptionKey, iv);
+  const seed = randomBytes(16).toString("hex");
+  const iv = createHash("sha256").update(seed).digest("hex").slice(0, 16);
+  const cipher = createCipheriv("aes-256-cbc", encryptionKey, Buffer.from(iv, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
-  return iv.toString("hex") + ciphertext.toString("base64");
+  return iv + ciphertext.toString("base64");
 }
 
 /**
