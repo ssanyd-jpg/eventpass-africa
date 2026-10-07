@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   base64MerchantDomain,
   buildChecksum,
+  decryptResponse,
   deriveEncryptionKey,
   derivePrivateKey,
   encryptPayload,
@@ -71,6 +72,24 @@ describe("encryptPayload", () => {
     const first = encryptPayload(payload, key);
     const second = encryptPayload(payload, key);
     expect(first).not.toBe(second);
+  });
+});
+
+describe("decryptResponse", () => {
+  const key = deriveEncryptionKey("merchant_user", "s3cret-pass");
+
+  it("round-trips: decrypting what encryptPayload produced recovers the original data", () => {
+    const payload = { data: { access_token: "abc123xyz", expires_in: 3600 } };
+    const encrypted = encryptPayload(payload, key);
+
+    expect(decryptResponse(encrypted, key)).toEqual(payload);
+  });
+
+  it("fails to decrypt (rather than silently returning garbage) under the wrong key", () => {
+    const wrongKey = deriveEncryptionKey("other_user", "s3cret-pass");
+    const encrypted = encryptPayload({ data: { access_token: "abc123xyz" } }, key);
+
+    expect(() => decryptResponse(encrypted, wrongKey)).toThrow();
   });
 });
 

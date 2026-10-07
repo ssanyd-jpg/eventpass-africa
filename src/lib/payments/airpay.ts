@@ -2,6 +2,7 @@ import type { ChargeRequest, ChargeResult, PaymentProvider } from "./types";
 import {
   base64MerchantDomain,
   buildChecksum,
+  decryptResponse,
   deriveEncryptionKey,
   derivePrivateKey,
   encryptPayload,
@@ -74,11 +75,18 @@ async function getAccessToken(creds: AirpayCredentials): Promise<string> {
     checksum: buildChecksum(payload),
   });
 
-  // The spec documents three possible token response shapes — tolerate all.
-  const nested = data.data as { access_token?: string } | undefined;
-  const token = (data.token as string | undefined) ?? (data.accessToken as string | undefined) ?? nested?.access_token;
+  // Confirmed live against Airpay's OAuth endpoint: the token isn't a plain
+  // field — the whole body is { merchant_id, response: "<encrypted blob>" },
+  // encrypted with the same secretKey used for encdata. See decryptResponse.
+  const encryptedResponse = data.response as string | undefined;
+  if (!encryptedResponse) {
+    throw new Error(`Airpay OAuth response didn't include an encrypted "response" field: ${JSON.stringify(data)}`);
+  }
+  const decrypted = decryptResponse(encryptedResponse, encryptionKey);
+  const nested = decrypted.data as { access_token?: string } | undefined;
+  const token = nested?.access_token;
   if (!token) {
-    throw new Error(`Airpay OAuth response didn't include a recognizable token: ${JSON.stringify(data)}`);
+    throw new Error(`Airpay OAuth decrypted response didn't include data.access_token: ${JSON.stringify(decrypted)}`);
   }
   return token;
 }

@@ -1,4 +1,4 @@
-import { createCipheriv, createHash, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 
 /**
  * Implements the encryption/checksum scheme from Airpay Tanzania's
@@ -80,6 +80,23 @@ export function encryptPayload(payload: Record<string, unknown>, encryptionKey: 
   const cipher = createCipheriv("aes-256-cbc", encryptionKey, Buffer.from(iv, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
   return iv + ciphertext.toString("base64");
+}
+
+/**
+ * Inverse of encryptPayload — decrypts an Airpay response blob of the same
+ * shape (16-character raw IV + base64 ciphertext). Confirmed live against
+ * Airpay's OAuth endpoint: it returns { merchant_id, response: "<this>" },
+ * encrypted with the same md5-derived secretKey used to encrypt encdata.
+ * Matches Airpay's reference PHP decryptData():
+ *   iv = substr(response, 0, 16); encryptedData = substr(response, 16);
+ *   decrypted = openssl_decrypt(base64_decode(encryptedData), 'AES-256-CBC', secretKey, OPENSSL_RAW_DATA, iv);
+ */
+export function decryptResponse(encryptedBlob: string, encryptionKey: Buffer): Record<string, unknown> {
+  const iv = encryptedBlob.slice(0, 16);
+  const ciphertextB64 = encryptedBlob.slice(16);
+  const decipher = createDecipheriv("aes-256-cbc", encryptionKey, Buffer.from(iv, "utf8"));
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertextB64, "base64")), decipher.final()]);
+  return JSON.parse(decrypted.toString("utf8"));
 }
 
 /**
