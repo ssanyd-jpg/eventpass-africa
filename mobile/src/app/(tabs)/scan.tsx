@@ -3,9 +3,10 @@
  *
  * Uses expo-nfc to read the wristband UID, then hits /api/staff/scan.
  * Fullscreen green/red result with haptic feedback.
+ * Denied entry plays the Chaap Panther growl Lottie animation.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -16,6 +17,7 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
+import LottieView from "lottie-react-native";
 import { validateTicket } from "../../lib/api";
 import { loadSession } from "../../lib/auth";
 import type { StaffSession, ScanResult } from "../../lib/api";
@@ -41,6 +43,7 @@ export default function ScanScreen() {
   const [session, setSession] = useState<StaffSession | null>(null);
   const [state, setState] = useState<ScreenState>({ kind: "idle" });
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
+  const lottieRef = useRef<LottieView>(null);
 
   useEffect(() => {
     loadSession().then(setSession);
@@ -92,15 +95,17 @@ export default function ScanScreen() {
 
       setState({ kind: "result", result });
 
-      // Auto-reset after 3s for fast flow at the gate
-      setTimeout(() => setState({ kind: "idle" }), 3000);
+      // Valid entries auto-reset after 3s; denied entries reset via onAnimationFinish
+      if (result.valid) {
+        setTimeout(() => setState({ kind: "idle" }), 3000);
+      }
     } catch (err: any) {
       if (err?.message?.includes("cancelled")) {
         setState({ kind: "idle" });
         return;
       }
       setState({ kind: "error", message: err?.message ?? "Scan failed" });
-      setTimeout(() => setState({ kind: "idle" }), 3000);
+      // Error state resets via onAnimationFinish (panther plays then idles)
     } finally {
       NfcManager?.cancelTechnologyRequest().catch(() => {});
     }
@@ -127,12 +132,36 @@ export default function ScanScreen() {
 
   if (state.kind === "result") {
     const { result } = state;
+
+    // ── VALID entry ────────────────────────────────────────────────────────
+    if (result.valid) {
+      return (
+        <View style={[styles.fullscreen, styles.bgGreen]}>
+          <Text style={styles.resultIcon}>✓</Text>
+          <Text style={styles.resultTitle}>VALID</Text>
+          <Text style={styles.resultName}>{result.holderName}</Text>
+          <Text style={styles.resultTicket}>{result.ticketType}</Text>
+          {result.alreadyUsed && (
+            <Text style={styles.resultWarning}>⚠ Already scanned</Text>
+          )}
+          <Text style={styles.resultMessage}>{result.message}</Text>
+        </View>
+      );
+    }
+
+    // ── DENIED entry — Chaap Panther growl animation ───────────────────────
     return (
-      <View style={[styles.fullscreen, result.valid ? styles.bgGreen : styles.bgRed]}>
-        <Text style={styles.resultIcon}>{result.valid ? "✓" : "✗"}</Text>
-        <Text style={styles.resultTitle}>{result.valid ? "VALID" : "INVALID"}</Text>
+      <View style={[styles.fullscreen, styles.bgDenyRed]}>
+        <LottieView
+          ref={lottieRef}
+          source={require("../../../assets/panther-growl.json")}
+          autoPlay
+          loop={false}
+          style={styles.lottie}
+          onAnimationFinish={() => setState({ kind: "idle" })}
+        />
+        <Text style={styles.denyLabel}>DENIED</Text>
         <Text style={styles.resultName}>{result.holderName}</Text>
-        <Text style={styles.resultTicket}>{result.ticketType}</Text>
         {result.alreadyUsed && (
           <Text style={styles.resultWarning}>⚠ Already scanned</Text>
         )}
@@ -143,9 +172,15 @@ export default function ScanScreen() {
 
   if (state.kind === "error") {
     return (
-      <View style={[styles.fullscreen, styles.bgRed]}>
-        <Text style={styles.resultIcon}>!</Text>
-        <Text style={styles.resultTitle}>ERROR</Text>
+      <View style={[styles.fullscreen, styles.bgDenyRed]}>
+        <LottieView
+          source={require("../../../assets/panther-growl.json")}
+          autoPlay
+          loop={false}
+          style={styles.lottie}
+          onAnimationFinish={() => setState({ kind: "idle" })}
+        />
+        <Text style={styles.denyLabel}>ERROR</Text>
         <Text style={styles.resultMessage}>{state.message}</Text>
       </View>
     );
@@ -256,6 +291,8 @@ const styles = StyleSheet.create({
   },
   bgGreen: { backgroundColor: "#065f46" },
   bgRed: { backgroundColor: "#7f1d1d" },
+  // Brighter red for deny — matches #dc2626 brand red
+  bgDenyRed: { backgroundColor: "#dc2626" },
   resultIcon: {
     fontSize: 96,
     color: "#fff",
@@ -290,5 +327,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "rgba(255,255,255,0.5)",
     textAlign: "center",
+  },
+  // Lottie panther deny animation
+  lottie: {
+    width: 320,
+    height: 300,
+    marginBottom: 8,
+  },
+  denyLabel: {
+    fontSize: 48,
+    fontWeight: "900",
+    color: "#fff",
+    letterSpacing: 4,
+    marginBottom: 16,
   },
 });
