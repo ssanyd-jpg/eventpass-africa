@@ -181,13 +181,16 @@ export default async function HomePage() {
             </div>
           </div>
 
-          {/* Desktop/tablet only — kept off phones so the hero never forces a
-              ~1.9MB video download on a metered mobile connection. The
-              poster frame alone (panther + Kilimanjaro + DNA helix +
-              wordmark, already baked into one shot) carries the brand on
-              phones instead. */}
-          <div className="card hidden overflow-hidden shadow-xl shadow-black/30 lg:block">
-            <div className="aspect-[4/3] w-full">
+          {/* Visible at every width — this is a mobile-heavy platform, so a
+              phone-only "hidden" here would skip the brand shot for most
+              visitors. HeroBrandVideo itself keeps the ~1.8MB clip off
+              anything narrower than lg: below that it never attaches a
+              video src at all, so phones only ever pay for the 52KB poster
+              frame (panther + Kilimanjaro + DNA helix + wordmark, already
+              baked into one shot), shown as a static image. Shorter aspect
+              on mobile keeps it from pushing the hero too tall. */}
+          <div className="card overflow-hidden shadow-xl shadow-black/30">
+            <div className="aspect-[16/9] w-full lg:aspect-[4/3]">
               <HeroBrandVideo src="/brand/chaap-hero.mp4" poster="/brand/chaap-hero-poster.webp" />
             </div>
           </div>

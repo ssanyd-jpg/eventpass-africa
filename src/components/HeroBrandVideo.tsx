@@ -8,13 +8,14 @@ import { useEffect, useRef } from "react";
 // own as a static brand shot, so reduced-motion users lose nothing but the
 // motion itself.
 //
-// Desktop/tablet only (see page.tsx's `hidden lg:block` wrapper) — kept off
-// phones to avoid burning mobile data on this market's often-metered
-// connections. CSS display:none on the wrapper does NOT stop a <video src>
-// from being fetched, so `src` is deliberately left off the element itself
-// and only ever attached here, in JS, after confirming a desktop-width
-// viewport — a mobile load never requests the video file at all, only the
-// lightweight poster.
+// This element itself is visible at every width (see page.tsx) — only the
+// video *file* is desktop/tablet-only, to avoid burning mobile data on this
+// market's often-metered connections. CSS alone can't gate that: a
+// display:none ancestor does NOT stop a <video src> from being fetched, so
+// `src` is deliberately left off the element in markup and only ever
+// attached here, in JS, after confirming a desktop-width viewport. Below
+// that, the element just renders its `poster` image — a mobile load never
+// requests the video file at all.
 export default function HeroBrandVideo({ src, poster }: { src: string; poster: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
