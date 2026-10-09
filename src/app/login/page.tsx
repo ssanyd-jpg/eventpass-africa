@@ -141,12 +141,26 @@ function LoginForm() {
         </Link>
       </form>
 
-      <div className="mt-4 rounded-lg border border-border bg-surface p-4 text-xs text-muted">
-        <p className="mb-1 font-semibold text-foreground">{t("login.demoAccounts")}</p>
-        <p>organizer@chaap.dev / password123 (organizer)</p>
-        <p>fan@chaap.dev / password123 (attendee)</p>
-        <p>admin@chaap.dev / password123 (admin)</p>
-      </div>
+      {/* Dev/staging convenience only — was rendering unconditionally,
+          including on the production domain, which put three real working
+          logins (one of them platform admin) in plain text on a public
+          page. NODE_ENV is "production" on every real deploy (Vercel sets
+          it automatically) and inlined at build time for a client
+          component, so this never ships to production regardless of how
+          it's hosted. */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="mt-4 rounded-lg border border-border bg-surface p-4 text-xs text-muted">
+          <p className="mb-1 font-semibold text-foreground">{t("login.demoAccounts")}</p>
+          {/* Passwords were rotated by scripts/rotate-demo-passwords.ts after
+              being exposed in plain text here — see that script's own
+              header comment for why. Emails are still fine to list (they're
+              not a secret), the password column just points at wherever
+              rotate-demo-passwords.ts's one-time printout actually landed. */}
+          <p>organizer@chaap.dev — see your password manager</p>
+          <p>fan@chaap.dev — see your password manager</p>
+          <p>admin@chaap.dev — see your password manager</p>
+        </div>
+      )}
 
       <p className="mt-6 text-center text-sm text-muted">
         {t("login.noAccount")}{" "}
