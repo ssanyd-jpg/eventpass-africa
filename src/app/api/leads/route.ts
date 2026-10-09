@@ -11,14 +11,17 @@ import { sendNotification } from "@/lib/notifications";
  * own CORS allow-list rather than relying on this app's own session/CSRF
  * story.
  *
- * TODO: while the marketing site is still hosted as a Claude Artifact during
- * development, its preview origin will need to be added here temporarily to
- * test the live fetch before the real chaap.africa domain goes live. Don't
- * guess that origin — confirm it from the actual artifact URL first, then
- * add it to ALLOWED_ORIGINS and remove it again once the real domain is
- * wired up.
+ * DEV-ONLY: while the marketing site is still hosted as a Claude Artifact,
+ * its live preview renders the artboard in an iframe built from a `data:`
+ * URL rather than serving it from a real https:// origin. A document loaded
+ * from a `data:` URL (without `allow-same-origin` in its sandbox) has an
+ * opaque origin, which browsers serialize in the fetch `Origin` header as
+ * the literal string "null" — not a domain. That's what shows up here, so
+ * it's allow-listed by that literal string rather than a guessed subdomain.
+ * Remove the "null" entry once chaap.africa itself is serving this form and
+ * the Artifact preview is no longer in the loop.
  */
-const ALLOWED_ORIGINS = new Set(["https://chaap.africa", "https://www.chaap.africa"]);
+const ALLOWED_ORIGINS = new Set(["https://chaap.africa", "https://www.chaap.africa", "null"]);
 
 function allowedOrigin(origin: string | null): string | null {
   return origin && ALLOWED_ORIGINS.has(origin) ? origin : null;

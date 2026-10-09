@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Chaap Staff",
+    "slug": "chaap-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "chaap-staff",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "africa.chaap.staff"
+    },
+    "android": {
+      "package": "africa.chaap.staff",
+      "adaptiveIcon": {
+        "backgroundColor": "#111827",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "permissions": ["android.permission.NFC"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
