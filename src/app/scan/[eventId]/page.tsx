@@ -82,6 +82,16 @@ export default function GateScannerPage() {
   const [mode, setMode] = useState<"attendee" | "vendor">("attendee");
   const [code, setCode] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
+  // Bumped on every real result (never on the `null` clears) and used as the
+  // overlay's React key below — a repeat of the identical tone+code (e.g.
+  // the same wrong wristband tapped twice in a row) wouldn't otherwise
+  // change any prop ScanResultOverlay receives, so the granted/denied video
+  // would silently fail to restart from frame 0 on the second tap.
+  const [resultSeq, setResultSeq] = useState(0);
+  const pushResult = useCallback((r: ScanResult) => {
+    setResultSeq((s) => s + 1);
+    setResult(r);
+  }, []);
   const inputRef = useRef<HTMLInputElement>(null);
   const { highContrast, toggle: toggleHighContrast } = useHighContrast();
 
@@ -151,13 +161,13 @@ export default function GateScannerPage() {
         blocked === "refunded" ? t("scan.refunded")
         : blocked === "paymentPending" ? t("scan.paymentPending")
         : t("scan.paymentFailed");
-      setResult({ kind: blocked, message, code: normalized });
+      pushResult({ kind: blocked, message, code: normalized });
       return;
     }
 
     const match = ticketsRef.current.find((tk) => tk.code === normalized);
     if (!match) {
-      setResult({ kind: "invalid", message: t("scan.notFound"), code: normalized });
+      pushResult({ kind: "invalid", message: t("scan.notFound"), code: normalized });
       return;
     }
 
@@ -171,7 +181,7 @@ export default function GateScannerPage() {
     });
 
     if (signal === "already") {
-      setResult({
+      pushResult({
         kind: "already",
         message: t("scan.alreadyCheckedIn"),
         ticketTypeName: match.ticketTypeName,
@@ -196,7 +206,7 @@ export default function GateScannerPage() {
       scannedAt,
     });
 
-    setResult(
+    pushResult(
       signal === "vip"
         ? {
             kind: "vip",
@@ -213,7 +223,7 @@ export default function GateScannerPage() {
             code: normalized,
           }
     );
-  }, [t]);
+  }, [t, pushResult]);
 
   // Session 14 — the VIP full-screen confirmation clears itself; every
   // other result kind is left exactly as before (persists until the next
@@ -231,15 +241,15 @@ export default function GateScannerPage() {
 
     const match = (vendorsRef.current ?? []).find((v) => v.badgeCode === normalized);
     if (!match) {
-      setResult({ kind: "invalid", message: t("scan.vendorNotFound"), code: normalized });
+      pushResult({ kind: "invalid", message: t("scan.vendorNotFound"), code: normalized });
       return;
     }
     if (match.status !== "APPROVED") {
-      setResult({ kind: "notApproved", message: t("scan.vendorNotApproved"), code: normalized });
+      pushResult({ kind: "notApproved", message: t("scan.vendorNotApproved"), code: normalized });
       return;
     }
     if (match.checkedIn) {
-      setResult({
+      pushResult({
         kind: "already",
         message: t("scan.vendorAlreadyCheckedIn"),
         ticketTypeName: match.name,
@@ -259,14 +269,14 @@ export default function GateScannerPage() {
       scannedAt,
     });
 
-    setResult({
+    pushResult({
       kind: "valid",
       message: t("scan.vendorEntryGranted"),
       ticketTypeName: match.name,
       boothNumber: match.boothNumber,
       code: normalized,
     });
-  }, [t]);
+  }, [t, pushResult]);
 
   const activeCheckIn = mode === "attendee" ? checkIn : checkInVendor;
 
@@ -302,7 +312,7 @@ export default function GateScannerPage() {
               // attendeeLabel as the big title and ticketTypeName as the
               // subtitle beneath it, same as every other result kind, so
               // this is what actually puts that exact text on screen.
-              setResult({
+              pushResult({
                 kind: "seasonPass",
                 message: t("scan.seasonPassHolder"),
                 ticketTypeName: t("scan.seasonPassHolder"),
@@ -318,14 +328,14 @@ export default function GateScannerPage() {
           }
         }
         const replaced = await isUidSuperseded(reading.uid, "ticket");
-        setResult({
+        pushResult({
           kind: replaced ? "wristbandReplaced" : "notProvisioned",
           message: replaced ? t("scan.wristbandReplaced") : t("scan.notProvisioned"),
           code: reading.uid,
         });
       }
     },
-    [checkIn, online, t]
+    [checkIn, online, t, pushResult]
   );
 
   function onSubmit(e: React.FormEvent) {
@@ -407,6 +417,7 @@ export default function GateScannerPage() {
         : null;
     return (
       <ScanResultOverlay
+        key={resultSeq}
         tone={tone}
         icon={resultIcon(tone)}
         title={title}

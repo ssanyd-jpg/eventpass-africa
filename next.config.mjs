@@ -24,6 +24,21 @@ const withPWA = withPWAInit({
       },
     },
     {
+      // Gate-result videos (granted/denied, ScanResultOverlay). denied.mp4
+      // sits just over next-pwa's default 2MB precache ceiling, so the
+      // install-time precache sweep silently drops it — an explicit
+      // CacheFirst runtime route has no such size limit instead: the first
+      // grant and the first denial at a gate cache themselves on that
+      // first view, then replay with zero network for the rest of the
+      // event, same "works offline" guarantee the rest of this app makes.
+      urlPattern: /\/scan-results\/.*\.mp4$/i,
+      handler: "CacheFirst",
+      options: {
+        cacheName: "eventpass-africa-scan-result-media",
+        expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+      },
+    },
+    {
       urlPattern: /\/api\/sync\/pull.*/i,
       handler: "NetworkFirst",
       options: {
