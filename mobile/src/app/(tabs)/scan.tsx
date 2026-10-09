@@ -2,11 +2,14 @@
  * Gate Scanner — tap NFC wristband → instant pass/fail
  *
  * Uses expo-nfc to read the wristband UID, then hits /api/staff/scan.
- * Fullscreen green/red result with haptic feedback.
- * Denied entry plays the Chaap Panther growl Lottie animation.
+ * Fullscreen Chaap Panther brand video for both grant and deny — the same
+ * granted.mp4/denied.mp4 clips the web PWA gate scanner plays (see
+ * src/components/ScanResultOverlay.tsx in the Next.js app), swapped in
+ * here in place of this screen's old one-off Lottie animation so both
+ * scanner surfaces look and sound the same.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -17,7 +20,8 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
-import LottieView from "lottie-react-native";
+import { useEventListener } from "expo";
+import { useVideoPlayer, VideoView, type VideoSource } from "expo-video";
 import { validateTicket } from "../../lib/api";
 import { loadSession } from "../../lib/auth";
 import type { StaffSession, ScanResult } from "../../lib/api";
@@ -39,11 +43,33 @@ try {
   // NFC not available (simulator or web)
 }
 
+// Safety-net only — ResultVideo's onEnd normally fires first and resets the
+// screen (see below); this just guarantees the scanner can never get stuck
+// on a frozen result if a clip fails to load. Matches each clip's real
+// length (public/scan-results/ in the web app) plus a small buffer.
+const GRANTED_SAFETY_MS = 2600;
+const DENIED_SAFETY_MS = 4600;
+
+function ResultVideo({ source, onEnd }: { source: VideoSource; onEnd: () => void }) {
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = false;
+    p.play();
+  });
+  useEventListener(player, "playToEnd", onEnd);
+  return (
+    <VideoView
+      style={StyleSheet.absoluteFill}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
 export default function ScanScreen() {
   const [session, setSession] = useState<StaffSession | null>(null);
   const [state, setState] = useState<ScreenState>({ kind: "idle" });
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
-  const lottieRef = useRef<LottieView>(null);
 
   useEffect(() => {
     loadSession().then(setSession);
@@ -70,6 +96,16 @@ export default function ScanScreen() {
     }, [])
   );
 
+  // Safety-net reset — see GRANTED_SAFETY_MS/DENIED_SAFETY_MS above. Cleared
+  // and re-armed on every new result so it only fires if ResultVideo's
+  // onEnd genuinely never does.
+  useEffect(() => {
+    if (state.kind !== "result" && state.kind !== "error") return;
+    const ms = state.kind === "result" && state.result.valid ? GRANTED_SAFETY_MS : DENIED_SAFETY_MS;
+    const timer = setTimeout(() => setState({ kind: "idle" }), ms);
+    return () => clearTimeout(timer);
+  }, [state]);
+
   async function startScan() {
     if (!session) return;
     setState({ kind: "scanning" });
@@ -94,18 +130,16 @@ export default function ScanScreen() {
       }
 
       setState({ kind: "result", result });
-
-      // Valid entries auto-reset after 3s; denied entries reset via onAnimationFinish
-      if (result.valid) {
-        setTimeout(() => setState({ kind: "idle" }), 3000);
-      }
+      // Reset is driven by ResultVideo's onEnd below (both the granted and
+      // denied clips play to completion) — see the safety-net effect above
+      // for the fallback if a clip fails to load.
     } catch (err: any) {
       if (err?.message?.includes("cancelled")) {
         setState({ kind: "idle" });
         return;
       }
       setState({ kind: "error", message: err?.message ?? "Scan failed" });
-      // Error state resets via onAnimationFinish (panther plays then idles)
+      // Error state resets via the denied clip's onEnd, same as a real deny.
     } finally {
       NfcManager?.cancelTechnologyRequest().catch(() => {});
     }
@@ -125,63 +159,41 @@ export default function ScanScreen() {
       message: "DEMO MODE — NFC not available on this device",
     };
     setState({ kind: "result", result });
-    setTimeout(() => setState({ kind: "idle" }), 3000);
   }
 
   const canScan = nfcSupported === true && NfcManager !== null;
 
   if (state.kind === "result") {
     const { result } = state;
+    const source: VideoSource = result.valid
+      ? require("../../../assets/granted.mp4")
+      : require("../../../assets/denied.mp4");
 
-    // ── VALID entry ────────────────────────────────────────────────────────
-    if (result.valid) {
-      return (
-        <View style={[styles.fullscreen, styles.bgGreen]}>
-          <Text style={styles.resultIcon}>✓</Text>
-          <Text style={styles.resultTitle}>VALID</Text>
+    return (
+      <View style={styles.fullscreenVideo}>
+        <ResultVideo source={source} onEnd={() => setState({ kind: "idle" })} />
+        <View style={styles.infoBar}>
+          <Text style={styles.resultTitle}>{result.valid ? "VALID" : "DENIED"}</Text>
           <Text style={styles.resultName}>{result.holderName}</Text>
           <Text style={styles.resultTicket}>{result.ticketType}</Text>
-          {result.alreadyUsed && (
-            <Text style={styles.resultWarning}>⚠ Already scanned</Text>
-          )}
+          {result.alreadyUsed && <Text style={styles.resultWarning}>⚠ Already scanned</Text>}
           <Text style={styles.resultMessage}>{result.message}</Text>
         </View>
-      );
-    }
-
-    // ── DENIED entry — Chaap Panther growl animation ───────────────────────
-    return (
-      <View style={[styles.fullscreen, styles.bgDenyRed]}>
-        <LottieView
-          ref={lottieRef}
-          source={require("../../../assets/panther-growl.json")}
-          autoPlay
-          loop={false}
-          style={styles.lottie}
-          onAnimationFinish={() => setState({ kind: "idle" })}
-        />
-        <Text style={styles.denyLabel}>DENIED</Text>
-        <Text style={styles.resultName}>{result.holderName}</Text>
-        {result.alreadyUsed && (
-          <Text style={styles.resultWarning}>⚠ Already scanned</Text>
-        )}
-        <Text style={styles.resultMessage}>{result.message}</Text>
       </View>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <View style={[styles.fullscreen, styles.bgDenyRed]}>
-        <LottieView
-          source={require("../../../assets/panther-growl.json")}
-          autoPlay
-          loop={false}
-          style={styles.lottie}
-          onAnimationFinish={() => setState({ kind: "idle" })}
+      <View style={styles.fullscreenVideo}>
+        <ResultVideo
+          source={require("../../../assets/denied.mp4")}
+          onEnd={() => setState({ kind: "idle" })}
         />
-        <Text style={styles.denyLabel}>ERROR</Text>
-        <Text style={styles.resultMessage}>{state.message}</Text>
+        <View style={styles.infoBar}>
+          <Text style={styles.resultTitle}>ERROR</Text>
+          <Text style={styles.resultMessage}>{state.message}</Text>
+        </View>
       </View>
     );
   }
@@ -282,63 +294,52 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: "center",
   },
-  // Fullscreen result
-  fullscreen: {
+  // Fullscreen video result (grant/deny/error) — video fills the screen,
+  // the operational info (name, ticket type, code) sits in a translucent
+  // bar up top so it never collides with the clip's own baked-in
+  // "GRANTED"/"ACCESS DENIED" text, which sits lower in the frame.
+  fullscreenVideo: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
+    backgroundColor: "#000",
   },
-  bgGreen: { backgroundColor: "#065f46" },
-  bgRed: { backgroundColor: "#7f1d1d" },
-  // Brighter red for deny — matches #dc2626 brand red
-  bgDenyRed: { backgroundColor: "#dc2626" },
-  resultIcon: {
-    fontSize: 96,
-    color: "#fff",
-    fontWeight: "900",
-    marginBottom: 16,
+  infoBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingTop: 56,
+    paddingBottom: 16,
+    paddingHorizontal: 24,
+    alignItems: "center",
   },
   resultTitle: {
-    fontSize: 48,
+    fontSize: 32,
     fontWeight: "900",
     color: "#fff",
-    letterSpacing: 4,
-    marginBottom: 24,
+    letterSpacing: 3,
+    marginBottom: 8,
   },
   resultName: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   resultTicket: {
-    fontSize: 18,
+    fontSize: 15,
     color: "rgba(255,255,255,0.7)",
-    marginBottom: 16,
+    marginBottom: 8,
   },
   resultWarning: {
-    fontSize: 18,
+    fontSize: 15,
     color: "#fbbf24",
     fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   resultMessage: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.5)",
+    fontSize: 13,
+    color: "rgba(255,255,255,0.6)",
     textAlign: "center",
-  },
-  // Lottie panther deny animation
-  lottie: {
-    width: 320,
-    height: 300,
-    marginBottom: 8,
-  },
-  denyLabel: {
-    fontSize: 48,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: 4,
-    marginBottom: 16,
   },
 });
