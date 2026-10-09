@@ -5,6 +5,7 @@ import PublicEventCard from "@/components/PublicEventCard";
 import HomeBrowse from "@/components/HomeBrowse";
 import HomeOrganiserBanner from "@/components/HomeOrganiserBanner";
 import ForOrganisersLink from "@/components/ForOrganisersLink";
+import HeroBrandVideo from "@/components/HeroBrandVideo";
 
 function TicketIcon() {
   return (
@@ -161,21 +162,34 @@ export default async function HomePage() {
           className="pointer-events-none absolute -bottom-32 -right-16 h-80 w-80 rounded-full bg-crimson/20 blur-[100px]"
         />
 
-        <div className="relative mx-auto max-w-6xl px-4 pb-14 pt-14 sm:px-6 sm:pb-20 sm:pt-20">
-          <p className="mb-4 text-xs font-bold tracking-[0.3em] text-silver">EAST AFRICA&apos;S EVENT PLATFORM</p>
-          <h1 className="max-w-2xl text-balance font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-            East Africa&apos;s <span className="text-accent-hover">cashless</span> event platform.
-          </h1>
-          <p className="mt-5 max-w-lg text-balance text-base text-muted sm:text-lg">
-            Buy tickets, tap your wristband, pay at any vendor — works offline, anywhere.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link href="/events" className="btn-primary w-full sm:w-auto">
-              Browse events
-            </Link>
-            <ForOrganisersLink className="btn-secondary w-full sm:w-auto">
-              For organisers
-            </ForOrganisersLink>
+        <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 pb-14 pt-14 sm:px-6 sm:pb-20 sm:pt-20 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <p className="mb-4 text-xs font-bold tracking-[0.3em] text-silver">EAST AFRICA&apos;S EVENT PLATFORM</p>
+            <h1 className="max-w-2xl text-balance font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+              East Africa&apos;s <span className="text-accent-hover">cashless</span> event platform.
+            </h1>
+            <p className="mt-5 max-w-lg text-balance text-base text-muted sm:text-lg">
+              Buy tickets, tap your wristband, pay at any vendor — works offline, anywhere.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/events" className="btn-primary w-full sm:w-auto">
+                Browse events
+              </Link>
+              <ForOrganisersLink className="btn-secondary w-full sm:w-auto">
+                For organisers
+              </ForOrganisersLink>
+            </div>
+          </div>
+
+          {/* Desktop/tablet only — kept off phones so the hero never forces a
+              ~1.9MB video download on a metered mobile connection. The
+              poster frame alone (panther + Kilimanjaro + DNA helix +
+              wordmark, already baked into one shot) carries the brand on
+              phones instead. */}
+          <div className="card hidden overflow-hidden shadow-xl shadow-black/30 lg:block">
+            <div className="aspect-[4/3] w-full">
+              <HeroBrandVideo src="/brand/chaap-hero.mp4" poster="/brand/chaap-hero-poster.webp" />
+            </div>
           </div>
         </div>
       </section>
