@@ -354,6 +354,9 @@ export default function ManageEventPage() {
   const [revokeBannerDismissed, setRevokeBannerDismissed] = useState(false);
   const [revoking, setRevoking] = useState(false);
 
+  const [cancelChecking, setCancelChecking] = useState(false);
+  const [cancelPrompt, setCancelPrompt] = useState<{ unreconciledCount: number | null } | null>(null);
+
   // Middleware already redirects GATE_CREW away from this route server-side
   // — this is defense-in-depth for a device offline with an already-cached
   // page shell (see src/middleware.ts).
@@ -559,27 +562,32 @@ export default function ManageEventPage() {
     }
   }
 
-  async function cancelEvent() {
-    // Session 9: warn if cash operators still have unreconciled floats.
-    // Best-effort — a failed/offline check never blocks cancellation, it
-    // just falls through to the normal confirm.
+  // Session 9: warn if cash operators still have unreconciled floats, then
+  // confirm the cancellation itself — both used to be native confirm()
+  // dialogs, the one spot in this page that broke out of the themed UI (see
+  // account/wallet/page.tsx's identical fix for the carry-over prompt).
+  // Replaced with the same in-card prompt pattern: startCancelEvent does the
+  // best-effort reconciliation check and opens the prompt, confirmCancelEvent
+  // runs once the organiser confirms in it.
+  async function startCancelEvent() {
+    setCancelChecking(true);
+    let unreconciledCount: number | null = null;
     try {
       const res = await fetch(`/api/dashboard/events/${event!.id}/reconciliation`, { cache: "no-store" });
       const body = await res.json();
       if (body.ok && body.unreconciledOperatorCount > 0) {
-        const n = body.unreconciledOperatorCount;
-        if (
-          !confirm(
-            `${n} cash ${n === 1 ? "operator has" : "operators have"} not been reconciled — reconcile before closing?\n\nOK to cancel the event anyway, or Cancel to go reconcile first.`
-          )
-        ) {
-          return;
-        }
+        unreconciledCount = body.unreconciledOperatorCount;
       }
     } catch {
-      // ignore — proceed to the normal confirm below
+      // ignore — a failed/offline check never blocks cancellation, it just
+      // falls through to the plain confirmation prompt below.
     }
-    if (!confirm(`Cancel "${event!.title}"? Ticket holders will be notified. This cannot be undone.`)) return;
+    setCancelChecking(false);
+    setCancelPrompt({ unreconciledCount });
+  }
+
+  async function confirmCancelEvent() {
+    setCancelPrompt(null);
     await db.events.put({ ...event!, status: "CANCELLED", syncStatus: "pending" });
     await queueOp("CANCEL_EVENT", { eventId: event!.id, eventClientId: event!.clientId });
   }
@@ -851,13 +859,44 @@ export default function ManageEventPage() {
                 <p className="font-semibold">Cancel this event</p>
                 <p className="mt-0.5 text-sm text-muted">Ticket holders will be notified. This cannot be undone.</p>
               </div>
-              <button
-                onClick={cancelEvent}
-                className="shrink-0 rounded-full border border-danger/40 bg-danger/10 px-5 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20"
-              >
-                Cancel event
-              </button>
+              {!cancelPrompt && (
+                <button
+                  onClick={startCancelEvent}
+                  disabled={cancelChecking}
+                  className="shrink-0 rounded-full border border-danger/40 bg-danger/10 px-5 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20 disabled:opacity-50"
+                >
+                  {cancelChecking ? "Checking…" : "Cancel event"}
+                </button>
+              )}
             </div>
+            {cancelPrompt && (
+              <div className="mt-4 rounded-lg border border-danger/40 bg-danger/5 p-3 text-sm">
+                {cancelPrompt.unreconciledCount !== null && (
+                  <p className="mb-2 text-warn">
+                    {cancelPrompt.unreconciledCount} cash {cancelPrompt.unreconciledCount === 1 ? "operator has" : "operators have"} not been reconciled yet.
+                  </p>
+                )}
+                <p className="text-foreground">
+                  Cancel &ldquo;{event.title}&rdquo;? Ticket holders will be notified. This cannot be undone.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {cancelPrompt.unreconciledCount !== null && (
+                    <Link
+                      href={`/dashboard/events/${event.id}/reconciliation`}
+                      className="btn-secondary flex-1 text-center"
+                    >
+                      Go reconcile first
+                    </Link>
+                  )}
+                  <button className="btn-secondary flex-1" onClick={() => setCancelPrompt(null)}>
+                    Keep event
+                  </button>
+                  <button className="btn-primary flex-1 !bg-danger" onClick={confirmCancelEvent}>
+                    Cancel event
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

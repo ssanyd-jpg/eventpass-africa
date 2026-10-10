@@ -234,15 +234,19 @@ export default function DashboardPage() {
                     </p>
                   )}
 
-                  <div className="mt-auto flex gap-2 pt-1">
+                  <div className="mt-auto flex items-center gap-2 pt-1">
                     {!isGateCrew && (
                       <Link href={`/dashboard/events/${event.id}`} className="btn-secondary flex-1 !px-3 !py-1.5 text-xs">
                         Manage
                       </Link>
                     )}
-                    <Link href={`/scan/${event.id}`} className="btn-primary flex-1 !px-3 !py-1.5 text-xs">
-                      Scan gate
-                    </Link>
+                    {displayStatus !== "CANCELLED" ? (
+                      <Link href={`/scan/${event.id}`} className="btn-primary flex-1 !px-3 !py-1.5 text-xs">
+                        Scan gate
+                      </Link>
+                    ) : (
+                      isGateCrew && <p className="flex-1 text-center text-xs text-muted">Event cancelled</p>
+                    )}
                   </div>
                 </div>
               </div>
