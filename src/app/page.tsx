@@ -320,8 +320,12 @@ export default async function HomePage() {
               <p className="text-sm text-muted">@chaapafrica on Instagram, X &amp; TikTok</p>
             </div>
           </div>
-          <div className="mt-8 border-t border-border pt-6 text-xs text-muted">
-            © {new Date().getFullYear()} Chaap. East Africa&apos;s event platform.
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-6 text-xs text-muted">
+            <span>© {new Date().getFullYear()} Chaap. East Africa&apos;s event platform.</span>
+            <div className="flex items-center gap-4">
+              <Link href="/privacy" className="transition hover:text-foreground">Privacy</Link>
+              <Link href="/terms" className="transition hover:text-foreground">Terms</Link>
+            </div>
           </div>
         </div>
       </footer>

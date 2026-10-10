@@ -157,6 +157,12 @@ export default function RegisterPage() {
         <button type="submit" disabled={loading} className="btn-primary w-full">
           {loading ? "Creating account…" : "Sign up"}
         </button>
+        <p className="text-center text-xs text-muted">
+          By signing up, you agree to Chaap&apos;s{" "}
+          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">Terms of Service</Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy Policy</Link>.
+        </p>
       </form>
 
       <p className="mt-6 text-center text-sm text-muted">
