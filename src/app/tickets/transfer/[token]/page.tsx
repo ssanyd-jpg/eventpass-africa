@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { pullFromServer } from "@/lib/sync-engine";
+import PasswordInput from "@/components/PasswordInput";
 
 interface TransferInfo {
   status: string;
@@ -161,12 +162,10 @@ export default function AcceptTicketTransferPage() {
           </div>
           <div>
             <label className="label" htmlFor="password">Password</label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
               required
               minLength={8}
-              className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

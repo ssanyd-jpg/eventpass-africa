@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function ResetPasswordPage() {
   const { token } = useParams<{ token: string }>();
@@ -50,24 +51,20 @@ export default function ResetPasswordPage() {
         <form onSubmit={onSubmit} className="card space-y-4 p-6">
           <div>
             <label className="label" htmlFor="password">New password</label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
               required
               minLength={8}
-              className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
           <div>
             <label className="label" htmlFor="confirmPassword">Confirm password</label>
-            <input
+            <PasswordInput
               id="confirmPassword"
-              type="password"
               required
               minLength={8}
-              className="input"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
             />

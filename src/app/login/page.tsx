@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useOnlineStatus } from "@/lib/sync-engine";
 import { useTranslation } from "@/lib/use-translation";
 import { getPostLoginRedirect } from "@/lib/auth-redirect";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function LoginPage() {
   return (
@@ -123,11 +124,9 @@ function LoginForm() {
         </div>
         <div>
           <label className="label" htmlFor="password">{t("login.password")}</label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             required
-            className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />

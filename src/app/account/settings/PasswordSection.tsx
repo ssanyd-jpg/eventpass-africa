@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { changePassword } from "./actions";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function PasswordSection() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -40,12 +41,10 @@ export default function PasswordSection() {
       </div>
       <div>
         <label className="label" htmlFor="current-password">Current password</label>
-        <input
+        <PasswordInput
           id="current-password"
-          type="password"
           required
           autoComplete="current-password"
-          className="input"
           value={currentPassword}
           onChange={(e) => {
             setCurrentPassword(e.target.value);
@@ -55,13 +54,11 @@ export default function PasswordSection() {
       </div>
       <div>
         <label className="label" htmlFor="new-password">New password</label>
-        <input
+        <PasswordInput
           id="new-password"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
-          className="input"
           value={newPassword}
           onChange={(e) => {
             setNewPassword(e.target.value);
@@ -72,12 +69,10 @@ export default function PasswordSection() {
       </div>
       <div>
         <label className="label" htmlFor="confirm-password">Confirm new password</label>
-        <input
+        <PasswordInput
           id="confirm-password"
-          type="password"
           required
           autoComplete="new-password"
-          className="input"
           value={confirmPassword}
           onChange={(e) => {
             setConfirmPassword(e.target.value);

@@ -77,6 +77,12 @@ export const dictionaries = {
     "login.offlineNotice":
       "You're offline. Logging in for the first time needs a connection — once you've logged in on this device before, you'll stay signed in offline automatically.",
 
+    // Shared across every password field (login, register, settings,
+    // reset-password, ticket-transfer claim) — the show/hide toggle's
+    // aria-label, not scoped to any one of those pages.
+    "password.show": "Show password",
+    "password.hide": "Hide password",
+
     "register.choosePathHeading": "I want to…",
     "register.pathAttendee": "🎟 Buy tickets & attend events",
     "register.pathOrganiser": "🎪 Organise & manage events",
@@ -584,6 +590,9 @@ export const dictionaries = {
     "login.signUp": "Jisajili",
     "login.offlineNotice":
       "Huna mtandao. Kuingia kwa mara ya kwanza kunahitaji mtandao — ukishaingia kwenye kifaa hiki mara moja, utabaki umeingia hata bila mtandao.",
+
+    "password.show": "Onyesha nenosiri",
+    "password.hide": "Ficha nenosiri",
 
     "register.choosePathHeading": "Nataka…",
     "register.pathAttendee": "🎟 Kununua tiketi na kuhudhuria matukio",

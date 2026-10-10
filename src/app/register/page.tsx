@@ -8,6 +8,7 @@ import { useOnlineStatus } from "@/lib/sync-engine";
 import { useTranslation } from "@/lib/use-translation";
 import { setWelcomeFlag } from "@/components/WelcomeBanner";
 import { getPostSignupRedirect, type AccountType } from "@/lib/auth-redirect";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -150,7 +151,7 @@ export default function RegisterPage() {
         </div>
         <div>
           <label className="label" htmlFor="password">Password</label>
-          <input id="password" type="password" required minLength={8} className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput id="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
           <p className="mt-1 text-xs text-muted">At least 8 characters.</p>
         </div>
         {error && <p className="text-sm text-danger">{error}</p>}
