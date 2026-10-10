@@ -5,6 +5,10 @@ import { adminSetEventStatus } from "./actions";
 export default async function AdminEventsPage() {
   const events = await prisma.event.findMany({
     orderBy: { createdAt: "desc" },
+    // Same cap as admin/orders's own findMany — this page has no pagination,
+    // so an unbounded query here would only get slower (and the list only
+    // longer) as the platform grows.
+    take: 200,
     include: {
       organization: {
         select: {
@@ -16,6 +20,10 @@ export default async function AdminEventsPage() {
       ticketTypes: true,
     },
   });
+
+  if (events.length === 0) {
+    return <div className="card p-8 text-center text-muted">No events on the platform yet.</div>;
+  }
 
   return (
     <div className="card divide-y divide-border">

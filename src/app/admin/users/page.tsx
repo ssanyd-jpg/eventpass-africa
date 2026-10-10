@@ -4,11 +4,19 @@ import { formatDate } from "@/lib/format";
 export default async function AdminUsersPage() {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
+    // Same cap as admin/orders's own findMany — this page has no
+    // pagination, so an unbounded query here would only get slower (and the
+    // list only longer) as the platform grows.
+    take: 200,
     include: {
       _count: { select: { orders: true } },
       organizationMembership: { include: { organization: { include: { _count: { select: { events: true } } } } } },
     },
   });
+
+  if (users.length === 0) {
+    return <div className="card p-8 text-center text-muted">No users on the platform yet.</div>;
+  }
 
   return (
     <div className="card divide-y divide-border">

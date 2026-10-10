@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  /* The app is dark-only (no light theme exists), but without this, a
+     native control the brand's own CSS can't restyle — the <input
+     type="date"> calendar popup, <select> dropdowns, scrollbars — still
+     renders in the OS/browser's light default, a jarring light rectangle
+     popping up over an otherwise all-dark page (e.g. the date filters on
+     /events). This tells supporting browsers to use their dark form-control
+     variants everywhere instead. */
+  color-scheme: dark;
+
   /* Chaap brand palette */
   --helix-blue: #0066ff;
   --deep-blue: #001a3d;

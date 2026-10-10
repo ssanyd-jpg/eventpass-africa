@@ -30,11 +30,17 @@ export default async function SupportTicketsPage({
       <h1 className="mb-1 text-2xl font-bold">Support</h1>
       <p className="mb-4 text-sm text-muted">Questions and complaints sent in by attendees.</p>
 
-      <div className="mb-4 flex gap-2 text-sm">
-        <Link href="/dashboard/support" className={!searchParams.status || searchParams.status === "OPEN" ? "font-semibold text-foreground" : "text-muted"}>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link
+          href="/dashboard/support"
+          className={`nav-pill ${!searchParams.status || searchParams.status === "OPEN" ? "nav-pill-active" : ""}`}
+        >
           Open
         </Link>
-        <Link href="/dashboard/support?status=all" className={searchParams.status === "all" ? "font-semibold text-foreground" : "text-muted"}>
+        <Link
+          href="/dashboard/support?status=all"
+          className={`nav-pill ${searchParams.status === "all" ? "nav-pill-active" : ""}`}
+        >
           All
         </Link>
       </div>

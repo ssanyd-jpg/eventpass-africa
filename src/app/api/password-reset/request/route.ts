@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { sendNotification } from "@/lib/notifications";
+import { buildPasswordResetHtml } from "@/lib/email";
 
 const requestSchema = z.object({ email: z.string().email() });
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     recipient: user.email,
     subject: "Reset your Chaap password",
     body: `Hi ${user.name}, reset your password here (expires in 1 hour): ${resetUrl}`,
+    html: buildPasswordResetHtml({ userName: user.name, resetUrl }),
   });
 
   return generic;

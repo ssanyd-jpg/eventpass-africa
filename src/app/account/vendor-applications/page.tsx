@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents } from "@/lib/format";
 import TicketQr from "@/components/TicketQr";
+import { SkeletonList } from "@/components/Skeleton";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "border-warn/40 bg-warn/10 text-warn",
@@ -42,11 +43,7 @@ export default function VendorApplicationsPage() {
       <h1 className="mb-6 text-2xl font-bold">My Vendor Applications</h1>
 
       {vendors === undefined ? (
-        <div className="space-y-3">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="card h-24 animate-pulse bg-surface2" />
-          ))}
-        </div>
+        <SkeletonList rows={2} />
       ) : vendors.length === 0 ? (
         <div className="card p-10 text-center text-muted">
           No vendor applications yet. <Link href="/" className="text-accent-hover">Find an event</Link>

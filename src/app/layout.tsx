@@ -28,8 +28,11 @@ export const metadata: Metadata = {
   icons: { icon: "/favicon.ico", apple: "/chaap-apple-touch-icon.png" },
 };
 
+// Matches --surface-app in globals.css (the "sunset" theme's page background)
+// so the browser status bar / PWA splash screen never flashes the old
+// deep-blue brand color this theme replaced.
 export const viewport: Viewport = {
-  themeColor: "#001A3D",
+  themeColor: "#211A1D",
 };
 
 export default function RootLayout({

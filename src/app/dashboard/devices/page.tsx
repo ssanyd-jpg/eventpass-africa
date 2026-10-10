@@ -54,9 +54,7 @@ export default async function DevicesPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     {d.revokedAt ? (
-                      <span className="inline-flex items-center rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-xs font-medium text-danger">
-                        Revoked
-                      </span>
+                      <span className="pill border-danger/40 bg-danger/10 text-danger">Revoked</span>
                     ) : (
                       <span className="pill">Active</span>
                     )}

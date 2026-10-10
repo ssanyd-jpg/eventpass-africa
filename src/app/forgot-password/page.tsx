@@ -40,10 +40,9 @@ export default function ForgotPasswordPage() {
       {submitted ? (
         <div className="card p-6 text-sm">
           <p>
-            If an account exists for that email, a reset link has been sent.
-            During this pilot, no email provider is connected yet — an admin
-            can find the link in the notification log at <code>/admin</code>{" "}
-            and relay it to you.
+            If an account exists for that email, we&apos;ve sent a reset link
+            to it. Check your inbox (and spam folder) — the link expires in
+            an hour.
           </p>
           <Link href="/login" className="btn-secondary mt-4 inline-flex">Back to login</Link>
         </div>

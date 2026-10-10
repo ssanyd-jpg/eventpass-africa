@@ -26,7 +26,7 @@ export default function AdsDashboard({
 
   return (
     <div className="mt-6">
-      <div className="mb-6 flex gap-2 border-b border-border">
+      <div className="mb-6 flex flex-wrap gap-2">
         {(
           [
             ["featured", "Featured listings"],
@@ -37,9 +37,7 @@ export default function AdsDashboard({
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition ${
-              tab === key ? "border-accent text-accent-hover" : "border-transparent text-muted hover:text-foreground"
-            }`}
+            className={`nav-pill ${tab === key ? "nav-pill-active" : ""}`}
           >
             {label}
           </button>

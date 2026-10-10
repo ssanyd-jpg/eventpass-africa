@@ -7,6 +7,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDate } from "@/lib/format";
+import { SkeletonList } from "@/components/Skeleton";
 
 const STATUS_STYLE: Record<string, string> = {
   synced: "border-ok/40 bg-ok/10 text-ok",
@@ -66,11 +67,7 @@ export default function MyTicketsPage() {
       )}
 
       {orders === undefined ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card h-24 animate-pulse bg-surface2" />
-          ))}
-        </div>
+        <SkeletonList rows={3} />
       ) : orders.length === 0 ? (
         <div className="card p-10 text-center text-muted">
           No tickets yet. <Link href="/" className="text-accent-hover">Find an event</Link>

@@ -96,8 +96,11 @@ export default function AcceptTicketTransferPage() {
 
   if (loadError) {
     return (
-      <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-12 text-center">
-        <p className="text-sm text-danger">{loadError}</p>
+      <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-12">
+        <div className="card p-6 text-center text-sm">
+          <p className="text-danger">{loadError}</p>
+          <Link href="/" className="btn-secondary mt-4 inline-flex">Go home</Link>
+        </div>
       </div>
     );
   }

@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { formatCents } from "@/lib/format";
 import LineSeries from "@/components/charts/LineSeries";
 import { hasFeature } from "@/lib/event-modes";
+import Spinner from "@/components/Spinner";
 
 // 60s, not the 30s the organiser live-monitoring page uses — see point 3 of
 // the Session 8 spec: vendors don't need second-by-second granularity, and
@@ -82,7 +83,12 @@ export default function VendorDashboardPage() {
   }
 
   if (!data) {
-    return <div className="flex min-h-[80vh] items-center justify-center text-lg text-muted">Loading…</div>;
+    return (
+      <div className="flex min-h-[80vh] flex-col items-center justify-center gap-3 text-muted">
+        <Spinner />
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   const { stats, settlement, currency } = data;

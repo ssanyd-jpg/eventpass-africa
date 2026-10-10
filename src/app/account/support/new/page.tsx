@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { createTicket } from "../actions";
@@ -17,7 +18,11 @@ export default async function NewSupportTicketPage({
   if (!eventId) {
     return (
       <div className="mx-auto max-w-2xl px-4 pb-20 pt-8 text-center sm:px-6">
-        <p className="font-semibold">Missing event.</p>
+        <div className="card p-10">
+          <p className="font-semibold">Missing event.</p>
+          <p className="mt-2 text-sm text-muted">Contact an organizer from one of your tickets instead.</p>
+          <Link href="/account/tickets" className="btn-secondary mt-6 inline-flex">← My Tickets</Link>
+        </div>
       </div>
     );
   }
@@ -26,7 +31,10 @@ export default async function NewSupportTicketPage({
   if (!event) {
     return (
       <div className="mx-auto max-w-2xl px-4 pb-20 pt-8 text-center sm:px-6">
-        <p className="font-semibold">Event not found.</p>
+        <div className="card p-10">
+          <p className="font-semibold">Event not found.</p>
+          <Link href="/account/tickets" className="btn-secondary mt-6 inline-flex">← My Tickets</Link>
+        </div>
       </div>
     );
   }

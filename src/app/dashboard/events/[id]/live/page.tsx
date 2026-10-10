@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAppSession } from "@/lib/use-app-session";
 import { formatCents, formatDateTime } from "@/lib/format";
 import LineSeries from "@/components/charts/LineSeries";
-import Spinner from "@/components/Spinner";
+import { SkeletonPage } from "@/components/Skeleton";
 import type { HourPoint, VendorHourlyStats, LiveEventStats } from "@/lib/analytics";
 import type { LiveActivityEntry } from "@/lib/live-activity";
 import type { ZoneDensityResult, DensityAlertType } from "@/lib/crowd-density";
@@ -163,12 +163,7 @@ export default function LiveEventPage() {
   if (user?.organizationRole === "GATE_CREW") return null;
 
   if (!data && !initialError) {
-    return (
-      <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-16 text-center text-muted">
-        <Spinner />
-        <span>Loading…</span>
-      </div>
-    );
+    return <SkeletonPage maxWidth="max-w-5xl" rows={5} />;
   }
 
   if (!data) {

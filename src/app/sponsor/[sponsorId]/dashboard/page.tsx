@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { formatCents } from "@/lib/format";
 import LineSeries from "@/components/charts/LineSeries";
+import Spinner from "@/components/Spinner";
 
 // 60s, matching the vendor dashboard's own cadence (see point 3 of the
 // Session 16 spec) — a sponsor checking their phone from the activation
@@ -95,7 +96,12 @@ export default function SponsorDashboardPage() {
   }
 
   if (!data) {
-    return <div className="flex min-h-[80vh] items-center justify-center text-lg text-muted">Loading…</div>;
+    return (
+      <div className="flex min-h-[80vh] flex-col items-center justify-center gap-3 text-muted">
+        <Spinner />
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   const { stats, currency } = data;
