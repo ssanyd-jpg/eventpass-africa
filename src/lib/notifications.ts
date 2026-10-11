@@ -82,7 +82,19 @@ export type NotificationType =
   // type covers both the hello@chaap.africa email and the owner's own
   // WhatsApp, same as TICKET_TYPE_SOLD_OUT/PAYMENT_REVERSED don't split by
   // recipient either.
-  | "MARKETING_LEAD_RECEIVED";
+  | "MARKETING_LEAD_RECEIVED"
+  // Session 40 — TicketPool group crowdfunding, see src/lib/ticket-pool.ts.
+  // POOL_CONTRIBUTION_RECEIVED goes to the pool's recipient on every
+  // confirmed contribution (so they can watch it fill without opening the
+  // app); POOL_FUNDED to every contributor once it converts to a real
+  // order; POOL_REFUNDED to one contributor whose money came back because
+  // the pool expired/was cancelled/overfunded; POOL_SOLD_OUT_REFUNDED is
+  // the distinct everyone-refunded case where the pool reached its target
+  // but the ticket type sold out before conversion could claim inventory.
+  | "POOL_CONTRIBUTION_RECEIVED"
+  | "POOL_FUNDED"
+  | "POOL_REFUNDED"
+  | "POOL_SOLD_OUT_REFUNDED";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

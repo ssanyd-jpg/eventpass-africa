@@ -5,6 +5,7 @@ import { runSeasonRenewalSweep } from "@/lib/season-renewal";
 import { runWhatsappGroupArchiveSweep } from "@/lib/whatsapp-group";
 import { runWaitlistClosureSweep } from "@/lib/waitlist";
 import { runWalletTopupReminderSweep } from "@/lib/wallet-topup-reminder";
+import { runPoolRefundSweep } from "@/lib/ticket-pool";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 // Vercel Cron (see vercel.json's schedule) hits this with an
@@ -101,6 +102,28 @@ export async function GET(request: Request) {
     walletTopupReminder = { ok: false, reason: "SWEEP_FAILED" };
   }
 
+  // Ticket pool refund sweep (Session 40) — same "rides along on this one
+  // daily slot" reasoning as the sweeps above. Expiring a stale OPEN pool
+  // is cheap and also happens inline wherever a pool is touched (see
+  // expirePoolsOpportunistically in ticket-pool.ts), but the actual
+  // refund — real money moving back to a contributor's wallet — has to run
+  // even if nobody ever opens that pool again, so it belongs here too.
+  let poolRefunds: Awaited<ReturnType<typeof runPoolRefundSweep>> | { ok: false; reason: string };
+  try {
+    poolRefunds = await runPoolRefundSweep();
+  } catch (error) {
+    console.error("[cron/reminders] pool refund sweep failed", error);
+    poolRefunds = { ok: false, reason: "SWEEP_FAILED" };
+  }
+
   if (remindersError) throw remindersError;
-  return NextResponse.json({ ...result, pendingTopups, seasonRenewal, whatsappGroupArchive, waitlistClosure, walletTopupReminder });
+  return NextResponse.json({
+    ...result,
+    pendingTopups,
+    seasonRenewal,
+    whatsappGroupArchive,
+    waitlistClosure,
+    walletTopupReminder,
+    poolRefunds,
+  });
 }

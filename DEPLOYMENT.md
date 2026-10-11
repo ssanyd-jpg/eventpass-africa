@@ -464,6 +464,47 @@ history list; there's no job that fires it automatically at its
 ad revenue this month, active featured listings, broadcasts sent this
 month, and total broadcast recipients this month.
 
+## 12. Ticket Pools (rides on the reminders cron)
+
+`src/lib/ticket-pool.ts` — East African "chama"-style group crowdfunding
+toward one ticket, started from an event's page ("Start a group pool") and
+shared as a `/pools/<id>` link. Each contribution is its own mobile-money
+charge straight into the pool's own running total (not routed through a
+personal wallet), using the same Airpay/simulator checkout as every other
+paid feature here. Reaching the target books a real order instantly;
+missing the deadline (or the ticket type selling out just as the pool
+filled) refunds every contributor.
+
+**Two-part expiry, same split as wallet transfers (§ above doesn't cover
+this, but the reasoning is identical to `wallet-transfer.ts`'s
+`expireTransfers()`):**
+
+- The cheap status flip (`OPEN` → `EXPIRED`, no money movement) happens
+  inline, opportunistically, wherever a pool is read or written — no cron
+  needed for that part.
+- The actual refund — crediting each contributor's own event wallet with a
+  `POOL_REFUND` transaction, auto-creating that wallet if they never
+  registered one — has to run even if nobody ever opens that pool link
+  again, so `runPoolRefundSweep()` rides `/api/cron/reminders` the same way
+  the pending top-up sweep does (§9): both Hobby cron slots are already
+  taken. `/api/cron/pool-refunds` also exists standalone for triggering by
+  hand:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/cron/pool-refunds
+```
+
+**Limits on Hobby.** Same as §9 — a pool that expires just after the 06:00
+UTC run won't refund its contributors until the next day's run. A
+refunded contributor can spend that credit at the event, or request it
+back as real money through the existing wallet withdrawal flow
+(organiser-approved payout) — there is no automated mobile-money
+disbursement anywhere in this codebase (see the Wallet section above).
+
+**Upgrading to Vercel Pro** — same remedy as §9: give `/api/cron/pool-refunds`
+its own frequent schedule in `vercel.json` and drop the sweep call from the
+reminders route.
+
 ## Rate Limiting
 
 `src/lib/rate-limit.ts` is the one rate-limiting mechanism in this codebase

@@ -492,6 +492,21 @@ function EventDetailContent() {
                           {!isSoldOut && !isLowStock && (
                             <p className="text-xs text-muted">{t("event.leftSuffix", { count: remaining })}</p>
                           )}
+                          {!isSoldOut && tt.pricingStrategy === "FIXED" && (
+                            // Session 40 — chama-style group crowdfunding.
+                            // TIERED types are excluded here: a pool's
+                            // target price is frozen at creation and never
+                            // recomputed, so it can't safely track a price
+                            // that climbs as other sales push the tier up
+                            // while the pool is still filling (see
+                            // validateCanStartPool in src/lib/ticket-pool.ts).
+                            <Link
+                              href={`/account/pools?startTicketTypeId=${tt.id}`}
+                              className="text-xs font-medium text-accent-hover"
+                            >
+                              Start a group pool for this ticket
+                            </Link>
+                          )}
                         </div>
                         {!soldOutWithWaitlist && !isSoldOut && (
                           <div className="flex items-center gap-2">

@@ -29,6 +29,7 @@ export interface OrganizerAnalyticsRawData {
     vendor: { id: string; name: string } | null;
   }[];
   ticketGroups: { ticketCount: number }[];
+  ticketPools: { status: string; raisedCents: number; currency: string }[];
 }
 
 export async function getOrganizerAnalyticsData(organizationId: string): Promise<OrganizerAnalyticsRawData> {
@@ -40,7 +41,7 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
   const eventIds = myEvents.map((e) => e.id);
   const windowStart = trendWindowStart();
 
-  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups] = await Promise.all([
+  const [revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups, ticketPools] = await Promise.all([
     prisma.order.findMany({
       where: { eventId: { in: eventIds }, status: { in: ["PAID", "NEEDS_REVIEW"] }, createdAt: { gte: windowStart } },
       select: { createdAt: true, totalCents: true, currency: true },
@@ -79,6 +80,10 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
       where: { eventId: { in: eventIds } },
       select: { _count: { select: { tickets: true } } },
     }),
+    prisma.ticketPool.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { status: true, raisedCents: true, currency: true },
+    }),
   ]);
 
   return {
@@ -90,6 +95,7 @@ export async function getOrganizerAnalyticsData(organizationId: string): Promise
     wallets,
     walletTxs,
     ticketGroups: ticketGroups.map((g) => ({ ticketCount: g._count.tickets })),
+    ticketPools,
   };
 }
 

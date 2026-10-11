@@ -19,6 +19,7 @@ import { getOrganizerAnalyticsData } from "@/lib/analytics-data";
 import { summarizeCarryOverVolume } from "@/lib/carry-over";
 import { summarizeTransferVolume } from "@/lib/wallet-transfer";
 import { summarizeGroupSales } from "@/lib/ticket-groups";
+import { summarizePoolActivity } from "@/lib/ticket-pool";
 import { getOrganizerResaleListings } from "@/lib/resale";
 import { summarizeResaleRevenue } from "@/lib/resale-pricing";
 import { getOrganizerRedemptions, getLoyaltyDrivenRevenue, summarizeRedemptionsByTier, mostPopularRewards } from "@/lib/loyalty-rewards";
@@ -36,7 +37,7 @@ export default async function OrganizerAnalyticsPage() {
     redirect("/dashboard");
   }
 
-  const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups } =
+  const { myEvents, revenueOrders, ticketTypes, tickets, vendors, wallets, walletTxs, ticketGroups, ticketPools } =
     await getOrganizerAnalyticsData(session.user.organizationId);
   const resaleStats = summarizeResaleRevenue(await getOrganizerResaleListings(session.user.organizationId));
   const loyaltyRedemptions = await getOrganizerRedemptions(session.user.organizationId);
@@ -71,6 +72,7 @@ export default async function OrganizerAnalyticsPage() {
   const carryOverVolumeByCurrency = summarizeCarryOverVolume(walletTxs);
   const transferStats = summarizeTransferVolume(walletTxs);
   const groupSales = summarizeGroupSales(ticketGroups);
+  const poolActivity = summarizePoolActivity(ticketPools);
   const vendorSpend = spendByVendor(walletTxs);
   const tapsByZone = sponsorTapsBySponsor(walletTxs);
 
@@ -240,6 +242,28 @@ export default async function OrganizerAnalyticsPage() {
         <div className="card p-5">
           <p className="text-xs uppercase tracking-wide text-muted">Average group size</p>
           <p className="mt-1 text-2xl font-bold">{groupSales.averageGroupSize ?? "—"}</p>
+        </div>
+      </div>
+
+      <h2 className="mb-3 mt-8 font-semibold">Ticket pools</h2>
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Pools started</p>
+          <p className="mt-1 text-2xl font-bold">{poolActivity.poolCount}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Booked a ticket</p>
+          <p className="mt-1 text-2xl font-bold">{poolActivity.convertedCount}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs uppercase tracking-wide text-muted">Raised</p>
+          {Object.keys(poolActivity.raisedByCurrency).length === 0 ? (
+            <p className="mt-1 text-2xl font-bold text-muted">—</p>
+          ) : (
+            Object.entries(poolActivity.raisedByCurrency).map(([currency, cents]) => (
+              <p key={currency} className="mt-1 text-2xl font-bold">{formatCents(cents, currency)}</p>
+            ))
+          )}
         </div>
       </div>
 

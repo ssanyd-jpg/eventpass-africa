@@ -45,6 +45,9 @@ model User {
   ticketListingsBought        TicketListing[]         @relation("TicketListingBuyer")
   loyaltyRedemptions          LoyaltyRedemption[]
   directSaleTransactions      DirectSaleTransaction[]
+  ticketPoolsCreated          TicketPool[]            @relation("TicketPoolCreator")
+  ticketPoolsReceived         TicketPool[]            @relation("TicketPoolRecipient")
+  poolContributions           PoolContribution[]
 }
 
 // Every user belongs to exactly one organization, always — registration
@@ -71,17 +74,17 @@ model Organization {
   // organizerName on synced events); displayName is what replaces the word
   // "Chaap" in attendee-facing copy, and an organiser may want those to
   // differ (or set only one).
-  displayName String?
+  displayName   String?
   // Public URL (Vercel Blob, same as event cover photos — see
   // /api/upload) of an organiser-uploaded logo. Not yet rendered anywhere
   // (see the branding investigation): the one attendee-facing surface that
   // would show it, the shared Navbar, has no per-event/org context to key
   // off at render time. Stored now so the settings screen has somewhere to
   // save it; wiring up a rendering location is a follow-up.
-  logoUrl     String?
+  logoUrl       String?
   // Hex string (e.g. "#FF6A00"), validated at the settings form, not here.
   // Same "stored but not yet rendered" status as logoUrl above.
-  brandColor  String?
+  brandColor    String?
   // Set at registration based on which path the user picked ("Buy tickets
   // & attend events" vs "Organise & manage events" — see
   // src/app/register/page.tsx and src/lib/organizations.ts's
@@ -873,6 +876,7 @@ model Event {
   timingPoints           TimingPoint[]
   chipTimes              ChipTime[]
   ticketGroups           TicketGroup[]
+  ticketPools            TicketPool[]
   // Session 19 — CONFERENCE-only, same "exists on every event, only
   // populated/used when eventType matches" convention as timingPoints above.
   conferenceSessions     ConferenceSession[]
@@ -942,20 +946,20 @@ model TicketGroup {
 // pace. isStart/isFinish flag the two points every other calculation
 // anchors on — gun time and finish ranking respectively.
 model TimingPoint {
-  id             String   @id @default(cuid())
-  clientId       String?  @unique
-  name           String
-  location       String   @default("")
-  sequenceOrder  Int
-  isStart        Boolean  @default(false)
-  isFinish       Boolean  @default(false)
-  distanceMeters Int?
+  id                  String   @id @default(cuid())
+  clientId            String?  @unique
+  name                String
+  location            String   @default("")
+  sequenceOrder       Int
+  isStart             Boolean  @default(false)
+  isFinish            Boolean  @default(false)
+  distanceMeters      Int?
   // MOUNTAIN_BIKE-only today (optional for every other event type): cumulative
   // climb in meters up to this point on the course. Shown on the timing setup
   // UI only for MOUNTAIN_BIKE events — see hasFeature/EVENT_MODE_CONFIG.
   elevationGainMeters Int?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1110,6 +1114,7 @@ model TicketType {
   waitlistEntries WaitlistEntry[]
   pricingTiers    PricingTier[]
   loyaltyRewards  LoyaltyReward[]
+  ticketPools     TicketPool[]
 }
 
 // Session 27 — one price step for a TIERED TicketType. fromQuantity is the
@@ -1291,9 +1296,15 @@ model Order {
   // organiser-initiated refund. handleCheckIn blocks on it exactly like
   // REFUNDED — see its own comment for why no separate Ticket-level status
   // exists for this.
-  // paymentMethod is "AIRPAY_ONLINE" | "OFFLINE_DEFERRED" | null (legacy/
-  // unspecified — an order created before this feature, or by a client
-  // that didn't opt into either path).
+  // paymentMethod is "AIRPAY_ONLINE" | "OFFLINE_DEFERRED" | "POOL" (Session
+  // 40 — created by TicketPool conversion, see convertPoolToOrder in
+  // src/lib/ticket-pool.ts; totalCents was raised across N independent
+  // PoolContribution charges, not one AirPay order, so providerReference/
+  // airpayRef stay null here deliberately — nothing must ever resolve a
+  // single contributor's payment-reversal webhook back onto this order, see
+  // ticket-pool.ts's own header comment) | null (legacy/unspecified — an
+  // order created before this feature, or by a client that didn't opt into
+  // either path).
   providerReference      String?
   providerMessage        String?
   paymentMethod          String?
@@ -1310,6 +1321,7 @@ model Order {
   tickets             Ticket[]
   settlementItems     SettlementItem[]
   registrationAnswers RegistrationAnswer[]
+  ticketPool          TicketPool?
 
   // Session 22 — every organizer analytics/live/customer-list query filters
   // by eventId (see getOrganizerAnalyticsData, getLiveEventData's sibling
@@ -1654,13 +1666,24 @@ model Wallet {
 }
 
 // type is TOPUP | SALE | SPONSOR_TAP | WITHDRAWAL | CARRY_OVER |
-// LOYALTY_CREDIT | TRANSFER_OUT | TRANSFER_IN (Session 37 — a
+// LOYALTY_CREDIT | TRANSFER_OUT | TRANSFER_IN | POOL_REFUND (Session 37 — a
 // peer-to-peer WalletTransfer writes one of each, and the row's `note`
 // holds the OTHER party's first name for the history list). status is
 // PENDING | COMPLETED | FAILED (plain-string convention — see
 // MobileMoneyAccount.provider). Only TOPUP/WITHDRAWAL are ever PENDING
 // (waiting on an async mobile-money charge / an organiser payout review);
-// SALE/SPONSOR_TAP/CARRY_OVER always resolve synchronously.
+// SALE/SPONSOR_TAP/CARRY_OVER/POOL_REFUND always resolve synchronously.
+//
+// POOL_REFUND (Session 40) credits a contributor's wallet for an event when
+// their TicketPool contribution is refunded (the pool expired or was
+// cancelled — see refundContribution in src/lib/ticket-pool.ts). The money
+// was never in this wallet before (a pool contribution is its own direct
+// mobile-money charge straight into TicketPool.raisedCents, not routed
+// through the contributor's personal wallet — see ticket-pool.ts's header
+// comment), so unlike every other type here this one can be the FIRST
+// transaction a wallet ever has, and the wallet itself may have just been
+// auto-created for this refund (see findOrCreateWalletForRefund) if the
+// contributor never registered one for that event.
 //
 // CARRY_OVER (Session 11) is the one type where amountCents is signed: the
 // source wallet's row is negative (balance moved out), the destination
@@ -1804,6 +1827,116 @@ model WalletTransfer {
   @@index([status, expiresAt])
   @@index([senderWalletId])
   @@index([recipientWalletId])
+}
+
+// Session 40 — "chama"-style group crowdfunding toward ONE ticket purchase
+// (or a small same-type batch, see `quantity`), ahead of an event, instead
+// of one buyer paying full price alone. status is OPEN (accepting
+// contributions) | FUNDED (raisedCents just reached targetCents — a
+// transient state almost never observed outside the one settlement
+// transaction that both sets it and immediately attempts conversion, see
+// settlePoolContribution in src/lib/ticket-pool.ts) | CONVERTED (a real
+// Order+Ticket(s) exist — see resultingOrderId) | EXPIRED (expiresAt passed
+// before reaching target) | CANCELLED (reached target but could not
+// convert, see cancelReason, or the creator cancelled early). EXPIRED and
+// CANCELLED both trigger the identical refund-every-contributor path, which
+// credits each contributor's own event Wallet (never this pool directly —
+// see PoolContribution below). Plain-string convention, same as every other
+// status-shaped field in this schema (see MobileMoneyAccount.provider).
+//
+// v1 scope cut: only a FIXED pricingStrategy TicketType may be pooled (see
+// validateCanStartPool in ticket-pool.ts) — targetCents is a snapshot of
+// ticketType.priceCents * quantity taken at creation and never recomputed,
+// so a TIERED type whose price climbs while the pool fills can't silently
+// under-raise what the ticket actually costs at conversion time.
+model TicketPool {
+  id           String   @id @default(cuid())
+  clientId     String?  @unique
+  name         String?
+  status       String   @default("OPEN")
+  targetCents  Int
+  raisedCents  Int      @default(0)
+  currency     String   @default("TZS")
+  quantity     Int      @default(1)
+  expiresAt    DateTime
+  // SOLD_OUT_AT_CONVERSION | CREATOR_CANCELLED — null unless status is
+  // CANCELLED. Free-text reason, same discipline as
+  // WalletTransaction.providerMessage.
+  cancelReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  creatorUserId String
+  creator       User   @relation("TicketPoolCreator", fields: [creatorUserId], references: [id])
+
+  // Deliberately NOT guarded against creatorUserId === recipientUserId, and
+  // a contribution from either of them is allowed — unlike WalletTransfer's
+  // SELF_TRANSFER guard, pooling toward (or contributing to) your own
+  // ticket is the normal chama case, not an error.
+  recipientUserId String
+  recipient       User   @relation("TicketPoolRecipient", fields: [recipientUserId], references: [id])
+
+  // Set once, alongside status -> CONVERTED, inside the same transaction
+  // that creates the Order — never set any other way.
+  resultingOrderId String? @unique
+  resultingOrder   Order?  @relation(fields: [resultingOrderId], references: [id])
+
+  contributions PoolContribution[]
+
+  // /account/pools' three lists (created / contributing-to / received) and
+  // the expiry sweep's "every OPEN pool past expiresAt" query.
+  @@index([creatorUserId])
+  @@index([recipientUserId])
+  @@index([status, expiresAt])
+  @@index([eventId])
+}
+
+// One contributor's mobile-money charge toward a TicketPool — same
+// initiate-then-poll-or-sweep shape as WalletTransaction's TOPUP type (see
+// handleTopupWallet/handleCheckTopupStatus/pending-topups.ts), crediting a
+// TicketPool's raisedCents instead of a Wallet's balanceCents — a
+// contributor is never required to hold a Wallet for this event at all.
+// status is PENDING (STK push sent) | COMPLETED (confirmed PAID, credited
+// into the pool) | FAILED (declined — nothing credited) | REFUNDED (was
+// COMPLETED; the pool expired/was cancelled, or this contribution's charge
+// confirmed PAID after the pool was already full — see refundContribution —
+// and the amount was credited back to the contributor's own Wallet for this
+// event as a POOL_REFUND WalletTransaction, auto-creating that wallet if
+// they didn't already have one).
+model PoolContribution {
+  id                  String   @id @default(cuid())
+  clientId            String?  @unique
+  amountCents         Int
+  currency            String   @default("TZS")
+  status              String   @default("PENDING")
+  providerReference   String?
+  providerMessage     String?
+  airpayRef           String?
+  phoneNumber         String?
+  mobileNetwork       String?
+  // Set only once REFUNDED — the resulting POOL_REFUND WalletTransaction's
+  // id, plain scalar not a relation, same discipline as
+  // WalletTransaction.spentByTicketId.
+  refundTransactionId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  poolId String
+  pool   TicketPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  contributorUserId String
+  contributor       User   @relation(fields: [contributorUserId], references: [id])
+
+  // The sweep's "COMPLETED contributions on an EXPIRED/CANCELLED pool still
+  // needing a refund" query, and a contributor's own "my contributions" list.
+  @@index([poolId, status])
+  @@index([contributorUserId])
 }
 
 // Session 28 — vendor terminal "Direct Sale": a mobile money charge to a
