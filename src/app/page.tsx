@@ -200,8 +200,14 @@ export default async function HomePage() {
       </section>
 
       <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
-        {/* Social proof / live stats */}
-        <section className="mb-14 rounded-2xl border border-border bg-surface p-6 shadow-lg shadow-black/20 sm:-mt-10 sm:p-8">
+        {/* Social proof / live stats. Needs its own stacking context
+            (relative) even though it's not itself positioned for layout —
+            the hero section above is `relative` (for its absolutely
+            positioned glow orbs), which puts it in CSS's later
+            "positioned, z-index:auto" paint group despite coming first in
+            the DOM; without this, the hero's border-b painted on top of
+            this card wherever sm:-mt-10 pulls it up to overlap. */}
+        <section className="relative mb-14 rounded-2xl border border-border bg-surface p-6 shadow-lg shadow-black/20 sm:-mt-10 sm:p-8">
           <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-muted">Live on Chaap right now</p>
           <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="pb-5 sm:px-6 sm:pb-0 sm:first:pl-0">
