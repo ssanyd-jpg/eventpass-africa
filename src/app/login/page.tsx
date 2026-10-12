@@ -34,6 +34,21 @@ function LoginForm() {
   // more common case of the two.
   const [loginIntent, setLoginIntent] = useState<"attendee" | "organiser">("attendee");
 
+  // Attendee-only alternative to email+password, same buyer-otp provider
+  // and /api/phone-otp/send route as the checkout panel in
+  // EventDetailClient.tsx. Defaults to phone: most attendees from here on
+  // are phone-only accounts (created via inline OTP at checkout) and have
+  // no password to type in the first place. Organisers never get this —
+  // there's no organiser-side OTP, so that tab always shows the form below.
+  const [authMode, setAuthMode] = useState<"phone" | "password">("phone");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [resendAt, setResendAt] = useState(0);
+
   // callbackUrl is already how every protected page in this app sends a
   // signed-out visitor here (see the many `/login?callbackUrl=...` redirects
   // across src/app) — far more reliable than document.referrer for a client-
@@ -69,6 +84,59 @@ function LoginForm() {
     // decides the destination.
     const session = await getSession();
     setLoading(false);
+    router.push(getPostLoginRedirect(session?.user, params.get("callbackUrl")));
+    router.refresh();
+  }
+
+  async function sendOtp() {
+    setOtpSending(true);
+    setOtpError(null);
+    const res = await fetch("/api/phone-otp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: buyerPhone.trim() }),
+    });
+    setOtpSending(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setOtpError(data?.error ?? t("login.phoneErrorRateLimited"));
+      return;
+    }
+    setCodeSent(true);
+    setResendAt(Date.now() + 60_000);
+  }
+
+  async function verifyOtp() {
+    setOtpVerifying(true);
+    setOtpError(null);
+    // Deliberately no name/email here, unlike EventDetailClient's checkout
+    // panel — this tab is for logging back into an account that already
+    // exists, never for creating one. A phone with no existing account
+    // throws "no_account" below (see OtpNoAccountSignin in auth.ts) rather
+    // than silently signing someone up with no name/email to give it.
+    const res = await signIn("buyer-otp", {
+      phone: buyerPhone.trim(),
+      code: otpCode.trim(),
+      name: "",
+      email: "",
+      redirect: false,
+    });
+    setOtpVerifying(false);
+    if (res?.error) {
+      setOtpError(
+        res.code === "too_many_attempts"
+          ? t("login.phoneErrorTooManyAttempts")
+          : res.code === "account_has_password"
+            ? t("login.phoneErrorAccountHasPassword")
+            : res.code === "no_account"
+              ? t("login.phoneErrorNoAccount")
+              : res.code === "rate_limited"
+                ? t("login.phoneErrorRateLimited")
+                : t("login.phoneErrorInvalidCode")
+      );
+      return;
+    }
+    const session = await getSession();
     router.push(getPostLoginRedirect(session?.user, params.get("callbackUrl")));
     router.refresh();
   }
@@ -110,35 +178,113 @@ function LoginForm() {
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="card space-y-4 p-6">
-        <div>
-          <label className="label" htmlFor="email">{t("login.email")}</label>
-          <input
-            id="email"
-            type="email"
-            required
-            className="input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+      {loginIntent === "attendee" && authMode === "phone" ? (
+        <div className="card space-y-4 p-6">
+          {!codeSent ? (
+            <>
+              <div>
+                <label className="label" htmlFor="buyerPhone">{t("login.phoneLabel")}</label>
+                <input
+                  id="buyerPhone"
+                  className="input"
+                  placeholder={t("login.phonePlaceholder")}
+                  value={buyerPhone}
+                  onChange={(e) => setBuyerPhone(e.target.value)}
+                />
+              </div>
+              {otpError && <p className="text-sm text-danger">{otpError}</p>}
+              <button
+                type="button"
+                className="btn-primary w-full"
+                disabled={otpSending || buyerPhone.trim().length < 6}
+                onClick={sendOtp}
+              >
+                {otpSending ? t("login.sendingCode") : t("login.sendCode")}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted">{t("login.codeSentHint", { phone: buyerPhone.trim() })}</p>
+              <div>
+                <label className="label" htmlFor="otpCode">{t("login.codeLabel")}</label>
+                <input
+                  id="otpCode"
+                  className="input"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              {otpError && <p className="text-sm text-danger">{otpError}</p>}
+              <button
+                type="button"
+                className="btn-primary w-full"
+                disabled={otpVerifying || otpCode.trim().length !== 6}
+                onClick={verifyOtp}
+              >
+                {otpVerifying ? t("login.verifying") : t("login.verifyAndLogIn")}
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-muted underline disabled:no-underline disabled:opacity-50"
+                disabled={otpSending || Date.now() < resendAt}
+                onClick={sendOtp}
+              >
+                {Date.now() < resendAt
+                  ? t("login.resendCodeCooldown", { seconds: Math.ceil((resendAt - Date.now()) / 1000) })
+                  : t("login.resendCode")}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="block w-full text-center text-xs text-muted hover:text-foreground"
+            onClick={() => setAuthMode("password")}
+          >
+            {t("login.usePasswordInstead")}
+          </button>
         </div>
-        <div>
-          <label className="label" htmlFor="password">{t("login.password")}</label>
-          <PasswordInput
-            id="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? t("login.signingIn") : t("login.logIn")}
-        </button>
-        <Link href="/forgot-password" className="block text-center text-xs text-muted hover:text-foreground">
-          {t("login.forgotPassword")}
-        </Link>
-      </form>
+      ) : (
+        <form onSubmit={onSubmit} className="card space-y-4 p-6">
+          <div>
+            <label className="label" htmlFor="email">{t("login.email")}</label>
+            <input
+              id="email"
+              type="email"
+              required
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="password">{t("login.password")}</label>
+            <PasswordInput
+              id="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <button type="submit" disabled={loading} className="btn-primary w-full">
+            {loading ? t("login.signingIn") : t("login.logIn")}
+          </button>
+          <Link href="/forgot-password" className="block text-center text-xs text-muted hover:text-foreground">
+            {t("login.forgotPassword")}
+          </Link>
+          {loginIntent === "attendee" && (
+            <button
+              type="button"
+              className="block w-full text-center text-xs text-muted hover:text-foreground"
+              onClick={() => setAuthMode("phone")}
+            >
+              {t("login.usePhoneInstead")}
+            </button>
+          )}
+        </form>
+      )}
 
       {/* Dev/staging convenience only — was rendering unconditionally,
           including on the production domain, which put three real working

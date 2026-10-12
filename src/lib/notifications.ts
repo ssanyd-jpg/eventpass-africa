@@ -94,7 +94,10 @@ export type NotificationType =
   | "POOL_CONTRIBUTION_RECEIVED"
   | "POOL_FUNDED"
   | "POOL_REFUNDED"
-  | "POOL_SOLD_OUT_REFUNDED";
+  | "POOL_SOLD_OUT_REFUNDED"
+  // Inline phone-OTP checkout signup, see src/lib/phone-otp.ts — the SMS
+  // carrying the 6-digit code itself.
+  | "PHONE_VERIFICATION_CODE";
 
 export type NotificationChannel = "EMAIL" | "SMS" | "WHATSAPP";
 

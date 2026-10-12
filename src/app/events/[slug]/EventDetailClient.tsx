@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { db, newLocalId, type LocalTicketType } from "@/lib/db";
 import { queueOp, useOnlineStatus } from "@/lib/sync-engine";
@@ -156,6 +157,72 @@ function EventDetailContent() {
   const [phone, setPhone] = useState("");
   const [network, setNetwork] = useState(NETWORKS[0].value);
 
+  // Inline phone-OTP checkout signup — replaces the old redirect-to-/login
+  // gate (see placeOrder below) so an anonymous buyer never has to leave
+  // this page. buyerPhone is deliberately separate from `phone` above
+  // (that's the AIRPAY_ONLINE mobile-money number — a different concern
+  // that happens to also live on this same confirm step).
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpErrorCode, setOtpErrorCode] = useState<string | null>(null);
+  const [resendAt, setResendAt] = useState(0);
+
+  async function sendOtp() {
+    setOtpSending(true);
+    setOtpError(null);
+    setOtpErrorCode(null);
+    const res = await fetch("/api/phone-otp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: buyerPhone.trim() }),
+    });
+    setOtpSending(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setOtpError(data?.error ?? t("event.buyerSignupErrorRateLimited"));
+      return;
+    }
+    setCodeSent(true);
+    setResendAt(Date.now() + 60_000);
+  }
+
+  async function verifyOtp() {
+    setOtpVerifying(true);
+    setOtpError(null);
+    setOtpErrorCode(null);
+    const res = await signIn("buyer-otp", {
+      phone: buyerPhone.trim(),
+      code: otpCode.trim(),
+      name: buyerName.trim(),
+      email: buyerEmail.trim(),
+      redirect: false,
+    });
+    setOtpVerifying(false);
+    if (res?.error) {
+      setOtpErrorCode(res.code ?? null);
+      setOtpError(
+        res.code === "too_many_attempts"
+          ? t("event.buyerSignupErrorTooManyAttempts")
+          : res.code === "email_taken"
+            ? t("event.buyerSignupErrorEmailTaken")
+            : res.code === "account_has_password"
+              ? t("event.buyerSignupErrorAccountHasPassword")
+              : res.code === "rate_limited"
+                ? t("event.buyerSignupErrorRateLimited")
+                : t("event.buyerSignupErrorInvalidCode")
+      );
+      return;
+    }
+    // useAppSession()'s `user` updates reactively from here — NextAuth's
+    // SessionProvider re-renders in place, no navigation needed.
+  }
+
   // Session 13 — group/family checkout. One name per ticket being bought,
   // in the same order tickets get flattened below — kept in sync with
   // totalQty as the buyer adjusts quantities, preserving names already
@@ -236,10 +303,10 @@ function EventDetailContent() {
 
   async function placeOrder() {
     if (!event || event.status === "CANCELLED") return;
-    if (!user) {
-      router.push(`/login?callbackUrl=/events/${slug}`);
-      return;
-    }
+    // Defense-in-depth only — the Pay button is disabled whenever !user,
+    // signup now happens inline above via the phone-OTP panel rather than
+    // a redirect to /login.
+    if (!user) return;
     setPlacing(true);
 
     const clientId = newLocalId();
@@ -741,9 +808,92 @@ function EventDetailContent() {
               </div>
 
               {!user && (
-                <p className="mt-3 text-xs text-warn">
-                  {t("event.loginRequiredHint")}
-                </p>
+                <div className="mt-4 space-y-2 rounded-lg border border-border bg-surface2 p-3">
+                  <p className="text-sm font-medium">{t("event.buyerSignupHeading")}</p>
+
+                  {!codeSent && (
+                    <>
+                      <div>
+                        <label className="label" htmlFor="buyerName">{t("event.buyerSignupNameLabel")}</label>
+                        <input
+                          id="buyerName"
+                          className="input"
+                          value={buyerName}
+                          onChange={(e) => setBuyerName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" htmlFor="buyerEmail">{t("event.buyerSignupEmailLabel")}</label>
+                        <input
+                          id="buyerEmail"
+                          type="email"
+                          className="input"
+                          value={buyerEmail}
+                          onChange={(e) => setBuyerEmail(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" htmlFor="buyerPhone">{t("event.buyerSignupPhoneLabel")}</label>
+                        <input
+                          id="buyerPhone"
+                          className="input"
+                          placeholder={t("event.buyerSignupPhonePlaceholder")}
+                          value={buyerPhone}
+                          onChange={(e) => setBuyerPhone(e.target.value)}
+                        />
+                      </div>
+                      {otpError && <p className="text-xs text-danger">{otpError}</p>}
+                      <button
+                        className="btn-primary w-full"
+                        disabled={otpSending || !buyerName.trim() || !buyerEmail.trim() || buyerPhone.trim().length < 6}
+                        onClick={sendOtp}
+                      >
+                        {otpSending ? t("event.buyerSignupSendingCode") : t("event.buyerSignupSendCode")}
+                      </button>
+                    </>
+                  )}
+
+                  {codeSent && (
+                    <>
+                      <p className="text-xs text-muted">
+                        {t("event.buyerSignupCodeSentHint", { phone: buyerPhone.trim() })}
+                      </p>
+                      <div>
+                        <label className="label" htmlFor="otpCode">{t("event.buyerSignupCodeLabel")}</label>
+                        <input
+                          id="otpCode"
+                          className="input"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                        />
+                      </div>
+                      {otpError && <p className="text-xs text-danger">{otpError}</p>}
+                      {otpErrorCode === "account_has_password" && (
+                        <Link href={`/login?callbackUrl=/events/${slug}`} className="text-xs text-accent underline">
+                          {t("event.buyerSignupLoginInstead")}
+                        </Link>
+                      )}
+                      <button
+                        className="btn-primary w-full"
+                        disabled={otpVerifying || otpCode.trim().length !== 6}
+                        onClick={verifyOtp}
+                      >
+                        {otpVerifying ? t("event.buyerSignupVerifying") : t("event.buyerSignupVerifyAndPay")}
+                      </button>
+                      <button
+                        className="w-full text-xs text-muted underline disabled:no-underline disabled:opacity-50"
+                        disabled={otpSending || Date.now() < resendAt}
+                        onClick={sendOtp}
+                      >
+                        {Date.now() < resendAt
+                          ? t("event.buyerSignupResendCooldown", { seconds: Math.ceil((resendAt - Date.now()) / 1000) })
+                          : t("event.buyerSignupResend")}
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
 
               {/* Same sticky-while-in-view treatment as the select step's
@@ -756,16 +906,14 @@ function EventDetailContent() {
                 </button>
                 <button
                   className="btn-primary flex-1"
-                  disabled={placing || (online && !isFreeOrder && phone.trim().length < 6)}
+                  disabled={placing || !user || (online && !isFreeOrder && phone.trim().length < 6)}
                   onClick={placeOrder}
                 >
                   {placing
                     ? t("event.placing")
-                    : !user
-                      ? t("event.loginToPay")
-                      : isFreeOrder
-                        ? t("event.getFreeTicket")
-                        : t("event.payAmount", { amount: formatCents(totalCents, event.currency) })}
+                    : isFreeOrder
+                      ? t("event.getFreeTicket")
+                      : t("event.payAmount", { amount: formatCents(totalCents, event.currency) })}
                 </button>
               </div>
             </>

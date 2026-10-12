@@ -16,14 +16,18 @@ model User {
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
-  // Nullable — no signup flow collects this. Only ever set opportunistically
-  // when a buyer types one at AIRPAY_ONLINE checkout (see handleSellTickets),
-  // which is also the only source SMS notifications (order confirmation,
-  // wristband provisioning, low wallet balance) have to reach a user — see
-  // src/lib/sms.ts. A user who's never paid online has no phone on file, so
-  // those SMS sends are skipped for them, not an error.
-  phone        String?
-  passwordHash String
+  // Checkout contact number — set opportunistically when a buyer types one
+  // at AIRPAY_ONLINE checkout (see handleSellTickets), AND the sign-in
+  // identity key for inline phone-OTP checkout signup (see the
+  // "buyer-otp" provider in auth.ts and src/lib/phone-otp.ts). Unique so
+  // OTP can safely find-or-create by phone; handleSellTickets's write must
+  // tolerate a P2002 conflict rather than fail the charge over it.
+  phone        String?  @unique
+  // Nullable — an account created via phone-OTP has no password at all.
+  // Every bcrypt.compare(_, user.passwordHash) call site must null-check
+  // first: the "credentials" provider below, src/app/api/staff/login,
+  // and changePassword in src/app/account/settings/actions.ts.
+  passwordHash String?
   role         String   @default("USER")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -48,6 +52,25 @@ model User {
   ticketPoolsCreated          TicketPool[]            @relation("TicketPoolCreator")
   ticketPoolsReceived         TicketPool[]            @relation("TicketPoolRecipient")
   poolContributions           PoolContribution[]
+}
+
+// 6-digit SMS OTP for inline buyer signup/sign-in at checkout (see
+// src/lib/phone-otp.ts and the "buyer-otp" provider in auth.ts). Not FK'd
+// to User — a code's phone may have no User yet; find-or-create happens
+// only after a successful verify, inside authorize(). Deliberately not
+// shaped like PasswordResetToken/the vendor/sponsor magic-link tables:
+// none of those track verification attempts, which is fine for a 32-byte
+// random token but not for a 6-digit, 1,000,000-possibility code.
+model PhoneVerificationCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
 }
 
 // Every user belongs to exactly one organization, always — registration

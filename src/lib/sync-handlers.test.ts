@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
+import { normalizeTanzaniaPhone } from "@/lib/sms";
 import {
   createTestEvent,
   createTestUser,
@@ -551,6 +552,42 @@ describe("handleSellTickets — Airpay payment", () => {
 
     expect(result.order.status).toBe("PAID");
     expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
+  });
+
+  // User.phone is now unique (it also doubles as the phone-OTP sign-in key
+  // — see auth.ts/phone-otp.ts). This opportunistic capture has no
+  // uniqueness check of its own; the charge itself must never fail just
+  // because the typed mobile-money number already belongs to someone else.
+  it("completes the charge even when the checkout phone number already belongs to a different account", async () => {
+    mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "AP-PHONE-COLLISION-1" });
+    const { organizationId } = await newOrganizer();
+    // A number unlikely to collide with the many other tests in this file
+    // that hardcode "0712345678" as their AIRPAY_ONLINE phoneNumber — those
+    // are fine (the P2002 guard under test here protects them too), but
+    // reusing it HERE as the pre-claimed collision phone would make this
+    // test itself racy against test order/history in the shared test DB.
+    const collisionPhone = `07${Math.floor(10_000_000 + Math.random() * 89_999_999)}`;
+    const otherBuyer = await createTestUser();
+    await prisma.user.update({
+      where: { id: otherBuyer.id },
+      data: { phone: normalizeTanzaniaPhone(collisionPhone) },
+    });
+
+    const buyer = await createTestUser();
+    const event = await createTestEvent(organizationId, [{ priceCents: 100000, quantityTotal: 10 }]);
+    const tt = event.ticketTypes[0];
+
+    const result = await handleSellTickets(buyer.id, {
+      clientId: "airpay-phone-collision",
+      eventId: event.id,
+      items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["AP-COLLIDE-0001"] }],
+      paymentMethod: "AIRPAY_ONLINE",
+      phoneNumber: collisionPhone,
+    });
+
+    expect(result.order.status).toBe("PAID");
+    const freshBuyer = await prisma.user.findUnique({ where: { id: buyer.id } });
+    expect(freshBuyer?.phone).toBeNull(); // write was skipped, not failed over
   });
 
   it("creates a PAYMENT_FAILED order with no tickets/items when the charge is declined outright", async () => {

@@ -2,13 +2,15 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { clientIp } from "@/lib/rate-limit";
+import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { checkLoginRateLimit, resetLoginRateLimit } from "@/lib/login-rate-limit";
 import { authConfig } from "@/auth.config";
 import { deriveSessionLabel } from "@/lib/session-label";
 import { createUserSession, isSessionRevoked } from "@/lib/session-handlers";
 import { consumeVendorMagicLinkToken } from "@/lib/vendor-auth";
 import { consumeSponsorMagicLinkToken } from "@/lib/sponsor-auth";
+import { normalizeTanzaniaPhone } from "@/lib/sms";
+import { verifyAndConsumePhoneCode, resolveOrCreateOtpUser } from "@/lib/phone-otp";
 
 const SESSION_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -18,6 +20,42 @@ const SESSION_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 // instead of the generic "Invalid email or password.".
 class RateLimitedSignin extends CredentialsSignin {
   code = "rate_limited";
+}
+
+// Inline phone-OTP checkout signup (see src/lib/phone-otp.ts and
+// EventDetailClient.tsx) — same res.code convention as RateLimitedSignin
+// above, read by the client to show a specific message per failure mode.
+class OtpRateLimitedSignin extends CredentialsSignin {
+  code = "rate_limited";
+}
+class OtpInvalidCodeSignin extends CredentialsSignin {
+  code = "invalid_code";
+}
+class OtpTooManyAttemptsSignin extends CredentialsSignin {
+  code = "too_many_attempts";
+}
+class OtpEmailTakenSignin extends CredentialsSignin {
+  code = "email_taken";
+}
+// Deliberate security choice (see phone-otp feature plan): OTP never signs
+// into an existing password-protected account, even if that account's
+// User.phone happens to match — phone.phone is opportunistically captured
+// at AIRPAY_ONLINE checkout (see sync-handlers.ts) with no verification of
+// who currently controls that number, so letting OTP alone unlock an
+// existing password account would let phone-number control (e.g. via a SIM
+// swap) bypass a password entirely. Only phone-only accounts (passwordHash
+// === null) are reachable via OTP.
+class OtpAccountHasPasswordSignin extends CredentialsSignin {
+  code = "account_has_password";
+}
+// Thrown when resolveOrCreateOtpUser finds no existing User for this phone
+// AND no name/email were supplied to create one — always true from the
+// /login page's phone tab (login.tsx intentionally only collects phone+code,
+// since account creation stays the checkout panel's job), never true from
+// EventDetailClient's checkout panel (which requires both before allowing
+// "Send code" in the first place).
+class OtpNoAccountSignin extends CredentialsSignin {
+  code = "no_account";
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -39,7 +77,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!allowed) throw new RateLimitedSignin();
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user) return null;
+        // A phone-OTP account (see "buyer-otp" below) has no passwordHash —
+        // reject cleanly rather than calling bcrypt.compare against null.
+        if (!user || !user.passwordHash) return null;
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
@@ -118,6 +158,78 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: "SPONSOR",
           sponsorId: result.sponsor.id,
           eventId: result.sponsor.eventId,
+        };
+      },
+    }),
+    // Inline phone-OTP checkout signup (see src/lib/phone-otp.ts and
+    // EventDetailClient.tsx). Unlike vendor/sponsor-magic-link above, this
+    // is the first "find-or-create a real User" provider in the codebase —
+    // it doesn't just consume a pre-issued token for an already-existing,
+    // pre-approved entity. Mirrors "credentials"'s return shape (not
+    // vendor/sponsor's): an OTP buyer is a real User with role USER,
+    // subject to the same session-revocation recheck as any other buyer.
+    // Verification itself (attempt-counting, consuming the code) lives
+    // inside verifyAndConsumePhoneCode, called from here rather than a
+    // separate API route — a client can always call signIn("buyer-otp", …)
+    // directly, so a separate verify route would either double-consume the
+    // code or be a no-op with no real security value.
+    Credentials({
+      id: "buyer-otp",
+      name: "buyer-otp",
+      credentials: {
+        phone: { label: "Phone", type: "text" },
+        code: { label: "Code", type: "text" },
+        name: { label: "Name", type: "text" },
+        email: { label: "Email", type: "email" },
+      },
+      authorize: async (credentials, request) => {
+        const phone = normalizeTanzaniaPhone(String(credentials?.phone ?? ""));
+        const code = String(credentials?.code ?? "");
+        if (!phone || !code) return null;
+
+        const ip = clientIp(request);
+        const [phoneOk, ipOk] = await Promise.all([
+          checkRateLimit(`otp-verify-phone:${phone}`, { limit: 10, windowMs: 15 * 60 * 1000 }),
+          checkRateLimit(`otp-verify-ip:${ip}`, { limit: 10, windowMs: 15 * 60 * 1000 }),
+        ]);
+        if (!phoneOk.allowed || !ipOk.allowed) throw new OtpRateLimitedSignin();
+
+        const codeResult = await verifyAndConsumePhoneCode(phone, code);
+        if (!codeResult.ok) {
+          throw codeResult.reason === "TOO_MANY_ATTEMPTS" ? new OtpTooManyAttemptsSignin() : new OtpInvalidCodeSignin();
+        }
+
+        const userResult = await resolveOrCreateOtpUser(
+          phone,
+          String(credentials?.name ?? ""),
+          String(credentials?.email ?? "")
+        );
+        if (!userResult.ok) {
+          throw userResult.reason === "ACCOUNT_HAS_PASSWORD"
+            ? new OtpAccountHasPasswordSignin()
+            : userResult.reason === "EMAIL_TAKEN"
+              ? new OtpEmailTakenSignin()
+              : new OtpNoAccountSignin(); // MISSING_NAME_OR_EMAIL
+        }
+        const user = userResult.user;
+
+        const membership = await prisma.organizationMembership.findUnique({
+          where: { userId: user.id },
+          include: { organization: { select: { id: true, name: true, isAttendeeOrg: true } } },
+        });
+        const label = deriveSessionLabel(request.headers.get("user-agent"));
+        const userSession = await createUserSession(user.id, label);
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          organizationId: membership?.organizationId,
+          organizationRole: membership?.role,
+          organizationName: membership?.organization.name,
+          isAttendeeOrg: membership?.organization.isAttendeeOrg,
+          sessionId: userSession.id,
         };
       },
     }),

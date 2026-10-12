@@ -888,9 +888,14 @@ export async function handleSellTickets(userId: string, payload: any) {
       // src/lib/sms.ts and User.phone's own doc comment in schema.prisma).
       // Persisted regardless of how the charge below resolves, so even a
       // FAILED attempt's retry SMS later in this same function has a number
-      // to send to.
+      // to send to. `phone` is unique (it also doubles as the phone-OTP
+      // sign-in key — see auth.ts), so this can collide with a different
+      // account that already claimed the same number; never let that fail
+      // the charge over a best-effort contact-info write.
       const normalizedPhone = normalizeTanzaniaPhone(String(payload.phoneNumber));
-      await prisma.user.update({ where: { id: userId }, data: { phone: normalizedPhone } });
+      await prisma.user.update({ where: { id: userId }, data: { phone: normalizedPhone } }).catch((err) => {
+        if (err?.code !== "P2002") throw err;
+      });
 
       const provider = getActivePaymentProvider();
       charge = await provider.initiateCharge({

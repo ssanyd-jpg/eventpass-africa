@@ -43,7 +43,10 @@ export async function POST(request: Request) {
 
   // Load user
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
+  // A phone-OTP account (see auth.ts's "buyer-otp" provider) has no
+  // passwordHash — reject cleanly rather than calling bcrypt.compare
+  // against null.
+  if (!user || !user.passwordHash) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
