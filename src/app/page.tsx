@@ -183,21 +183,11 @@ export default async function HomePage() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href="#contact" className="btn-primary w-full sm:w-auto">
-                Bring Chaap to your event
+                Come Chaap to your event
               </a>
               <Link href="/events" className="btn-secondary w-full sm:w-auto">
                 Browse events
               </Link>
-            </div>
-            <div className="mt-7 flex flex-col gap-2.5">
-              <span className="text-xs font-bold uppercase tracking-[0.2em] text-muted">Top up with</span>
-              <div className="flex flex-wrap gap-2">
-                {["M-Pesa", "Mixx by Yas", "Airtel Money", "Visa", "Mastercard"].map((method) => (
-                  <span key={method} className="pill">
-                    {method}
-                  </span>
-                ))}
-              </div>
             </div>
           </div>
 
