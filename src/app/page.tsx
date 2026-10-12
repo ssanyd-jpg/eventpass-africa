@@ -179,7 +179,7 @@ export default async function HomePage() {
               One wristband. Every gate. Every sale.
             </h1>
             <p className="mt-5 max-w-lg text-balance text-base text-muted sm:text-lg">
-              One platform for ticketing, gate entry and cashless spend — built for East Africa&apos;s events.
+              All in one platform — built for East Africa&apos;s events.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href="#contact" className="btn-primary w-full sm:w-auto">
