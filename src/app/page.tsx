@@ -176,7 +176,7 @@ export default async function HomePage() {
               Now live across Tanzania
             </p>
             <h1 className="max-w-xl text-balance font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              One wristband. Every gate. Every sale.
+              All under One wristband.
             </h1>
             <p className="mt-5 max-w-lg text-balance text-base text-muted sm:text-lg">
               All in one platform — built for East Africa&apos;s events.
