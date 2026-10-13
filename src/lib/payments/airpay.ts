@@ -57,22 +57,7 @@ async function postForm(url: string, fields: Record<string, string>): Promise<Re
   }
 }
 
-// TEMPORARY — remove after diagnosing the production "Invalid client id or
-// client secret" issue. Logs only length + single first/last char of each
-// credential, never the full value, to compare what production actually
-// reads from process.env against the known-good local .env values.
-function debugFingerprint(creds: AirpayCredentials) {
-  const fp = (v: string) => `len=${v.length} first=${v.slice(0, 1)} last=${v.slice(-1)}`;
-  console.log("[airpay-debug] merchantId", fp(creds.merchantId));
-  console.log("[airpay-debug] clientId", fp(creds.clientId));
-  console.log("[airpay-debug] clientSecret", fp(creds.clientSecret));
-  console.log("[airpay-debug] username", fp(creds.username));
-  console.log("[airpay-debug] password", fp(creds.password));
-  console.log("[airpay-debug] secret", fp(creds.secret));
-}
-
 async function getAccessToken(creds: AirpayCredentials): Promise<string> {
-  debugFingerprint(creds);
   // Exactly these four fields, keyed "mercid" (not "merchant_id") — confirmed
   // against Airpay's reference PHP. A stray extra "merchant_id" key here
   // previously polluted both the checksum (wrong concatenated value order)
