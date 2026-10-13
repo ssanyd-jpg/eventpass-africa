@@ -5,23 +5,12 @@ import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { sendNotification } from "@/lib/notifications";
 
 /**
- * Public, unauthenticated contact-form endpoint for the chaap.africa
- * marketing site — that site is a separate static page, not part of this
- * repo (yet), so every request here is genuinely cross-origin and needs its
- * own CORS allow-list rather than relying on this app's own session/CSRF
- * story.
- *
- * DEV-ONLY: while the marketing site is still hosted as a Claude Artifact,
- * its live preview renders the artboard in an iframe built from a `data:`
- * URL rather than serving it from a real https:// origin. A document loaded
- * from a `data:` URL (without `allow-same-origin` in its sandbox) has an
- * opaque origin, which browsers serialize in the fetch `Origin` header as
- * the literal string "null" — not a domain. That's what shows up here, so
- * it's allow-listed by that literal string rather than a guessed subdomain.
- * Remove the "null" entry once chaap.africa itself is serving this form and
- * the Artifact preview is no longer in the loop.
+ * Public, unauthenticated contact-form endpoint for the homepage's lead
+ * form (now served same-origin from this app, not a separate marketing
+ * site) — kept as its own CORS-checked route rather than relying on
+ * session/CSRF, since it's deliberately reachable with no auth at all.
  */
-const ALLOWED_ORIGINS = new Set(["https://chaap.africa", "https://www.chaap.africa", "null"]);
+const ALLOWED_ORIGINS = new Set(["https://chaap.africa", "https://www.chaap.africa"]);
 
 function allowedOrigin(origin: string | null): string | null {
   return origin && ALLOWED_ORIGINS.has(origin) ? origin : null;

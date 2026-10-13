@@ -19,13 +19,31 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+const title = "Chaap — Event Ticketing That Works Offline";
+const description =
+  "Browse events, sell tickets, scan gate entry, and settle vendor payouts same-day — all with 100% offline capability.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://chaap.africa"),
-  title: "Chaap — Event Ticketing That Works Offline",
-  description:
-    "Browse events, sell tickets, scan gate entry, and settle vendor payouts same-day — all with 100% offline capability.",
+  title,
+  description,
   manifest: "/manifest.json",
   icons: { icon: "/favicon.ico", apple: "/chaap-apple-touch-icon.png" },
+  openGraph: {
+    title,
+    description,
+    url: "/",
+    siteName: "Chaap",
+    images: [{ url: "/brand/chaap-hero-poster.webp", width: 1280, height: 719, alt: "Chaap — one wristband, every gate" }],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: ["/brand/chaap-hero-poster.webp"],
+  },
 };
 
 // Matches --surface-app in globals.css (the "sunset" theme's page background)
