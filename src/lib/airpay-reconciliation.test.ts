@@ -50,7 +50,7 @@ describe("summarizeAirpayReconciliation — payment method breakdown", () => {
     const unknown = summary.methodBreakdown.find((r) => r.method === "UNKNOWN")!;
     expect(unknown.count).toBe(2);
     expect(unknown.label).toBe("Unknown");
-    expect(summary.methodBreakdown.find((r) => r.method === "TIGO")!.label).toBe("Tigo Pesa");
+    expect(summary.methodBreakdown.find((r) => r.method === "TIGO")!.label).toBe("Tigo Pesa / Mixx by Yas");
   });
 
   it("labelForMethod matches the breakdown's own labeling", () => {

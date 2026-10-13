@@ -609,6 +609,10 @@ export interface OutboxEntry {
   status: "pending" | "syncing" | "failed";
   attempts: number;
   lastError?: string | null;
+  // ISO timestamp of the most recent attempt — drives flushOutbox's
+  // per-entry backoff. Absent on a never-yet-attempted entry (not an
+  // indexed field, so no schema version bump needed to add it).
+  lastAttemptAt?: string | null;
 }
 
 export interface MetaEntry {

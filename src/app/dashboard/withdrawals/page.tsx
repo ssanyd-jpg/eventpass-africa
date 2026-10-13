@@ -10,7 +10,7 @@ import { formatCents, formatDateTime } from "@/lib/format";
 
 const NETWORK_LABEL: Record<string, string> = {
   MPESA: "M-Pesa",
-  TIGO: "Tigo Pesa",
+  TIGO: "Tigo Pesa / Mixx by Yas",
   AIRTEL: "Airtel Money",
   HALOTEL: "HaloPesa",
 };

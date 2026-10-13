@@ -41,7 +41,7 @@ function nextTierFor(tt: LocalTicketType): { priceCents: number; atQuantity: num
 // src/lib/payments/airpay.ts).
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
-  { value: "TIGO", label: "Tigo Pesa" },
+  { value: "TIGO", label: "Tigo Pesa / Mixx by Yas" },
   { value: "AIRTEL", label: "Airtel Money" },
 ];
 

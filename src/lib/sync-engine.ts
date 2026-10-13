@@ -802,10 +802,74 @@ function outboxResourceKey(entry: { type: OutboxOpType; payload: Record<string, 
   }
 }
 
+// Op types that initiate a real mobile-money charge. Unlike a status poll or
+// a plain data mutation, retrying one of these from scratch after an
+// ambiguous failure (timeout, 500) risks firing a second real STK-push for
+// the same purchase — so these get a hard attempt cap on top of the general
+// backoff below, instead of retrying forever.
+const CHARGE_INITIATING_OP_TYPES = new Set<OutboxOpType>([
+  "SELL_TICKETS",
+  "TOPUP_WALLET",
+  "CHARGE_WALLET",
+  "SPLIT_PAYMENT",
+  "CHARGE_DIRECT_SALE",
+]);
+const MAX_CHARGE_ATTEMPTS = 3;
+
+// Exponential backoff per entry: 5s, 10s, 20s, 40s, ... capped at 5 minutes.
+// Without this, a persistently-failing entry got retried on every single
+// flush trigger (every 20s auto-sync tick, plus every queueOp's 300ms
+// debounce) with no growing delay — observed in production as several
+// retries per second once a backlog of failed entries built up.
+function backoffDelayMs(attempts: number): number {
+  return Math.min(5_000 * 2 ** Math.max(0, attempts - 1), 5 * 60 * 1000);
+}
+
+// Charge-initiating entry that's exhausted its attempt cap: stop retrying
+// for good and reflect the terminal failure on whichever local record the
+// buyer/vendor is actually looking at. SELL_TICKETS and TOPUP_WALLET create
+// an optimistic local row up front (order / wallet transaction) that would
+// otherwise be stuck showing "pending" forever. CHARGE_WALLET, SPLIT_PAYMENT
+// and CHARGE_DIRECT_SALE are deliberately never optimistic — their callers
+// already treat "no transaction found after flushing" as a clean failure, so
+// there's no local record to update for those.
+async function giveUpOnChargeEntry(entry: { id?: number; type: OutboxOpType; payload: Record<string, unknown> }) {
+  if (entry.id == null) return;
+  await db.outbox.delete(entry.id);
+  const syncError = "We couldn't reach the payment network after several tries — this needs manual review.";
+
+  if (entry.type === "SELL_TICKETS") {
+    const localId = entry.payload.clientId as string;
+    const local = await db.orders.get(localId);
+    if (local) {
+      await db.orders.put({ ...local, status: "PAYMENT_FAILED", syncStatus: "conflict", syncError });
+      const event = await db.events.get(local.eventId);
+      if (event) {
+        await db.events.put({
+          ...event,
+          ticketTypes: event.ticketTypes.map((tt) => {
+            const item = local.items.find((i) => i.ticketTypeId === tt.id);
+            return item ? { ...tt, quantitySold: Math.max(0, tt.quantitySold - item.quantity) } : tt;
+          }),
+        });
+      }
+    }
+  } else if (entry.type === "TOPUP_WALLET") {
+    const localId = entry.payload.clientId as string;
+    const local = await db.walletTransactions.get(localId);
+    if (local) {
+      await db.walletTransactions.put({ ...local, status: "FAILED", syncStatus: "conflict", syncError });
+    }
+  }
+}
+
 export async function flushOutbox(): Promise<{ flushed: number; failed: number }> {
   if (!db || !navigator.onLine) return { flushed: 0, failed: 0 };
 
-  const entries = await db.outbox.where("status").anyOf("pending", "failed").sortBy("createdAt");
+  const entries = (await db.outbox.where("status").anyOf("pending", "failed").sortBy("createdAt")).filter((entry) => {
+    if (entry.status !== "failed" || !entry.lastAttemptAt) return true;
+    return Date.now() - new Date(entry.lastAttemptAt).getTime() >= backoffDelayMs(entry.attempts);
+  });
   let flushed = 0;
   let failed = 0;
   const deviceId = await getOrCreateDeviceId();
@@ -823,6 +887,13 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
 
   async function processEntry(entry: (typeof entries)[number]) {
     if (entry.id == null) return;
+
+    if (CHARGE_INITIATING_OP_TYPES.has(entry.type) && entry.attempts >= MAX_CHARGE_ATTEMPTS) {
+      await giveUpOnChargeEntry(entry);
+      failed++;
+      return;
+    }
+
     await db.outbox.update(entry.id, { status: "syncing" });
     try {
       const res = await fetch("/api/sync/push", {
@@ -841,6 +912,7 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
             status: "failed",
             attempts: entry.attempts + 1,
             lastError: result.reason ?? "sync failed",
+            lastAttemptAt: new Date().toISOString(),
           });
           failed++;
           return;
@@ -972,6 +1044,7 @@ export async function flushOutbox(): Promise<{ flushed: number; failed: number }
         status: "failed",
         attempts: entry.attempts + 1,
         lastError: "network error",
+        lastAttemptAt: new Date().toISOString(),
       });
       failed++;
     }

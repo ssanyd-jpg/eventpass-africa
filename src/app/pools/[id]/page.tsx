@@ -29,7 +29,7 @@ interface PoolInfo {
 // wallet top-up form.
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
-  { value: "TIGO", label: "Tigo Pesa" },
+  { value: "TIGO", label: "Tigo Pesa / Mixx by Yas" },
   { value: "AIRTEL", label: "Airtel Money" },
 ];
 

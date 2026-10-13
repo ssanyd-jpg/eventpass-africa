@@ -8,7 +8,7 @@ import type { BroadcastHistoryRow } from "@/lib/chaap-ads";
 
 const NETWORKS = [
   { value: "MPESA", label: "M-Pesa" },
-  { value: "TIGO", label: "Tigo Pesa" },
+  { value: "TIGO", label: "Tigo Pesa / Mixx by Yas" },
   { value: "AIRTEL", label: "Airtel Money" },
 ];
 
