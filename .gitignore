@@ -46,3 +46,6 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 /e2e/.fixtures.json
+
+.vercel
+.env*
