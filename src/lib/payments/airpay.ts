@@ -138,6 +138,23 @@ async function getAccessToken(creds: AirpayCredentials): Promise<string> {
   return token;
 }
 
+// Temporary — a route-triggerable OAuth-only check, added 2026-10-14
+// alongside the diagnostic logging above. Deliberately stops after the
+// OAuth step and never touches the seamless charge call, so running this
+// from production can never send a real mobile-money charge. Remove this
+// (and its route) once the OAuth production-failure investigation is
+// closed.
+export async function diagnosticOAuthCheck(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const creds = readAirpayCredentials();
+  if (!creds) return { ok: false, error: "Airpay credentials are not fully set." };
+  try {
+    await getAccessToken(creds);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Confirmed with Airpay support: MPESA, AIRTEL, and TIGO (Tigo Pesa / MIXX
 // by Yas) are the only bankcodes Airpay Tanzania currently accepts.
 // HALOTEL/HaloPesa and T-Pesa are NOT yet available on their side — there is
