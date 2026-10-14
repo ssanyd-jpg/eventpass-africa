@@ -5,11 +5,13 @@ import { diagnosticOAuthCheck } from "@/lib/payments/airpay";
 // OAuth call from production on demand (rather than waiting for a real
 // checkout attempt), so the diagnostic logging in airpay.ts's postForm can
 // capture a fresh timestamp/egress-IP/response snapshot for Airpay's
-// production-failure investigation. Gated the same way every other
-// /api/cron/* route is — see reminders/route.ts's comment. Delete this
-// route (and diagnosticOAuthCheck) once that investigation is closed.
+// production-failure investigation. Gated by its own dedicated secret
+// (AIRPAY_DIAG_SECRET) rather than CRON_SECRET — kept separate from the
+// real scheduled cron jobs on purpose. Delete this route (and
+// diagnosticOAuthCheck, and the AIRPAY_DIAG_SECRET env var) once that
+// investigation is closed.
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = process.env.AIRPAY_DIAG_SECRET;
   const authHeader = request.headers.get("authorization");
   if (!secret || authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ ok: false, reason: "UNAUTHORIZED" }, { status: 401 });
