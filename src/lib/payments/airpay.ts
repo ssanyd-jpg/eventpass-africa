@@ -43,13 +43,60 @@ const OAUTH_URL = "https://kraken.airpay.tz/airpay/pay/v1/api/oauth2/";
 const SEAMLESS_URL = "https://kraken.airpay.tz/airpay/pay/v1/api/seamless/index.php";
 const VERIFY_URL = "https://payments.airpay.tz/order/verify.php";
 
-async function postForm(url: string, fields: Record<string, string>): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(fields).toString(),
-  });
-  const text = await res.text();
+const AIRPAY_CALL_TIMEOUT_MS = 20_000;
+
+// One-off public-IP lookup, best-effort — Vercel serverless functions have no
+// single fixed outbound IP, so this reads back whatever IP this particular
+// invocation is actually egressing from. Temporary: added to answer Airpay's
+// 2026-10-14 request for the source IP behind a failed production OAuth
+// request; safe to delete once that investigation is closed.
+async function getEgressIp(): Promise<string> {
+  try {
+    const res = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(5000) });
+    const data = (await res.json()) as { ip?: string };
+    return data.ip ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+// Temporary diagnostic wrapper around every Airpay HTTP call — added
+// 2026-10-14 to capture the exact timestamp, source IP, and complete raw
+// response (or, on a network-level failure, proof that no response ever
+// arrived) for the next production attempt, per Airpay's request on the
+// OAuth investigation. Safe to trim back to a plain fetch+JSON.parse once
+// that's closed. Never logs request fields (encdata/checksum/privatekey)
+// — only the response side, which carries no secret of ours.
+async function postForm(label: string, url: string, fields: Record<string, string>): Promise<Record<string, unknown>> {
+  const startedAt = new Date().toISOString();
+  const started = Date.now();
+  const egressIp = await getEgressIp();
+  const loggedUrl = url.split("?")[0]; // strips the seamless call's bearer token
+
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields).toString(),
+      signal: AbortSignal.timeout(AIRPAY_CALL_TIMEOUT_MS),
+    });
+    text = await res.text();
+  } catch (err) {
+    const elapsedMs = Date.now() - started;
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    console.error(
+      `[airpay-diag] ${label} NO RESPONSE — startedAt=${startedAt} elapsedMs=${elapsedMs} egressIp=${egressIp} url=${loggedUrl} timedOut=${timedOut} error=${err instanceof Error ? err.message : String(err)} cause=${err instanceof Error && err.cause ? String(err.cause) : "none"}`
+    );
+    throw err;
+  }
+
+  const elapsedMs = Date.now() - started;
+  console.log(
+    `[airpay-diag] ${label} — startedAt=${startedAt} elapsedMs=${elapsedMs} egressIp=${egressIp} url=${loggedUrl} status=${res.status} headers=${JSON.stringify(Object.fromEntries(res.headers.entries()))} body=${text}`
+  );
+
   try {
     return JSON.parse(text);
   } catch {
@@ -69,7 +116,7 @@ async function getAccessToken(creds: AirpayCredentials): Promise<string> {
     mercid: creds.merchantId,
   };
   const encryptionKey = deriveEncryptionKey(creds.username, creds.password);
-  const data = await postForm(OAUTH_URL, {
+  const data = await postForm("oauth", OAUTH_URL, {
     merchant_id: creds.merchantId,
     encdata: encryptPayload(payload, encryptionKey),
     checksum: buildChecksum(payload),
@@ -172,7 +219,7 @@ export const airpayProvider: PaymentProvider = {
     };
 
     const encryptionKey = deriveEncryptionKey(creds.username, creds.password);
-    const data = await postForm(`${SEAMLESS_URL}?token=${encodeURIComponent(accessToken)}`, {
+    const data = await postForm("seamless-charge", `${SEAMLESS_URL}?token=${encodeURIComponent(accessToken)}`, {
       merchant_id: creds.merchantId,
       privatekey: derivePrivateKey(creds.secret, creds.username, creds.password),
       encdata: encryptPayload(payload, encryptionKey),
@@ -238,7 +285,7 @@ export async function verifyAirpayOrder(merchantOrderId: string): Promise<Charge
   if (!creds) {
     throw new Error("Airpay credentials are not fully set — airpayProvider isn't usable yet.");
   }
-  const data = await postForm(VERIFY_URL, {
+  const data = await postForm("verify", VERIFY_URL, {
     Mercid: creds.merchantId,
     merchant_txnId: merchantOrderId,
     Privatekey: derivePrivateKey(creds.secret, creds.username, creds.password),
