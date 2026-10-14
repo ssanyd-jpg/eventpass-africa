@@ -31,6 +31,17 @@ class OtpRateLimitedSignin extends CredentialsSignin {
 class OtpInvalidCodeSignin extends CredentialsSignin {
   code = "invalid_code";
 }
+class OtpExpiredSignin extends CredentialsSignin {
+  code = "expired";
+}
+// A verify attempt landing after the latest code was already consumed (a
+// double-submit, a second tab, or retyping a stale code after a first
+// attempt already signed the buyer in) — distinct from OtpInvalidCodeSignin
+// so the UI can say "already used, you may already be signed in" instead of
+// the misleading "that code is incorrect".
+class OtpAlreadyUsedSignin extends CredentialsSignin {
+  code = "already_used";
+}
 class OtpTooManyAttemptsSignin extends CredentialsSignin {
   code = "too_many_attempts";
 }
@@ -196,7 +207,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const codeResult = await verifyAndConsumePhoneCode(phone, code);
         if (!codeResult.ok) {
-          throw codeResult.reason === "TOO_MANY_ATTEMPTS" ? new OtpTooManyAttemptsSignin() : new OtpInvalidCodeSignin();
+          throw codeResult.reason === "TOO_MANY_ATTEMPTS"
+            ? new OtpTooManyAttemptsSignin()
+            : codeResult.reason === "ALREADY_USED"
+              ? new OtpAlreadyUsedSignin()
+              : codeResult.reason === "EXPIRED"
+                ? new OtpExpiredSignin()
+                : new OtpInvalidCodeSignin();
         }
 
         const userResult = await resolveOrCreateOtpUser(

@@ -115,7 +115,7 @@ describe("verifyAndConsumePhoneCode", () => {
     expect(result).toEqual({ ok: false, reason: "EXPIRED" });
   });
 
-  it("never lets the same code verify twice", async () => {
+  it("never lets the same code verify twice, and reports ALREADY_USED rather than a generic INVALID", async () => {
     const phone = testPhone();
     await generateAndSendPhoneCode(phone);
     const code = await codeFromNotificationLog(normalizeTanzaniaPhone(phone));
@@ -124,7 +124,27 @@ describe("verifyAndConsumePhoneCode", () => {
     expect(first).toEqual({ ok: true });
 
     const second = await verifyAndConsumePhoneCode(phone, code);
-    expect(second).toEqual({ ok: false, reason: "INVALID" });
+    expect(second).toEqual({ ok: false, reason: "ALREADY_USED" });
+  });
+
+  it("reports ALREADY_USED even for a wrong code, once the latest code is consumed", async () => {
+    const phone = testPhone();
+    await generateAndSendPhoneCode(phone);
+    const code = await codeFromNotificationLog(normalizeTanzaniaPhone(phone));
+    await verifyAndConsumePhoneCode(phone, code);
+
+    // A retry with a mistyped/stale code after the real one already
+    // succeeded should still say "already used", not "incorrect" — that's
+    // the actual true state, and attempts shouldn't be charged against a
+    // code that's no longer live.
+    const result = await verifyAndConsumePhoneCode(phone, "000000");
+    expect(result).toEqual({ ok: false, reason: "ALREADY_USED" });
+
+    const row = await prisma.phoneVerificationCode.findFirst({
+      where: { phone: normalizeTanzaniaPhone(phone) },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(row!.attempts).toBe(0);
   });
 
   it("rejects when no code was ever sent for this phone", async () => {

@@ -57,7 +57,7 @@ export async function generateAndSendPhoneCode(rawPhone: string): Promise<SendPh
 
 export type VerifyPhoneCodeResult =
   | { ok: true }
-  | { ok: false; reason: "INVALID" | "EXPIRED" | "TOO_MANY_ATTEMPTS" };
+  | { ok: false; reason: "INVALID" | "EXPIRED" | "TOO_MANY_ATTEMPTS" | "ALREADY_USED" };
 
 // Validates + consumes atomically, same reasoning as consumeVendorMagicLinkToken:
 // a code is single-use, so the check and the consuming must happen in one
@@ -67,12 +67,19 @@ export async function verifyAndConsumePhoneCode(rawPhone: string, code: string):
   const codeHash = hashCode(code);
 
   return prisma.$transaction(async (tx) => {
+    // Deliberately the latest row regardless of consumed state (not
+    // `where: { consumedAt: null }` like before) — a verify attempt that
+    // lands after the latest code was already consumed (a double-submit,
+    // or a second tab) needs to be told exactly that via ALREADY_USED,
+    // rather than falling through to the same generic INVALID a genuinely
+    // wrong/never-requested code gets. See the login page's error mapping.
     const row = await tx.phoneVerificationCode.findFirst({
-      where: { phone, consumedAt: null },
+      where: { phone },
       orderBy: { createdAt: "desc" },
     });
 
     if (!row) return { ok: false, reason: "INVALID" as const };
+    if (row.consumedAt) return { ok: false, reason: "ALREADY_USED" as const };
     if (row.attempts >= OTP_MAX_ATTEMPTS) return { ok: false, reason: "TOO_MANY_ATTEMPTS" as const };
     if (row.expiresAt < new Date()) return { ok: false, reason: "EXPIRED" as const };
 

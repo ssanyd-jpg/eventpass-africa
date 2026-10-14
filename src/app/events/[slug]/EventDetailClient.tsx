@@ -209,13 +209,17 @@ function EventDetailContent() {
       setOtpError(
         res.code === "too_many_attempts"
           ? t("event.buyerSignupErrorTooManyAttempts")
-          : res.code === "email_taken"
-            ? t("event.buyerSignupErrorEmailTaken")
-            : res.code === "account_has_password"
-              ? t("event.buyerSignupErrorAccountHasPassword")
-              : res.code === "rate_limited"
-                ? t("event.buyerSignupErrorRateLimited")
-                : t("event.buyerSignupErrorInvalidCode")
+          : res.code === "already_used"
+            ? t("event.buyerSignupErrorAlreadyUsed")
+            : res.code === "expired"
+              ? t("event.buyerSignupErrorExpired")
+              : res.code === "email_taken"
+                ? t("event.buyerSignupErrorEmailTaken")
+                : res.code === "account_has_password"
+                  ? t("event.buyerSignupErrorAccountHasPassword")
+                  : res.code === "rate_limited"
+                    ? t("event.buyerSignupErrorRateLimited")
+                    : t("event.buyerSignupErrorInvalidCode")
       );
       return;
     }

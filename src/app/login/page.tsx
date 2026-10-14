@@ -126,13 +126,17 @@ function LoginForm() {
       setOtpError(
         res.code === "too_many_attempts"
           ? t("login.phoneErrorTooManyAttempts")
-          : res.code === "account_has_password"
-            ? t("login.phoneErrorAccountHasPassword")
-            : res.code === "no_account"
-              ? t("login.phoneErrorNoAccount")
-              : res.code === "rate_limited"
-                ? t("login.phoneErrorRateLimited")
-                : t("login.phoneErrorInvalidCode")
+          : res.code === "already_used"
+            ? t("login.phoneErrorAlreadyUsed")
+            : res.code === "expired"
+              ? t("login.phoneErrorExpired")
+              : res.code === "account_has_password"
+                ? t("login.phoneErrorAccountHasPassword")
+                : res.code === "no_account"
+                  ? t("login.phoneErrorNoAccount")
+                  : res.code === "rate_limited"
+                    ? t("login.phoneErrorRateLimited")
+                    : t("login.phoneErrorInvalidCode")
       );
       return;
     }
