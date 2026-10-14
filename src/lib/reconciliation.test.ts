@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import {
   createTestUser,
@@ -18,6 +18,27 @@ import {
   buildReconciliationCsvSections,
   MINOR_VARIANCE_THRESHOLD_CENTS,
 } from "@/lib/reconciliation";
+
+// handleSellTickets' AIRPAY_ONLINE path charges through
+// getActivePaymentProvider() — mocked here for the same reason
+// sync-handlers.test.ts/wallet-handlers.test.ts mock it: without this, a
+// real AIRPAY_* credential set in .env makes isConfigured() resolve the
+// real airpayProvider instead of the simulator this file's own comment
+// below assumes, and the test attempts an actual network call to Airpay's
+// production OAuth endpoint.
+const { mockInitiateCharge } = vi.hoisted(() => ({ mockInitiateCharge: vi.fn() }));
+vi.mock("@/lib/payments", () => ({
+  getActivePaymentProvider: () => ({
+    name: "MOCK",
+    isConfigured: () => true,
+    initiateCharge: mockInitiateCharge,
+  }),
+}));
+
+beforeEach(() => {
+  mockInitiateCharge.mockReset();
+  mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
+});
 
 let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${++seq}`;
@@ -128,7 +149,7 @@ describe("getReconciliationData", () => {
     const operator = await createTestUser();
 
     await cashSale(operator.id, event); // OFFLINE_DEFERRED, 200,000
-    // A digital (AIRPAY_ONLINE) sale — SIMULATED provider resolves it PAID.
+    // A digital (AIRPAY_ONLINE) sale — mocked provider above resolves it PAID.
     await handleSellTickets(buyer.id, {
       clientId: uid("digital-order"),
       eventId: event.id,

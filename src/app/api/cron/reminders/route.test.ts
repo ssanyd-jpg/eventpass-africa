@@ -11,6 +11,7 @@ const {
   mockRunWhatsappGroupArchiveSweep,
   mockRunWaitlistClosureSweep,
   mockRunWalletTopupReminderSweep,
+  mockRunPoolRefundSweep,
 } = vi.hoisted(() => ({
   mockSendEventReminders: vi.fn(),
   mockRunPendingTopupSweep: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockRunWhatsappGroupArchiveSweep: vi.fn(),
   mockRunWaitlistClosureSweep: vi.fn(),
   mockRunWalletTopupReminderSweep: vi.fn(),
+  mockRunPoolRefundSweep: vi.fn(),
 }));
 vi.mock("@/lib/reminders", () => ({
   sendEventReminders: mockSendEventReminders,
@@ -47,6 +49,11 @@ vi.mock("@/lib/waitlist", () => ({
 vi.mock("@/lib/wallet-topup-reminder", () => ({
   runWalletTopupReminderSweep: mockRunWalletTopupReminderSweep,
 }));
+// Ticket pool refund sweep (Session 40) — same reasoning, its own behavior
+// is covered by src/lib/ticket-pool.test.ts.
+vi.mock("@/lib/ticket-pool", () => ({
+  runPoolRefundSweep: mockRunPoolRefundSweep,
+}));
 
 import { GET } from "@/app/api/cron/reminders/route";
 
@@ -62,6 +69,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunWhatsappGroupArchiveSweep.mockReset();
     mockRunWaitlistClosureSweep.mockReset();
     mockRunWalletTopupReminderSweep.mockReset();
+    mockRunPoolRefundSweep.mockReset();
   });
 
   it("rejects a request with no Authorization header", async () => {
@@ -74,6 +82,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
     expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
+    expect(mockRunPoolRefundSweep).not.toHaveBeenCalled();
   });
 
   it("rejects a request with the wrong bearer token", async () => {
@@ -88,6 +97,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
     expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
+    expect(mockRunPoolRefundSweep).not.toHaveBeenCalled();
   });
 
   it("rejects every request when CRON_SECRET isn't configured, even with a header present", async () => {
@@ -102,6 +112,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunWhatsappGroupArchiveSweep).not.toHaveBeenCalled();
     expect(mockRunWaitlistClosureSweep).not.toHaveBeenCalled();
     expect(mockRunWalletTopupReminderSweep).not.toHaveBeenCalled();
+    expect(mockRunPoolRefundSweep).not.toHaveBeenCalled();
   });
 
   it("runs the reminder job, the pending top-up sweep, the season renewal sweep, the whatsapp group archive sweep, and the waitlist closure sweep when the bearer token matches CRON_SECRET", async () => {
@@ -117,6 +128,8 @@ describe("GET /api/cron/reminders", () => {
     mockRunWaitlistClosureSweep.mockResolvedValue(waitlistClosure);
     const walletTopupReminder = { ok: true, eventsChecked: 1, remindersSent: 1, skipped: 0 };
     mockRunWalletTopupReminderSweep.mockResolvedValue(walletTopupReminder);
+    const poolRefunds = { ok: true, processed: 0, expired: 0, refunded: 0 };
+    mockRunPoolRefundSweep.mockResolvedValue(poolRefunds);
 
     const response = await GET(
       new Request("http://localhost/api/cron/reminders", { headers: { authorization: "Bearer test-secret" } })
@@ -132,6 +145,7 @@ describe("GET /api/cron/reminders", () => {
       whatsappGroupArchive,
       waitlistClosure,
       walletTopupReminder,
+      poolRefunds,
     });
     expect(mockSendEventReminders).toHaveBeenCalledTimes(1);
     expect(mockRunPendingTopupSweep).toHaveBeenCalledTimes(1);
@@ -139,6 +153,7 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunWhatsappGroupArchiveSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWaitlistClosureSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWalletTopupReminderSweep).toHaveBeenCalledTimes(1);
+    expect(mockRunPoolRefundSweep).toHaveBeenCalledTimes(1);
   });
 
   it("still returns the reminders result when the top-up sweep throws", async () => {
@@ -149,6 +164,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
     mockRunWalletTopupReminderSweep.mockResolvedValue({ ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 });
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -165,6 +181,7 @@ describe("GET /api/cron/reminders", () => {
       whatsappGroupArchive: { ok: true, eventsChecked: 0, archivedCount: 0 },
       waitlistClosure: { ok: true, eventsChecked: 0, notifiedCount: 0 },
       walletTopupReminder: { ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 },
+      poolRefunds: { ok: true, processed: 0, expired: 0, refunded: 0 },
     });
     errorSpy.mockRestore();
   });
@@ -176,6 +193,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockResolvedValue({ offersSent: 0, skipped: 0 });
     mockRunWhatsappGroupArchiveSweep.mockRejectedValue(new Error("neon down"));
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -195,6 +213,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockRejectedValue(new Error("neon down"));
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -214,6 +233,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunSeasonRenewalSweep.mockResolvedValue({ offersSent: 0, skipped: 0 });
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockRejectedValue(new Error("neon down"));
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -234,6 +254,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
     mockRunWalletTopupReminderSweep.mockRejectedValue(new Error("neon down"));
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await GET(
@@ -261,6 +282,7 @@ describe("GET /api/cron/reminders", () => {
     mockRunWhatsappGroupArchiveSweep.mockResolvedValue({ ok: true, eventsChecked: 0, archivedCount: 0 });
     mockRunWaitlistClosureSweep.mockResolvedValue({ ok: true, eventsChecked: 0, notifiedCount: 0 });
     mockRunWalletTopupReminderSweep.mockResolvedValue({ ok: true, eventsChecked: 0, remindersSent: 0, skipped: 0 });
+    mockRunPoolRefundSweep.mockResolvedValue({ ok: true, processed: 0, expired: 0, refunded: 0 });
 
     await expect(
       GET(new Request("http://localhost/api/cron/reminders", { headers: { authorization: "Bearer test-secret" } }))
@@ -270,5 +292,6 @@ describe("GET /api/cron/reminders", () => {
     expect(mockRunWhatsappGroupArchiveSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWaitlistClosureSweep).toHaveBeenCalledTimes(1);
     expect(mockRunWalletTopupReminderSweep).toHaveBeenCalledTimes(1);
+    expect(mockRunPoolRefundSweep).toHaveBeenCalledTimes(1);
   });
 });

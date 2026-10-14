@@ -1,7 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestUser, createTestOrganization, addMembership, createTestEvent } from "@/lib/test-fixtures";
 import { handleSellTickets } from "@/lib/sync-handlers";
+
+// purchaseListing charges the buyer through getActivePaymentProvider(),
+// same as handleSellTickets/handleTopupWallet — mocked here for the same
+// reason sync-handlers.test.ts/wallet-handlers.test.ts mock it: without
+// this, a real AIRPAY_* credential set in .env makes isConfigured() resolve
+// the real airpayProvider instead of the simulator, and purchaseListing
+// attempts an actual network call to Airpay's production OAuth endpoint.
+const { mockInitiateCharge } = vi.hoisted(() => ({ mockInitiateCharge: vi.fn() }));
+vi.mock("@/lib/payments", () => ({
+  getActivePaymentProvider: () => ({
+    name: "MOCK",
+    isConfigured: () => true,
+    initiateCharge: mockInitiateCharge,
+  }),
+}));
+
+beforeEach(() => {
+  mockInitiateCharge.mockReset();
+  mockInitiateCharge.mockResolvedValue({ status: "PAID", reference: "MOCK-REF" });
+});
 import { createTransfer } from "@/lib/ticket-transfer";
 import {
   RESALE_COMMISSION_RATE,

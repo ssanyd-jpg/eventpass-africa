@@ -11,10 +11,18 @@ import {
 
 const SENTINEL_EMAIL = "deleted-user@chaap.internal";
 
+// A hardcoded phone number here previously collided with other test files'
+// own sequential phone generators under vitest's parallel workers (unique
+// constraint failure) — randomized instead, same reasoning as resale.test.ts's
+// own uniquePhone().
+function uniquePhone() {
+  return `+2557${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+}
+
 describe("deleteOwnAccount", () => {
   it("anonymizes the User row and removes sessions / password reset tokens", async () => {
     const user = await createTestUser({ name: "Amina Hassan" });
-    await prisma.user.update({ where: { id: user.id }, data: { phone: "+255700000001" } });
+    await prisma.user.update({ where: { id: user.id }, data: { phone: uniquePhone() } });
     const org = await createTestOrganization();
     await addMembership(org.id, user.id, "STAFF");
 

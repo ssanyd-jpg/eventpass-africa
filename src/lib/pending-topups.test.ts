@@ -39,11 +39,19 @@ afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 500));
 });
 
+// A small sequential counter here previously produced the exact same phone
+// value as another test file's own hardcoded literal on its first call,
+// colliding under vitest's parallel workers (unique constraint failure) —
+// randomized instead, same reasoning as resale.test.ts's own uniquePhone().
+function uniquePhone() {
+  return `+2557${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+}
+
 async function setup(opts: { balanceCents?: number; phone?: string | null } = {}) {
   const organization = await createTestOrganization();
   const owner = await createTestUser();
   if (opts.phone !== null) {
-    await prisma.user.update({ where: { id: owner.id }, data: { phone: opts.phone ?? `+25570${String(++seq).padStart(7, "0")}` } });
+    await prisma.user.update({ where: { id: owner.id }, data: { phone: opts.phone ?? uniquePhone() } });
   }
   const event = await createTestEvent(organization.id);
   const wallet = await createTestWallet(event.id, owner.id, { balanceCents: opts.balanceCents ?? 0 });
