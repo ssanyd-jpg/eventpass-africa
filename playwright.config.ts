@@ -1,21 +1,24 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E tests drive a real `next dev` server, which reads the same `.env` as
-// the rest of the app (there's no separate NEXTAUTH_URL/DATABASE_URL wired
-// up for E2E — see e2e/README.md for why that's a deliberate, flagged
-// tradeoff rather than an oversight). RESEND_API_KEY/AT_API_KEY are blanked
-// in the spawned server's own env below so notifications fall back to the
-// safe NotificationLog-only path instead of sending real email/SMS — this
-// only affects the process Playwright starts, never `npm run dev` itself.
+// E2E tests drive a real `next dev` server. `.env.e2e` (see e2e/README.md
+// and .env.example) overrides DATABASE_URL/DIRECT_URL to a dedicated Neon
+// branch, loaded after `.env` so it wins — same mechanism npm run test:e2e
+// uses for the Playwright process itself (package.json), so global-setup.ts/
+// global-teardown.ts/fixtures/db.ts and this spawned server always agree on
+// which database they're pointed at. `--env-file-if-exists` (not
+// `--env-file`) because neither dotenv file exists in CI, which sets these
+// vars directly instead. RESEND_API_KEY/AT_API_KEY are blanked in the
+// spawned server's own env below so notifications fall back to the safe
+// NotificationLog-only path instead of sending real email/SMS — this only
+// affects the process Playwright starts, never `npm run dev` itself.
 export default defineConfig({
   testDir: "./e2e",
-  // Serialized, not parallel — this app's Neon Postgres connection is a
-  // pooled/pgbouncer one shared with everyday local dev (see e2e/README.md's
-  // "runs against the dev database" tradeoff), and concurrent workers each
-  // triggering their own NextAuth callback transaction reliably produced
-  // "Unable to start a transaction in the given time" errors under the
-  // default 4-worker parallelism. The same Neon-latency sensitivity has
-  // shown up before in this project's vitest suite (see prior sessions).
+  // Serialized, not parallel — Neon's pooled/pgbouncer connection (see
+  // e2e/README.md), and concurrent workers each triggering their own
+  // NextAuth callback transaction reliably produced "Unable to start a
+  // transaction in the given time" errors under the default 4-worker
+  // parallelism. The same Neon-latency sensitivity has shown up before in
+  // this project's vitest suite (see prior sessions).
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -41,7 +44,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "node --env-file=.env node_modules/next/dist/bin/next dev",
+    command: "node --env-file-if-exists=.env --env-file-if-exists=.env.e2e node_modules/next/dist/bin/next dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

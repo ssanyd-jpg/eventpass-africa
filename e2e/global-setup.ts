@@ -18,11 +18,11 @@ import { prisma, FIXTURES_PATH, resetLoginRateLimit, type E2EFixtures } from "./
 // global-teardown.ts removes exactly that afterward, leaving the demo
 // accounts and seeded events untouched.
 //
-// Flagged tradeoff: this runs against DATABASE_URL — the same Postgres
-// database `next dev` uses for everyday local development — because no
-// separate E2E database/server wiring exists yet (see e2e/README.md). Every
-// row created here carries a per-run RUN_ID suffix so repeated runs never
-// collide, and everything is deleted in global-teardown.ts.
+// Runs against DATABASE_URL as overridden by `.env.e2e` — a dedicated,
+// persistently-seeded Neon branch, never the real dev database (see
+// e2e/README.md's "Database setup" section). Every row created here
+// carries a per-run RUN_ID suffix so repeated runs never collide, and
+// everything is deleted in global-teardown.ts.
 function issueRawToken() {
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = createHash("sha256").update(rawToken).digest("hex");

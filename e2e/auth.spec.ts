@@ -10,7 +10,11 @@ test("organizer can log in, see the dashboard, and log out", async ({ page }) =>
   const dashboard = new DashboardPage(page);
 
   await login.goto();
-  await login.loginAndWait(fixtures.organizerEmail, fixtures.demoPassword, /\/$/);
+  // Organizer accounts land on /dashboard directly post-login (see
+  // getPostLoginRedirect in src/lib/auth-redirect.ts) — dashboard.goto()
+  // below is a no-op re-navigation, kept so this test still passes if that
+  // default ever changes back.
+  await login.loginAndWait(fixtures.organizerEmail, fixtures.demoPassword, /\/dashboard$/);
 
   await dashboard.goto();
   // See playwright.config.ts's own comment — Neon's compute can take 25-30s

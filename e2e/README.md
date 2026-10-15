@@ -26,15 +26,61 @@ deletes both events (and everything nested under them) afterward.
 `event-create.spec.ts` and `ticket-purchase.spec.ts` create their own rows
 through the UI at test time and delete them in an `afterEach`.
 
+## Database setup (one-time, per `.env.e2e` branch)
+
+Unlike `TEST_DATABASE_URL` (dropped to a bare schema and rebuilt on every
+`npm test` run), the database `.env.e2e` points at is expected to stay
+**persistently migrated and seeded** — `global-setup.ts` does
+`findUniqueOrThrow` on the `organizer@chaap.dev`/`fan@chaap.dev` demo
+accounts from `prisma/seed.ts`, the same way a real dev database already
+has them. A Neon branch also isn't free to tear down and recreate every
+run the way the vitest job's disposable Postgres container is. So after
+creating the branch (Neon dashboard → Branches → create from main) and
+pointing `.env.e2e` at it (see `.env.example`), run once:
+
+```bash
+node --env-file=.env.e2e node_modules/.bin/prisma db push --accept-data-loss
+node --env-file=.env.e2e node_modules/.bin/prisma db seed
+```
+
+`db push`, not `migrate deploy` — this project applies schema via db
+push/manual diffs rather than Prisma's tracked migration history, so a
+branch created from main has every table but no `_prisma_migrations`
+history, and `migrate deploy` fails with P3005 ("database schema is not
+empty").
+
+After that, every `npm run test:e2e` run behaves exactly as described
+above — fixture rows are per-run-unique and cleaned up in teardown, so
+re-running against this same branch indefinitely is safe. Re-run the two
+commands above only after a schema change or a `prisma/seed.ts` change.
+(CI re-runs both automatically before every run — see "Running in CI"
+below.)
+
+## Running in CI
+
+`.github/workflows/ci.yml`'s `e2e` job runs this suite against the same
+persistent `e2e-test` Neon branch described above, via two repo secrets —
+`E2E_DATABASE_URL` (pooled) and `E2E_DIRECT_URL` (direct) — set as job-level
+env vars the same way the `test` job sets `DATABASE_URL`/`DIRECT_URL`/
+`TEST_DATABASE_URL`. `.env.e2e` never exists in CI, which is why
+`--env-file-if-exists` (not `--env-file`) is used everywhere this suite
+loads env files.
+
+The job runs `prisma db push --accept-data-loss` and `prisma db seed`
+before every run (both idempotent — see above) rather than trusting the
+branch to already be in sync, and it carries a `concurrency` group so only
+one e2e run executes at a time across the whole repo, including across
+different PRs. That serialization exists because `resetLoginRateLimit`'s
+bucket (see `e2e/fixtures/db.ts`) is keyed only by email, not scoped per
+run — a single clean run already sits right at the 5-attempts/10-min login
+budget for `organizer@chaap.dev`, so two runs hitting that same bucket at
+once could trip a false "too many attempts" error instead of the
+assertion each test expects. If this suite ever needs to run concurrently
+against this branch, that rate-limit bucket (or Organization-scoped state
+more generally) would need to be made run-aware first.
+
 ## Flagged tradeoffs (read before extending this suite)
 
-- **Runs against the dev database (`DATABASE_URL`/`neondb`), not
-  `TEST_DATABASE_URL`.** Vitest gets its own isolated Postgres database
-  (see `DEPLOYMENT.md`); no equivalent exists yet for a `next dev` server,
-  so these tests share the same database real local development uses.
-  Every fixture row is per-run-unique and cleaned up (see above), but this
-  is still worth fixing properly (a dedicated Neon branch + its own
-  `.env.e2e`) before this suite runs in CI against shared infrastructure.
 - **Real email/SMS is disabled for the spawned dev server only** —
   `playwright.config.ts`'s `webServer.env` blanks `RESEND_API_KEY`/
   `AT_API_KEY`/`AT_USERNAME` so `sendNotification()` (`src/lib/notifications.ts`)

@@ -23,12 +23,12 @@ simulated/fallback mode.
    (Neon dashboard → Branches → create from main) is the easiest way to get
    an isolated, disposable one.
 4. `npm run test:e2e` runs the Playwright end-to-end suite (`e2e/`) against
-   a real `next dev` server the Playwright config starts automatically.
-   Unlike `npm test`, it currently runs against `DATABASE_URL` (the dev
-   database) rather than an isolated one, since no equivalent of
-   `TEST_DATABASE_URL` exists yet for a running Next server — see
-   `e2e/README.md` for that tradeoff and how fixture data is created and
-   cleaned up per run.
+   a real `next dev` server the Playwright config starts automatically. It
+   needs a **third** dedicated Neon branch (never `DATABASE_URL` or
+   `TEST_DATABASE_URL`) — see `.env.e2e` in `.env.example` and
+   `e2e/README.md` for the one-time migrate+seed setup and why this branch
+   stays persistently seeded rather than wiped per run like
+   `TEST_DATABASE_URL`.
 
 If starting a new environment from scratch instead of using the one
 already set up: create a free project at neon.tech, copy the two

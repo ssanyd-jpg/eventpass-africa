@@ -10,9 +10,21 @@ export class LoginPage {
   }
 
   async login(email: string, password: string) {
-    await this.page.locator("#email").fill(email);
+    // /login now defaults to a phone-OTP form for the Attendee tab (see
+    // src/app/login/page.tsx) — the email/password form is hidden behind
+    // this toggle in that case. The Organiser tab shows the form directly,
+    // so only click the toggle when #email isn't already visible; this
+    // works for both organizer and fan logins without needing to know
+    // which tab is active.
+    const emailField = this.page.locator("#email");
+    if (!(await emailField.isVisible().catch(() => false))) {
+      await this.page.getByRole("button", { name: "Have a password? Log in with email instead" }).click();
+    }
+    await emailField.fill(email);
     await this.page.locator("#password").fill(password);
-    await this.page.getByRole("button", { name: "Log in" }).click();
+    // exact: true — otherwise this also matches the submit form's own
+    // "Log in with a phone code instead" toggle button, a substring match.
+    await this.page.getByRole("button", { name: "Log in", exact: true }).click();
   }
 
   /** Logs in and waits for the post-login redirect to land. */
