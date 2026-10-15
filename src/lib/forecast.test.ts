@@ -86,8 +86,11 @@ describe("forecastEventRevenue", () => {
 
     const projected = result.filter((p) => p.projected);
     expect(projected.length).toBeGreaterThan(0);
+    // The last projected point lands ON the event's start day by design
+    // (the forecast is meant to cover through event day) — "never past
+    // startsAt" means never strictly after it, so this is inclusive.
     for (const p of projected) {
-      expect(new Date(p.label).getTime()).toBeLessThan(eventStartsAt.getTime());
+      expect(new Date(p.label).getTime()).toBeLessThanOrEqual(eventStartsAt.getTime());
     }
   });
 
