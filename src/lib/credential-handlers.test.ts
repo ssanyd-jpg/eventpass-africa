@@ -23,6 +23,7 @@ describe("replaceTicketCode", () => {
     const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const { order } = await createPaidOrder(organizationId, buyer.id, 100000);
+    if (!order) throw new Error("order not found");
     const oldCode = order.tickets[0].code;
     const ticketId = order.tickets[0].id;
 
@@ -40,6 +41,7 @@ describe("replaceTicketCode", () => {
     const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const { order } = await createPaidOrder(organizationId, buyer.id, 100000);
+    if (!order) throw new Error("order not found");
     const ticketId = order.tickets[0].id;
 
     await replaceTicketCode(organizationId, ticketId, "owner-id", "Owner Name");
@@ -59,6 +61,7 @@ describe("replaceTicketCode", () => {
     const { organizationId: organizationIdB } = await newOrganizer();
     const buyer = await createTestUser();
     const { order } = await createPaidOrder(organizationIdA, buyer.id, 100000);
+    if (!order) throw new Error("order not found");
 
     await expect(
       replaceTicketCode(organizationIdB, order.tickets[0].id, "owner-id", "Owner Name")

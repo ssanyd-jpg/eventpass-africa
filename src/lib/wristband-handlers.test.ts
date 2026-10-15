@@ -14,6 +14,7 @@ describe("findAttendeeCandidates", () => {
     const { organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const { event, order } = await createPaidOrder(organizationId, buyer.id, 100000);
+    if (!order) throw new Error("order not found");
 
     const results: any[] = await findAttendeeCandidates(organizationId, event.id, order.tickets[0].code);
     expect(results).toHaveLength(1);

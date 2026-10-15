@@ -54,6 +54,7 @@ describe("getMyLoyaltyStatuses", () => {
     // would be wrong if refunds counted; but here we keep 2 PAID orders
     // and separately confirm a REFUNDED one is excluded.
     const refundedEvent = await buyTicket(orgA.organizationId, buyer.id);
+    if (!refundedEvent.order) throw new Error(`unexpected failure: ${JSON.stringify(refundedEvent)}`);
     await prisma.order.update({ where: { id: refundedEvent.order.id }, data: { status: "REFUNDED" } });
 
     const statuses = await getMyLoyaltyStatuses(buyer.id);

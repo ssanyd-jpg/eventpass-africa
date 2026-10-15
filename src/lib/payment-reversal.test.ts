@@ -34,6 +34,7 @@ async function paidOrderWithPhones() {
 describe("handlePaymentReversal", () => {
   it("marks the order REVERSED and blocks check-in for every ticket on it", async () => {
     const { owner, order, event } = await paidOrderWithPhones();
+    if (!order) throw new Error("order not found");
     const ticket = await prisma.ticket.findFirstOrThrow({ where: { orderId: order.id } });
 
     const result = await handlePaymentReversal(order.id, "AP-REF-1");
@@ -49,6 +50,7 @@ describe("handlePaymentReversal", () => {
 
   it("sends a WhatsApp notice to both the attendee and the org OWNER", async () => {
     const { owner, buyer, order } = await paidOrderWithPhones();
+    if (!order) throw new Error("order not found");
 
     await handlePaymentReversal(order.id, "AP-REF-2");
 
@@ -67,6 +69,7 @@ describe("handlePaymentReversal", () => {
 
   it("is idempotent — a second reversal on an already-REVERSED order is a no-op", async () => {
     const { buyer, order } = await paidOrderWithPhones();
+    if (!order) throw new Error("order not found");
 
     await handlePaymentReversal(order.id, "AP-REF-3");
     const result = await handlePaymentReversal(order.id, "AP-REF-3-retry");

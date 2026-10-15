@@ -41,6 +41,7 @@ describe("runSettlement", () => {
     const result = await runSettlement(organizationId);
 
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.ordersSettled).toBe(2);
     expect(result.settlements).toHaveLength(1);
     expect(result.settlements[0].currency).toBe("TZS");
@@ -48,7 +49,7 @@ describe("runSettlement", () => {
     expect(result.settlements[0].platformFeeCents).toBe(24000); // 8% of 300000
     expect(result.settlements[0].netCents).toBe(276000);
     expect(result.settlements[0].status).toBe("PAID_OUT");
-  }, { timeout: 120000 });
+  });
 
   it("excludes orders already covered by a previous settlement", async () => {
     const { organizationId } = await newOrganizer();
@@ -103,6 +104,7 @@ describe("runSettlement", () => {
     const result = await runSettlement(organizationId);
 
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.ordersSettled).toBe(2);
     expect(result.settlements).toHaveLength(2);
 

@@ -54,6 +54,7 @@ describe("handleChargeDirectSale", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("CONFIRMED");
     expect(result.transaction.airpayRef).toBe("MOCK-REF");
     expect(result.transaction.vendorUserId).toBe(staff.id);
@@ -73,6 +74,7 @@ describe("handleChargeDirectSale", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("PENDING");
     expect(result.transaction.airpayRef).toBeNull();
     expect(result.transaction.resolvedAt).toBeNull();
@@ -91,6 +93,7 @@ describe("handleChargeDirectSale", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("FAILED");
     expect(result.transaction.providerMessage).toBe("Invalid number");
   });
@@ -155,9 +158,11 @@ describe("handleCheckDirectSaleStatus", () => {
       customerPhone: "0700000007",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
 
     const result = await handleCheckDirectSaleStatus({ directSaleId: charge.transaction.id });
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("CONFIRMED");
     expect(mockVerifyAirpayOrder).not.toHaveBeenCalled();
   });
@@ -172,10 +177,12 @@ describe("handleCheckDirectSaleStatus", () => {
       customerPhone: "0700000008",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
     expect(charge.transaction.status).toBe("PENDING");
 
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PAID", reference: "MOCK-CONFIRMED-REF" });
     const result = await handleCheckDirectSaleStatus({ directSaleId: charge.transaction.id });
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
 
     expect(result.ok).toBe(true);
     expect(result.transaction.status).toBe("CONFIRMED");
@@ -192,9 +199,11 @@ describe("handleCheckDirectSaleStatus", () => {
       customerPhone: "0700000009",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
 
     mockVerifyAirpayOrder.mockResolvedValue({ status: "FAILED", message: "Buyer cancelled" });
     const result = await handleCheckDirectSaleStatus({ directSaleId: charge.transaction.id });
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
 
     expect(result.ok).toBe(true);
     expect(result.transaction.status).toBe("FAILED");
@@ -211,9 +220,11 @@ describe("handleCheckDirectSaleStatus", () => {
       customerPhone: "0700000010",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
 
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING" });
     const result = await handleCheckDirectSaleStatus({ directSaleId: charge.transaction.id });
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
 
     expect(result.ok).toBe(true);
     expect(result.transaction.status).toBe("PENDING");
@@ -237,9 +248,11 @@ describe("handleCancelDirectSale", () => {
       customerPhone: "0700000011",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
 
     const result = await handleCancelDirectSale(staff.id, { directSaleId: charge.transaction.id });
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("CANCELLED");
   });
 
@@ -254,6 +267,7 @@ describe("handleCancelDirectSale", () => {
       customerPhone: "0700000012",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
 
     const result = await handleCancelDirectSale(otherStaff.id, { directSaleId: charge.transaction.id });
     expect(result.ok).toBe(false);
@@ -269,10 +283,12 @@ describe("handleCancelDirectSale", () => {
       customerPhone: "0700000013",
       mobileNetwork: "MPESA",
     });
+    if (!charge.transaction) throw new Error(`unexpected failure: ${JSON.stringify(charge)}`);
     expect(charge.transaction.status).toBe("CONFIRMED");
 
     const result = await handleCancelDirectSale(staff.id, { directSaleId: charge.transaction.id });
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("CONFIRMED");
   });
 });

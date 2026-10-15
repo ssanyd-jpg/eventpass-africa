@@ -77,6 +77,7 @@ describe("handleCreateWallet", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.wallet) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.wallet.balanceCents).toBe(0);
     expect(result.wallet.currency).toBe(event.currency);
   });
@@ -103,6 +104,8 @@ describe("handleCreateWallet", () => {
 
     const first = await handleCreateWallet(attendee.id, { clientId: "wallet-a", code: "WALLET-A", eventId: event.id });
     const second = await handleCreateWallet(attendee.id, { clientId: "wallet-b", code: "WALLET-B", eventId: event.id });
+    if (!first.wallet) throw new Error(`unexpected failure: ${JSON.stringify(first)}`);
+    if (!second.wallet) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(second.wallet.id).toBe(first.wallet.id);
   });
 });
@@ -123,6 +126,8 @@ describe("handleTopupWallet", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
+    if (!result.wallet) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("COMPLETED");
     expect(result.wallet.balanceCents).toBe(5000);
   });
@@ -145,6 +150,7 @@ describe("handleTopupWallet", () => {
       mobileNetwork: "AIRTEL",
     });
 
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.mobileNetwork).toBe("AIRTEL");
     expect(result.transaction.airpayRef).toBe("MOCK-REF");
   });
@@ -164,6 +170,7 @@ describe("handleTopupWallet", () => {
       amountCents: 5000,
     });
 
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("PENDING");
     expect(result.transaction.airpayRef).toBeNull();
   });
@@ -184,6 +191,7 @@ describe("handleTopupWallet", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("PENDING");
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(0);
@@ -205,6 +213,7 @@ describe("handleTopupWallet", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("FAILED");
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(0);
@@ -278,9 +287,11 @@ describe("handleCheckTopupStatus", () => {
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const topup = await handleTopupWallet(attendee.id, { clientId: "check-resolved", walletId: wallet.id, amountCents: 1000 });
+    if (!topup.transaction) throw new Error(`unexpected failure: ${JSON.stringify(topup)}`);
 
     const result = await handleCheckTopupStatus({ clientId: "check-op-1", walletTransactionId: topup.transaction.id });
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("COMPLETED");
   });
 
@@ -296,10 +307,12 @@ describe("handleCheckTopupStatus", () => {
     const event = await createTestEvent(organization.id);
     const wallet = await createTestWallet(event.id, attendee.id);
     const topup = await handleTopupWallet(attendee.id, { clientId: "check-resolve-airpay-ref", walletId: wallet.id, amountCents: 1000 });
+    if (!topup.transaction) throw new Error(`unexpected failure: ${JSON.stringify(topup)}`);
     expect(topup.transaction.airpayRef).toBeNull();
 
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PAID", reference: "AIRPAY-CONFIRMED-REF" });
     const result = await handleCheckTopupStatus({ clientId: "check-op-2", walletTransactionId: topup.transaction.id });
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
 
     expect(result.transaction.status).toBe("COMPLETED");
     expect(result.transaction.airpayRef).toBe("AIRPAY-CONFIRMED-REF");
@@ -325,6 +338,8 @@ describe("handleChargeWallet", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
+    if (!result.wallet) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("COMPLETED");
     expect(result.wallet.balanceCents).toBe(6000);
   });
@@ -348,6 +363,7 @@ describe("handleChargeWallet", () => {
 
     expect(result.ok).toBe(true);
     expect((result as any).declined).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.status).toBe("FAILED");
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(fresh.balanceCents).toBe(1000);
@@ -811,6 +827,7 @@ describe("handleSponsorTap", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.transaction) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.transaction.amountCents).toBeNull();
     expect(result.transaction.sponsorId).toBe(sponsor.id);
     const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });

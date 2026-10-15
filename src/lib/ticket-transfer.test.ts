@@ -21,6 +21,7 @@ async function soldTicket(overrides: { checkedIn?: boolean } = {}) {
     eventId: event.id,
     items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`TR-${Date.now()}-${Math.random()}`] }],
   });
+  if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
   const ticket = await prisma.ticket.findUniqueOrThrow({ where: { id: sale.order.tickets[0].id } });
   if (overrides.checkedIn) {
     await prisma.ticket.update({ where: { id: ticket.id }, data: { checkedIn: true } });

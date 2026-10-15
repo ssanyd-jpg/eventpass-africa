@@ -49,11 +49,13 @@ describe("deleteOwnAccount", () => {
     const buyerA = await createTestUser();
     await addMembership(orgA.id, buyerA.id, "STAFF");
     const { order: orderA } = await createPaidOrder(orgA.id, buyerA.id, 50000);
+    if (!orderA) throw new Error("orderA not found");
 
     const orgB = await createTestOrganization();
     const buyerB = await createTestUser();
     await addMembership(orgB.id, buyerB.id, "STAFF");
     const { order: orderB } = await createPaidOrder(orgB.id, buyerB.id, 50000);
+    if (!orderB) throw new Error("orderB not found");
     const ticketB = await prisma.ticket.findFirstOrThrow({ where: { orderId: orderB.id } });
 
     // Simulate buyerB's ticket having been accepted by a different holder

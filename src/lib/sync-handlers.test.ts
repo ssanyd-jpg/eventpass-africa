@@ -115,6 +115,7 @@ describe("handleSellTickets", () => {
 
     expect(result.ok).toBe(true);
     expect(result.oversold).toBe(false);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(result.order.totalCents).toBe(400000);
     expect(result.order.tickets.map((t: any) => t.code).sort()).toEqual(["AAAAA-11111", "BBBBB-22222"]);
@@ -135,6 +136,7 @@ describe("handleSellTickets", () => {
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["MYCODE-99999"] }],
     });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.tickets[0].code).toBe("MYCODE-99999");
     const stored = await prisma.ticket.findUnique({ where: { code: "MYCODE-99999" } });
     expect(stored).not.toBeNull();
@@ -154,6 +156,7 @@ describe("handleSellTickets", () => {
 
     expect(result.ok).toBe(true);
     expect(result.oversold).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("NEEDS_REVIEW");
   });
 
@@ -172,6 +175,8 @@ describe("handleSellTickets", () => {
     const first = await handleSellTickets(buyer.id, payload);
     const second = await handleSellTickets(buyer.id, payload);
 
+    if (!first.order) throw new Error(`unexpected failure: ${JSON.stringify(first)}`);
+    if (!second.order) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(first.order.id).toBe(second.order.id);
     const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
     expect(updatedTt.quantitySold).toBe(1); // not 2
@@ -203,6 +208,7 @@ describe("handleSellTickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.answers).toEqual([
       { questionId: question.id, questionLabel: "Dietary requirements?", value: "Vegetarian" },
     ]);
@@ -226,6 +232,7 @@ describe("handleSellTickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.answers).toEqual([]);
   });
 
@@ -263,6 +270,7 @@ describe("handleSellTickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.waiverText).toBe("I agree to the terms.");
     expect(result.order.waiverAcceptedAt).not.toBeNull();
   });
@@ -283,6 +291,8 @@ describe("handleSellTickets — group checkout (Session 13)", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
+    if (!result.sharedWallet) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.sharedWallet).toBeTruthy();
     expect(result.sharedWallet.ownerUserId).toBe(lead.id);
     expect(result.sharedWallet.isGroupWallet).toBe(true);
@@ -320,6 +330,8 @@ describe("handleSellTickets — group checkout (Session 13)", () => {
       group: { name: "Team Alpha", memberNames: ["Baraka"] },
     });
 
+    if (!first.sharedWallet) throw new Error(`unexpected failure: ${JSON.stringify(first)}`);
+    if (!second.sharedWallet) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(second.sharedWallet.id).toBe(first.sharedWallet.id);
     const groupCount = await prisma.ticketGroup.count({ where: { sharedWalletId: first.sharedWallet.id } });
     expect(groupCount).toBe(1);
@@ -345,6 +357,7 @@ describe("handleSellTickets — discount codes", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     // 2 * 100000 = 200000 list price, 10% off = 20000 discount
     expect(result.order.discountCents).toBe(20000);
     expect(result.order.totalCents).toBe(180000);
@@ -371,6 +384,7 @@ describe("handleSellTickets — discount codes", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.discountCents).toBe(5000); // clamped to the line total
     expect(result.order.totalCents).toBe(0);
   });
@@ -393,6 +407,7 @@ describe("handleSellTickets — discount codes", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.discountCents).toBe(0);
     expect(result.order.totalCents).toBe(100000);
     expect(result.order.discountRejectReason).toBe("DISCOUNT_NOT_APPLICABLE");
@@ -412,6 +427,7 @@ describe("handleSellTickets — discount codes", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.totalCents).toBe(100000);
     expect(result.order.discountRejectReason).toBe("DISCOUNT_NOT_FOUND");
   });
@@ -430,6 +446,7 @@ describe("handleSellTickets — discount codes", () => {
       discountCode: "OFFCODE",
     });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.discountRejectReason).toBe("DISCOUNT_INACTIVE");
     expect(result.order.totalCents).toBe(100000);
   });
@@ -448,6 +465,7 @@ describe("handleSellTickets — discount codes", () => {
       discountCode: "EXPIRED",
     });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.discountRejectReason).toBe("DISCOUNT_EXPIRED");
     expect(result.order.totalCents).toBe(100000);
   });
@@ -490,10 +508,13 @@ describe("handleSellTickets — discount codes", () => {
       }),
     ]);
 
-    const outcomes = [resultA, resultB].map((r) => ({
-      discounted: r.order.discountCents > 0,
-      reason: r.order.discountRejectReason,
-    }));
+    const outcomes = [resultA, resultB].map((r) => {
+      if (!r.order) throw new Error(`unexpected failure: ${JSON.stringify(r)}`);
+      return {
+        discounted: r.order.discountCents > 0,
+        reason: r.order.discountRejectReason,
+      };
+    });
     expect(outcomes.filter((o) => o.discounted)).toHaveLength(1);
     expect(outcomes.filter((o) => o.reason === "DISCOUNT_MAX_REDEEMED")).toHaveLength(1);
 
@@ -504,6 +525,7 @@ describe("handleSellTickets — discount codes", () => {
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: ["DR-C"] }],
       discountCode: "LIMITED",
     });
+    if (!third.order) throw new Error(`unexpected failure: ${JSON.stringify(third)}`);
     expect(third.order.discountRejectReason).toBe("DISCOUNT_MAX_REDEEMED");
   });
 });
@@ -526,6 +548,7 @@ describe("handleSellTickets — Airpay payment", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PENDING");
     expect(result.order.paymentMethod).toBe("AIRPAY_ONLINE");
     expect(result.order.providerReference).toBe("AP-PENDING-1");
@@ -550,6 +573,7 @@ describe("handleSellTickets — Airpay payment", () => {
       phoneNumber: "0712345678",
     });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
   });
@@ -585,6 +609,7 @@ describe("handleSellTickets — Airpay payment", () => {
       phoneNumber: collisionPhone,
     });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     const freshBuyer = await prisma.user.findUnique({ where: { id: buyer.id } });
     expect(freshBuyer?.phone).toBeNull(); // write was skipped, not failed over
@@ -606,6 +631,7 @@ describe("handleSellTickets — Airpay payment", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAYMENT_FAILED");
     expect(result.order.providerMessage).toBe("Invalid phone number");
     expect(result.order.tickets).toEqual([]);
@@ -643,6 +669,7 @@ describe("handleSellTickets — Airpay payment", () => {
     });
 
     expect(result.oversold).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("NEEDS_REVIEW");
   });
 
@@ -663,6 +690,7 @@ describe("handleSellTickets — Airpay payment", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!failed.order) throw new Error(`unexpected failure: ${JSON.stringify(failed)}`);
     expect(failed.order.status).toBe("PAYMENT_FAILED");
 
     // Retry — a genuinely new clientId (a new "Pay" tap), same ticket type.
@@ -678,6 +706,7 @@ describe("handleSellTickets — Airpay payment", () => {
       phoneNumber: "0712345678",
     });
 
+    if (!retried.order) throw new Error(`unexpected failure: ${JSON.stringify(retried)}`);
     expect(retried.order.status).toBe("PENDING");
     expect(retried.order.id).not.toBe(failed.order.id);
     expect(retried.order.providerReference).toBe("AP-RETRY-PENDING");
@@ -712,6 +741,7 @@ describe("handleSellTickets — free tickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(result.order.totalCents).toBe(0);
     expect(result.order.paymentMethod).toBeNull();
@@ -739,6 +769,7 @@ describe("handleSellTickets — free tickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PENDING");
     expect(result.order.paymentMethod).toBe("AIRPAY_ONLINE");
     expect(result.order.providerReference).toBe("AP-STILL-PAID-1");
@@ -763,6 +794,7 @@ describe("handleSellTickets — free tickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(mockInitiateCharge).not.toHaveBeenCalled();
   });
@@ -788,6 +820,7 @@ describe("handleSellTickets — free tickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(result.order.paymentMethod).toBe("OFFLINE_DEFERRED");
     expect(mockInitiateCharge).not.toHaveBeenCalled();
@@ -817,6 +850,7 @@ describe("handleSellTickets — free tickets", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     const log = await prisma.notificationLog.findFirst({
       where: { type: "ORDER_CONFIRMATION", recipient: email },
@@ -933,6 +967,7 @@ describe("handleCheckOrderPaymentStatus", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     return { buyer, event, tt, orderId: sale.order.id as string };
   }
 
@@ -943,6 +978,7 @@ describe("handleCheckOrderPaymentStatus", () => {
     const result = await handleCheckOrderPaymentStatus({ orderId });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(result.ticketTypeUpdates).toEqual([]);
     expect(await prisma.notificationLog.count({ where: { type: "ORDER_CONFIRMATION", recipient: buyer.email } })).toBe(1);
@@ -955,6 +991,7 @@ describe("handleCheckOrderPaymentStatus", () => {
     const result = await handleCheckOrderPaymentStatus({ orderId });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAYMENT_FAILED");
     expect(result.order.providerMessage).toBe("Insufficient funds");
     expect(result.ticketTypeUpdates).toEqual([{ id: tt.id, quantitySold: 0 }]);
@@ -986,6 +1023,7 @@ describe("handleCheckOrderPaymentStatus", () => {
     mockVerifyAirpayOrder.mockClear();
     const result = await handleCheckOrderPaymentStatus({ orderId });
 
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PAID");
     expect(mockVerifyAirpayOrder).not.toHaveBeenCalled();
   });
@@ -1013,6 +1051,7 @@ describe("handleCheckOrderPaymentStatus", () => {
     mockVerifyAirpayOrder.mockResolvedValue({ status: "PENDING", reference: "irrelevant" });
 
     const result = await handleCheckOrderPaymentStatus({ orderId });
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("PENDING");
     const logs = await prisma.notificationLog.findMany({ where: { type: "PAYMENT_DELAYED", recipient: phone } });
     expect(logs).toHaveLength(1);
@@ -1038,6 +1077,7 @@ describe("handleCancelPendingOrder", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     return { buyer, tt, orderId: sale.order.id as string };
   }
 
@@ -1090,6 +1130,7 @@ describe("handleMarkOrderPaid", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     return { organizer, organizationId, buyer, tt, orderId: sale.order.id as string };
   }
 
@@ -1218,6 +1259,7 @@ describe("handleEditEvent", () => {
       registrationQuestions: [{ clientId: "q-client-1", label: "T-shirt size?", type: "SELECT", options: "S,M,L" }],
     });
     expect(first.ok).toBe(true);
+    if (!first.event) throw new Error(`unexpected failure: ${JSON.stringify(first)}`);
     expect(first.event.registrationQuestions).toHaveLength(1);
     const created = first.event.registrationQuestions[0];
     expect(created.label).toBe("T-shirt size?");
@@ -1227,6 +1269,7 @@ describe("handleEditEvent", () => {
       registrationQuestions: [{ id: created.id, clientId: "q-client-1", label: "T-shirt size (updated)?", type: "SELECT", options: "S,M,L,XL" }],
     });
     expect(second.ok).toBe(true);
+    if (!second.event) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(second.event.registrationQuestions).toHaveLength(1);
     expect(second.event.registrationQuestions[0].id).toBe(created.id);
     expect(second.event.registrationQuestions[0].label).toBe("T-shirt size (updated)?");
@@ -1295,12 +1338,14 @@ describe("handleEditEvent", () => {
       eventId: event.id,
       waiverText: "Please sign here.",
     });
+    if (!withWaiver.event) throw new Error(`unexpected failure: ${JSON.stringify(withWaiver)}`);
     expect(withWaiver.event.waiverText).toBe("Please sign here.");
 
     const cleared = await handleEditEvent(organizer.id, organizationId, {
       eventId: event.id,
       waiverText: null,
     });
+    if (!cleared.event) throw new Error(`unexpected failure: ${JSON.stringify(cleared)}`);
     expect(cleared.event.waiverText).toBeNull();
   });
 
@@ -1315,12 +1360,14 @@ describe("handleEditEvent", () => {
       ticketTypes: [{ id: tt.id, clientId: tt.clientId ?? tt.id, name: tt.name, priceCents: tt.priceCents, quantityTotal: tt.quantityTotal, isFastTrack: true }],
     });
     expect(flagged.ok).toBe(true);
+    if (!flagged.event) throw new Error(`unexpected failure: ${JSON.stringify(flagged)}`);
     expect(flagged.event.ticketTypes[0].isFastTrack).toBe(true);
 
     const unflagged = await handleEditEvent(organizer.id, organizationId, {
       eventId: event.id,
       ticketTypes: [{ id: tt.id, clientId: tt.clientId ?? tt.id, name: tt.name, priceCents: tt.priceCents, quantityTotal: tt.quantityTotal, isFastTrack: false }],
     });
+    if (!unflagged.event) throw new Error(`unexpected failure: ${JSON.stringify(unflagged)}`);
     expect(unflagged.event.ticketTypes[0].isFastTrack).toBe(false);
   });
 
@@ -1334,6 +1381,7 @@ describe("handleEditEvent", () => {
       eventType: "FOOTBALL",
     });
     expect(result.ok).toBe(true);
+    if (!result.event) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.event.eventType).toBe("FOOTBALL");
   });
 });
@@ -1349,6 +1397,7 @@ describe("handleCheckIn", () => {
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHK-${Date.now()}-${Math.random()}`] }],
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     return { code: sale.order.tickets[0].code as string, organizer, organizationId };
   }
 
@@ -1356,6 +1405,7 @@ describe("handleCheckIn", () => {
     const { code, organizer, organizationId } = await soldTicket();
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
     expect(result.ok).toBe(true);
+    if (!result.ticket) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.ticket.checkedIn).toBe(true);
   });
 
@@ -1393,6 +1443,7 @@ describe("handleCheckIn", () => {
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKREV-${Date.now()}`] }],
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     expect(sale.order.status).toBe("NEEDS_REVIEW");
 
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
@@ -1412,6 +1463,7 @@ describe("handleCheckIn", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
 
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
     expect(result.ok).toBe(false);
@@ -1431,6 +1483,7 @@ describe("handleCheckIn", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     mockVerifyAirpayOrder.mockResolvedValue({ status: "FAILED", reference: "irrelevant" });
     await handleCheckOrderPaymentStatus({ orderId: sale.order.id });
 
@@ -1462,9 +1515,11 @@ describe("handleCheckIn", () => {
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`CHKVIP-${Date.now()}`] }],
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
 
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: sale.order.tickets[0].code });
     expect(result.ok).toBe(true);
+    if (!result.ticket) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.ticket.isFastTrack).toBe(true);
   });
 
@@ -1472,6 +1527,7 @@ describe("handleCheckIn", () => {
     const { code, organizer, organizationId } = await soldTicket();
     const result = await handleCheckIn(organizer.id, organizationId, { ticketCode: code });
     expect(result.ok).toBe(true);
+    if (!result.ticket) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.ticket.isFastTrack).toBe(false);
   });
 });
@@ -1487,6 +1543,7 @@ describe("handleRefundOrder", () => {
       eventId: event.id,
       items: [{ ticketTypeId: tt.id, quantity: 1, codes: [`RFD-${Date.now()}-${Math.random()}`] }],
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
     return { organizer, organizationId, buyer, event, tt, orderId: sale.order.id as string };
   }
 
@@ -1496,6 +1553,7 @@ describe("handleRefundOrder", () => {
     const result = await handleRefundOrder(organizer.id, organizationId, { orderId });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("REFUNDED");
     const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
     expect(updatedTt.quantitySold).toBe(0);
@@ -1509,6 +1567,7 @@ describe("handleRefundOrder", () => {
     const result = await handleRefundOrder(staff.id, organizationId, { orderId });
 
     expect(result.ok).toBe(true);
+    if (!result.order) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.order.status).toBe("REFUNDED");
     const updatedTt = await prisma.ticketType.findUniqueOrThrow({ where: { id: tt.id } });
     expect(updatedTt.quantitySold).toBe(0);
@@ -1558,6 +1617,7 @@ describe("handleRefundOrder", () => {
     await handleRefundOrder(organizer.id, organizationId, { orderId });
     const second = await handleRefundOrder(organizer.id, organizationId, { orderId });
     expect(second.ok).toBe(true);
+    if (!second.order) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(second.order.status).toBe("REFUNDED");
   });
 
@@ -1574,6 +1634,7 @@ describe("handleRefundOrder", () => {
       paymentMethod: "AIRPAY_ONLINE",
       phoneNumber: "0712345678",
     });
+    if (!sale.order) throw new Error(`unexpected failure: ${JSON.stringify(sale)}`);
 
     const result = await handleRefundOrder(organizer.id, organizationId, { orderId: sale.order.id });
     expect(result.ok).toBe(false);
@@ -1597,6 +1658,7 @@ describe("handleApplyVendor", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.status).toBe("PENDING");
     expect(result.vendor.ownerUserId).toBe(applicant.id);
   });
@@ -1622,6 +1684,7 @@ describe("handleApplyVendor", () => {
     } as any);
 
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.feeStatus).toBe("PAID");
     expect(result.vendor.stallFeeCents).toBe(5000);
   });
@@ -1659,6 +1722,8 @@ describe("handleApplyVendor", () => {
 
     const first = await handleApplyVendor(applicant.id, payload);
     const second = await handleApplyVendor(applicant.id, payload);
+    if (!first.vendor) throw new Error(`unexpected failure: ${JSON.stringify(first)}`);
+    if (!second.vendor) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(first.vendor.id).toBe(second.vendor.id);
     expect(await prisma.vendor.count({ where: { clientId: "vendor-client-replay" } })).toBe(1);
   });
@@ -1692,6 +1757,7 @@ describe("handleAddVendor", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.status).toBe("APPROVED");
     expect(result.vendor.badgeCode).toBe("VENDR-00001");
   });
@@ -1711,6 +1777,7 @@ describe("handleAddVendor", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.status).toBe("APPROVED");
   });
 
@@ -1762,6 +1829,7 @@ describe("handleAddSponsor", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.sponsor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.sponsor.name).toBe("Red Bull");
     expect(result.sponsor.tier).toBe("Gold");
     expect(result.sponsor.feeCents).toBe(500000);
@@ -2174,6 +2242,7 @@ describe("handleApproveVendor / handleRejectVendor", () => {
       contactEmail: "pending@test.local",
       contactPhone: "0712345683",
     });
+    if (!applied.vendor) throw new Error(`unexpected failure: ${JSON.stringify(applied)}`);
     return { organizer, organizationId, applicant, event, vendorId: applied.vendor.id };
   }
 
@@ -2185,6 +2254,7 @@ describe("handleApproveVendor / handleRejectVendor", () => {
       badgeCode: "VENDR-APPROVE-1",
     });
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.status).toBe("APPROVED");
     expect(result.vendor.boothNumber).toBe("A12");
     expect(result.vendor.badgeCode).toBe("VENDR-APPROVE-1");
@@ -2203,6 +2273,7 @@ describe("handleApproveVendor / handleRejectVendor", () => {
     await handleApproveVendor(organizer.id, organizationId, { vendorId, badgeCode: "VENDR-IDEM-1" });
     const second = await handleApproveVendor(organizer.id, organizationId, { vendorId, badgeCode: "VENDR-IDEM-2" });
     expect(second.ok).toBe(true);
+    if (!second.vendor) throw new Error(`unexpected failure: ${JSON.stringify(second)}`);
     expect(second.vendor.status).toBe("APPROVED");
     // second call's badge code is ignored — already-approved vendors keep theirs
     expect(second.vendor.badgeCode).toBe("VENDR-IDEM-1");
@@ -2212,6 +2283,7 @@ describe("handleApproveVendor / handleRejectVendor", () => {
     const { organizer, organizationId, vendorId } = await pendingVendor();
     const result = await handleRejectVendor(organizer.id, organizationId, { vendorId });
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.status).toBe("REJECTED");
   });
 
@@ -2219,6 +2291,7 @@ describe("handleApproveVendor / handleRejectVendor", () => {
     const { organizer, organizationId, vendorId } = await pendingVendor(5000);
     const result = await handleRejectVendor(organizer.id, organizationId, { vendorId });
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.feeStatus).toBe("REFUNDED");
   });
 
@@ -2242,6 +2315,7 @@ describe("handleCheckInVendor", () => {
       category: "Food",
       badgeCode: `VENDR-CHECKIN-${event.id}`,
     });
+    if (!added.vendor) throw new Error(`unexpected failure: ${JSON.stringify(added)}`);
     return { organizer, organizationId, event, badgeCode: added.vendor.badgeCode as string };
   }
 
@@ -2249,6 +2323,7 @@ describe("handleCheckInVendor", () => {
     const { badgeCode, organizer, organizationId } = await approvedVendor();
     const result = await handleCheckInVendor(organizer.id, organizationId, { badgeCode });
     expect(result.ok).toBe(true);
+    if (!result.vendor) throw new Error(`unexpected failure: ${JSON.stringify(result)}`);
     expect(result.vendor.checkedIn).toBe(true);
   });
 
@@ -2274,9 +2349,11 @@ describe("handleCheckInVendor", () => {
         category: "Food",
         badgeCode: `VENDR-REVOKE-${event.id}`,
       });
+      if (!added.vendor) throw new Error(`unexpected failure: ${JSON.stringify(added)}`);
       return { organizer, organizationId, vendorId: added.vendor.id, badgeCode: added.vendor.badgeCode };
     })();
     const rejected = await handleRejectVendor(organizer.id, organizationId, { vendorId });
+    if (!rejected.vendor) throw new Error(`unexpected failure: ${JSON.stringify(rejected)}`);
 
     const result = await handleCheckInVendor(organizer.id, organizationId, { badgeCode: rejected.vendor.badgeCode });
     expect(result.ok).toBe(false);
@@ -2357,6 +2434,7 @@ describe("handleProvisionCredential", () => {
     const originalBuyer = await createTestUser();
     const holder = await createTestUser();
     const { event, order } = await createPaidOrder(organizationId, originalBuyer.id, 100000);
+    if (!order) throw new Error("order not found");
     await prisma.ticket.update({ where: { id: order.tickets[0].id }, data: { currentHolderUserId: holder.id } });
     const uid = uniqueUid();
 
@@ -2541,6 +2619,7 @@ describe("handleProvisionCredential", () => {
     const { user: organizer, organizationId } = await newOrganizer();
     const buyer = await createTestUser();
     const { event, order } = await createPaidOrder(organizationId, buyer.id, 100000);
+    if (!order) throw new Error("order not found");
 
     const result: any = await handleProvisionCredential(organizer.id, organizationId, {
       clientId: uniqueClientId(),
@@ -2700,6 +2779,7 @@ describe("handleChargeWallet — low wallet balance SMS", () => {
       category: "Food",
       badgeCode: `LOWBAL-${event.id}`,
     });
+    if (!added.vendor) throw new Error(`unexpected failure: ${JSON.stringify(added)}`);
     return { organizer, organizationId, event, wallet, vendorId: added.vendor.id as string, phone };
   }
 
@@ -2752,6 +2832,7 @@ describe("handleChargeWallet — low wallet balance SMS", () => {
       category: "Food",
       badgeCode: `LOWBALNP-${event.id}`,
     });
+    if (!added.vendor) throw new Error(`unexpected failure: ${JSON.stringify(added)}`);
 
     // Delta rather than an absolute count — this NotificationLog table is
     // shared across every test in this file (and every past run against
@@ -2790,6 +2871,7 @@ describe("handleSplitPayment", () => {
       category: "Food",
       badgeCode: `SPLIT-${uniqueClientId()}`,
     });
+    if (!added.vendor) throw new Error(`unexpected failure: ${JSON.stringify(added)}`);
     return { organizer, organizationId, event, wallet, vendorId: added.vendor.id as string };
   }
 
