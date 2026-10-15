@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Disposable, this-run-only Postgres — never the real Neon database.
+    # vitest.global-setup.ts drops/recreates the whole schema on every run,
+    # so it doesn't care which Postgres it's pointed at.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chaap_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Same URL for both — a plain local container has no separate
+      # pooled/direct distinction the way Neon does.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chaap_ci
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/chaap_ci
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chaap_ci
+      # Dummy, CI-only values — every other integration (Airpay, email, SMS,
+      # Vercel Blob, etc.) is optional and falls back safely when unset; see
+      # .env.example.
+      NEXTAUTH_SECRET: ci-only-not-a-real-secret
+      NEXTAUTH_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      # Gives `next build`'s static pages (e.g. sitemap.ts, which queries
+      # the Event table) a real schema to query against — an empty result
+      # set is fine, a missing table isn't.
+      - run: npx prisma db push --skip-generate --accept-data-loss
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      - run: npm run test:ci
