@@ -49,12 +49,14 @@ jobs:
 
       - run: npm ci
 
+      - run: npm run lint
+
+      - run: npm run typecheck
+
       # Gives `next build`'s static pages (e.g. sitemap.ts, which queries
       # the Event table) a real schema to query against — an empty result
       # set is fine, a missing table isn't.
       - run: npx prisma db push --skip-generate --accept-data-loss
-
-      - run: npm run lint
 
       - run: npm run build
 
